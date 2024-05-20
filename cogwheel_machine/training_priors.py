@@ -1,0 +1,95 @@
+"""Prior classes intended to generate simulation parameters."""
+import numpy as np
+
+from cogwheel.prior import Prior, UniformPriorMixin, FixedPrior
+from cogwheel.gw_prior.combined import (
+    UniformLuminosityVolumePrior,
+    RegisteredPriorMixin,
+    CombinedPrior,
+    IsotropicInclinationPrior,
+    IsotropicSkyLocationPrior,
+    UniformTimePrior,
+    UniformPolarizationPrior,
+    UniformPhasePrior,
+    ZeroInplaneSpinsPrior,
+    ZeroTidalDeformabilityPrior,
+    FixedReferenceFrequencyPrior)
+
+# ----------------------------------------------------------------------
+# Modular priors:
+
+class ZeroAlignedSpinsPrior(FixedPrior):
+    """Set inplane spins to zero."""
+    standard_par_dic = {'s1z': 0.,
+                        's2z': 0.,}
+
+
+class LogMassPrior(UniformPriorMixin, Prior):
+    """
+    Flat in log mchirp, log q.
+
+    Auxiliary prior intended for generating training parameters.
+    It tries to achieve a balance between a "geometric" prior in
+    which each waveform shape is equally represented, and a
+    "physical" prior.
+    """
+    standard_params = ['m1', 'm2']
+    range_dic = {'lnmchirp': None,
+                 'lnq': None}
+
+    def __init__(self, *, mchirp_range, q_min=.05, **kwargs):
+        lnq_min = np.log(q_min)
+        self.range_dic = {'lnmchirp': np.log(mchirp_range),
+                          'lnq': (lnq_min, 0)}
+        super().__init__(**kwargs)
+
+    @staticmethod
+    def transform(lnmchirp, lnq):
+        """(mchirp, lnq) to (m1, m2)."""
+        q = np.exp(-np.abs(lnq))
+        mchirp = np.exp(lnmchirp)
+        m1 = mchirp * (1 + q)**.2 / q**.6
+        return {'m1': m1,
+                'm2': m1 * q}
+
+    @staticmethod
+    def inverse_transform(m1, m2):
+        """(m1, m2) to (mchirp, lnq)."""
+        q = m2 / m1
+        mchirp = m1 * q**.6 / (1 + q)**.2
+        return {'lnmchirp': np.log(mchirp),
+                'lnq': np.log(q)}
+
+    def get_init_dict(self):
+        """
+        Return dictionary with keyword arguments to reproduce the class
+        instance.
+        """
+        return {'mchirp_range': np.exp(self.range_dic['lnmchirp']),
+                'q_min': np.exp(self.range_dic['lnq'][0])}
+
+
+class UniformDHatPrior(UniformPriorMixin, UniformLuminosityVolumePrior):
+    """
+    Auxiliary prior intended for generating training parameters.
+    Flat in `d_hat` (https://arxiv.org/pdf/2207.03508#equation.3.18).
+    """
+
+
+# ----------------------------------------------------------------------
+# Combine the modular priors:
+
+class NoSpinTrainingPrior(RegisteredPriorMixin,
+                          CombinedPrior):
+    """Intended for generating training parameters."""
+    prior_classes = [LogMassPrior,
+                     IsotropicInclinationPrior,
+                     IsotropicSkyLocationPrior,
+                     UniformTimePrior,
+                     UniformPolarizationPrior,
+                     UniformPhasePrior,
+                     UniformDHatPrior,
+                     ZeroAlignedSpinsPrior,
+                     ZeroInplaneSpinsPrior,
+                     ZeroTidalDeformabilityPrior,
+                     FixedReferenceFrequencyPrior]
