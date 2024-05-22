@@ -181,4 +181,4 @@ class DataPreprocessor:
                                             heterodyned_data.imag.flat,
                                             coef,
                                             geometry_features])
-        return preprocessed_data
+        return preprocessed_data.astype(np.float32)
