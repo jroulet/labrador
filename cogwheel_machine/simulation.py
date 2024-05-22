@@ -163,7 +163,10 @@ class DataPreprocessor:
         shapecoef = scipy.optimize.minimize(
             lambda shapecoef: -like.semicoherent_lnlike(shapecoef),
             x0=shapecoef_guess,
-            tol=.1).x
+            tol=.1,
+            bounds=[(1., 3.5),
+                    *[(-np.inf, np.inf)]*(len(shapecoef_guess)-1)]
+        ).x
         coef = like.fit_amp_phase(shapecoef)
         h_df = like.waveform_model(
             like.event_data.frequencies[like.event_data.fslice], coef)
