@@ -7,6 +7,7 @@ Simulator:
 DataPreprocessor:
     Compress data by heterodyning against a reference waveform.
 """
+import multiprocessing
 import scipy.optimize
 import numpy as np
 
@@ -15,6 +16,65 @@ from cogwheel import gw_utils
 from cogwheel import waveform
 
 from . import semicoherent_likelihood
+
+
+def simulate_and_preprocess_sample(simulator, data_preprocessor, parameters):
+    """
+    Generate a signal based on parameters, add a noise realization,
+    find a reference waveform and compress the data by heterodyning.
+
+    Return
+    ------
+    compressed_data: 1-d float32 array
+        Features.
+    """
+    simulated_input = simulator.generate_data_and_reference_waveform(parameters)
+    compressed_data = data_preprocessor.preprocess_data(**simulated_input)
+    return compressed_data
+
+
+def simulate_and_preprocess_samples(simulator,
+                                    data_preprocessor,
+                                    simulation_parameters,
+                                    processes):
+    """
+    Run ``simulate_and_preprocess_sample()`` on a set of simulation
+    parameter samples in parallel using ``multiprocessing``.
+
+    Note: For best results you may want to ensure that each process
+    runs a single thread, by running
+    ```
+    import os
+    os.environ["OMP_NUM_THREADS"] = "1"
+    ```
+    at the very start of your Python session (in particular, before
+    importing ``numpy`` or any module that imports it).
+
+    Parameters
+    ----------
+    simulator: Simulator
+
+    data_preprocessor: DataPreprocessor
+
+    simulation_parameters: pandas.DataFrame
+        Columns represent different parameters, each row is a
+        simulation. The columns must contain all
+        ``._waveform_generator.params``.
+
+    processes: int
+        The number of worker processes to use. If `processes` is
+        `None` then the number returned by `os.cpu_count()` is used.
+
+    Return
+    ------
+    float32 array of shape (n_simulations, n_features)
+    """
+    with multiprocessing.Pool(processes) as pool:
+        simulation_data = pool.starmap(
+            simulate_and_preprocess_sample,
+            ((simulator, data_preprocessor, parameters)
+             for _, parameters in simulation_parameters.iterrows()))
+    return np.array(simulation_data)
 
 
 class Simulator:
