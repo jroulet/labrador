@@ -63,6 +63,30 @@ class SemicoherentLikelihood:
     def __init__(self, event_data, ref_waveform_phase,
                  waveform_model, n_coherent_segments,
                  rb_splines):
+        """
+        Parameters
+        ----------
+        event_data: cogwheel.data.EventData
+            Contains data, i.e. signal plus noise.
+
+        ref_waveform_phase: float array of shape (n_det, n_freq)
+            Must be defined on ``event_data.frequencies[event_data.fslice]``.
+            The function ``get_unwrapped_phase`` may be helpful for this.
+
+        waveform_model: waveform_model.PhenomenologicalWaveformGenerator
+            Will be used to generate a relative binning reference.
+
+        n_coherent_segments: int
+            The frequency range is partitioned into segments, a constant
+            phase is optimized independently in each segment. This is
+            unphysical and intended to make the maximization more robust
+            to limitations in the phase model.
+            ``n_coherent_segments=1`` corresponds to fully coherent.
+
+        rb_splines: rbsplines.RelativeBinningSplines
+            Determines the frequency resolution at which (d|h) and (h|h)
+            are computed.
+        """
         np.testing.assert_allclose(rb_splines.fbin,
                                    waveform_model.phase_model.fbin)
         assert (ref_waveform_phase.shape
