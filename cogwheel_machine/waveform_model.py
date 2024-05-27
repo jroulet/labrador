@@ -258,13 +258,14 @@ class PhaseModel:
     #     ?: optional dimensions
 
     _int_pn_exponents = np.array([-5/3, -1, -2/3])
+    _max_mchirp_guess = 50.0
 
     @classmethod
     def from_scratch(cls,
                      frequencies,
                      fiducial_wht_filter,
                      n_phasecoef=2,
-                     mchirp_rng=(1.0, np.inf),
+                     mchirp_rng=(1.0, 50.0),
                      q_rng=(0.05, 1.0),
                      n_examples=10**4,
                      pn_phase_tol=0.1,
@@ -417,9 +418,15 @@ class PhaseModel:
     def guess_mchirp(self, phasecoef):
         """Return estimate of chirp mass (Msun)."""
         pncoef = self._phasecoef_to_pncoef(phasecoef)
-        ind_0pn = 2 * self.n_det
+        coef_0pn = pncoef[2 * self.n_det]
+
+        if coef_0pn < 0:
+            # Due to noise, the best fit `phasecoef` may be unphysical
+            # i.e. would produce `mchirp**(-5/3) < 0`
+            return self._max_mchirp_guess
+
         mchirp = (-128/3*pncoef[ind_0pn]) ** (-3/5) / (np.pi*lal.MTSUN_SI)
-        return mchirp
+        return min(mchirp, self._max_mchirp_guess)
 
     def guess_phasecoef(self, phase):
         """
