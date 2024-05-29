@@ -420,12 +420,12 @@ class PhaseModel:
         pncoef = self._phasecoef_to_pncoef(phasecoef)
         coef_0pn = pncoef[2 * self.n_det]
 
-        if coef_0pn < 0:
+        if coef_0pn > 0:
             # Due to noise, the best fit `phasecoef` may be unphysical
             # i.e. would produce `mchirp**(-5/3) < 0`
             return self._max_mchirp_guess
 
-        mchirp = (-128/3*pncoef[ind_0pn]) ** (-3/5) / (np.pi*lal.MTSUN_SI)
+        mchirp = (-128/3*coef_0pn) ** (-3/5) / (np.pi*lal.MTSUN_SI)
         return min(mchirp, self._max_mchirp_guess)
 
     def guess_phasecoef(self, phase):
