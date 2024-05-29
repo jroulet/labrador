@@ -81,6 +81,7 @@ class Simulator:
     """
     Methods for generating data similar to what a user would provide.
     """
+
     def __init__(self, event_data_kwargs, approximant):
         """
         Parameters
@@ -94,7 +95,8 @@ class Simulator:
         self.event_data_kwargs = event_data_kwargs
         self.approximant = approximant
 
-        dummy_event_data = data.EventData.gaussian_noise(**self.event_data_kwargs)
+        dummy_event_data = data.EventData.gaussian_noise(
+            **self.event_data_kwargs)
         self._waveform_generator = waveform.WaveformGenerator.from_event_data(
             dummy_event_data, approximant)
 
@@ -105,8 +107,8 @@ class Simulator:
         Parameters
         ----------
         parameters: dict-like
-            Physical parameters of the signal to simulate. Must contain keys
-            for all ``._waveform_generator.params``.
+            Physical parameters of the signal to simulate. Must contain
+            keys for all ``._waveform_generator.params``.
 
         Return
         ------
@@ -140,6 +142,7 @@ class DataPreprocessor:
     Methods for compressing the data by heterodyning against a
     phenomenological reference waveform.
     """
+
     def __init__(self,
                  waveform_model,
                  n_coherent_segments=8,
@@ -152,16 +155,16 @@ class DataPreprocessor:
 
         n_coherent_segments: int
             When maximizing the likelihood to find a reference waveform,
-            the frequency range is partitioned into segments and a constant
-            phase is optimized independently in each segment. This is
-            unphysical and intended to make the maximization more robust
-            to limitations in the phase model.
+            the frequency range is partitioned into segments and a
+            constant phase is optimized independently in each segment.
+            This is unphysical and intended to make the maximization
+            more robust to limitations in the phase model.
             ``n_coherent_segments=1`` corresponds to fully coherent.
 
         pn_phase_tol_compression: float
             Controls the relative-binning frequency resolution used for
-            compressing the data after the reference waveform has been found.
-            Lower tolerance means higher resolution.
+            compressing the data after the reference waveform has been
+            found. Lower tolerance means higher resolution.
         """
         self.waveform_model = waveform_model
         self.n_coherent_segments = n_coherent_segments
@@ -176,12 +179,12 @@ class DataPreprocessor:
         Compress the data by heterodyning it against a phenomenological
         reference waveform.
 
-        The phenomenological reference waveform is found by first fitting a
-        reference provided by the user, and then optimizing a semi-coherent
-        likelihood using that as initial guess.
-        The purpose of this optimization is to be insensitive to how the user
-        found their reference waveform: we cannot control this and so we
-        cannot trust that the training will capture it.
+        The phenomenological reference waveform is found by first
+        fitting a reference provided by the user, and then optimizing a
+        semi-coherent likelihood using that as initial guess.
+        The purpose of this optimization is to be insensitive to how the
+        user found their reference waveform: we cannot control this and
+        so we cannot trust that the training will capture it.
 
         Parameters
         ----------
@@ -189,8 +192,9 @@ class DataPreprocessor:
             Data containing the event.
 
         frequencies: float array of shape (n_freq,)
-            Frequency array on which the user's reference waveform is defined.
-            For now, it must match ``event_data.frequencies[event_data.fslice]``.
+            Frequency array on which the user's reference waveform is
+            defined. For now, it must match
+            ``event_data.frequencies[event_data.fslice]``.
 
         ref_waveform_amp: float array of shape (n_det, n_freq)
             User-provided reference waveform amplitude.
@@ -201,10 +205,11 @@ class DataPreprocessor:
         Return
         ------
         preprocessed_data: float array
-            Contains the real and imaginary part of the heterodyned data at low
-            frequency resolution, the parameters of the phenomenological
-            reference waveform, and a few extra features that summarize the
-            detector amplitude, phase and time differences. 
+            Contains the real and imaginary part of the heterodyned data
+            at low frequency resolution, the parameters of the
+            phenomenological reference waveform, and a few extra
+            features that summarize the detector amplitude, phase and
+            time differences.
         """
         # TODO generalize frequencies
         assert np.array_equal(frequencies,
@@ -225,7 +230,7 @@ class DataPreprocessor:
             x0=shapecoef_guess,
             tol=.1,
             bounds=[(1., 3.5),
-                    *[(-np.inf, np.inf)]*(len(shapecoef_guess)-1)]
+                    *[(-np.inf, np.inf)] * (len(shapecoef_guess) - 1)]
         ).x
         coef = like.fit_amp_phase(shapecoef)
         h_df = like.waveform_model(

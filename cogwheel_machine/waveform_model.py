@@ -47,10 +47,14 @@ class PhenomenologicalWaveformGenerator:
             Waveform at detectors.
         """
         assert coef.shape == (self.n_coef,)
-        ampcoef, phasecoef = np.split(coef, [self.amplitude_model.n_ampcoef])
+        ampcoef, phasecoef = self._split_amp_phase_coef(coef)
         amplitude = self.amplitude_model(frequencies, ampcoef)
         phase = self.phase_model(frequencies, phasecoef)
         return amplitude * np.exp(1j*phase)
+
+    def _split_amp_phase_coef(self, coef):
+        """Return ampcoef, phasecoef from coef."""
+        return np.split(coef, [self.amplitude_model.n_ampcoef])
 
     def waveform_fiducial_amp_and_phase(self, frequencies, shapecoef):
         """
@@ -106,13 +110,16 @@ class PhenomenologicalWaveformGenerator:
 
         Return
         ------
-        float array with summary quantities related to arrival amplitude,
-        phase and time, that encode the extrinsic parameters of the source.
+        float array with summary quantities related to arrival
+        amplitude, phase and time, expected to naturally capture the
+        extrinsic parameters of the source.
         """
         ampcoef, phasecoef = np.split(coef, [self.amplitude_model.n_ampcoef])
-        amp_rms, amp_ratios = self.amplitude_model.get_detector_amp_rms_and_ratios(ampcoef)
+        amp_rms, amp_ratios \
+            = self.amplitude_model.get_detector_amp_rms_and_ratios(ampcoef)
         phase_differences, time_differences \
-            = self.phase_model.get_detector_phase_and_time_differences(phasecoef)
+            = self.phase_model.get_detector_phase_and_time_differences(
+                phasecoef)
         return np.concatenate([[amp_rms],
                                amp_ratios,
                                np.cos(phase_differences),
@@ -276,7 +283,7 @@ class PhaseModel:
         frequencies: (n_freq,) float array
             Frequencies at which the fiducial whitening filter is
             reported (Hz).
-        
+
         fiducial_wht_filter: (n_det, n_freq) float array
             Fiducial whitening filter used to orthogonalize phase bases.
             E.g. from a `cogwheel.EventData`, but remove the frequencies
