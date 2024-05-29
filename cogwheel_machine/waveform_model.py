@@ -12,6 +12,7 @@ import lal
 import cogwheel.gw_utils
 
 from .rbsplines import RelativeBinningSplines
+from . import config
 
 
 class PhenomenologicalWaveformGenerator:
@@ -47,10 +48,14 @@ class PhenomenologicalWaveformGenerator:
             Waveform at detectors.
         """
         assert coef.shape == (self.n_coef,)
-        ampcoef, phasecoef = np.split(coef, [self.amplitude_model.n_ampcoef])
+        ampcoef, phasecoef = self._split_amp_phase_coef(coef)
         amplitude = self.amplitude_model(frequencies, ampcoef)
         phase = self.phase_model(frequencies, phasecoef)
         return amplitude * np.exp(1j*phase)
+
+    def _split_amp_phase_coef(self, coef):
+        """Return ampcoef, phasecoef from coef."""
+        return np.split(coef, [self.amplitude_model.n_ampcoef])
 
     def waveform_fiducial_amp_and_phase(self, frequencies, shapecoef):
         """
@@ -106,18 +111,46 @@ class PhenomenologicalWaveformGenerator:
 
         Return
         ------
-        float array with summary quantities related to arrival amplitude,
-        phase and time, that encode the extrinsic parameters of the source.
+        float array with summary quantities related to arrival
+        amplitude, phase and time, expected to naturally capture the
+        extrinsic parameters of the source.
         """
         ampcoef, phasecoef = np.split(coef, [self.amplitude_model.n_ampcoef])
-        amp_rms, amp_ratios = self.amplitude_model.get_detector_amp_rms_and_ratios(ampcoef)
+        amp_rms, amp_ratios \
+            = self.amplitude_model.get_detector_amp_rms_and_ratios(ampcoef)
         phase_differences, time_differences \
-            = self.phase_model.get_detector_phase_and_time_differences(phasecoef)
+            = self.phase_model.get_detector_phase_and_time_differences(
+                phasecoef)
         return np.concatenate([[amp_rms],
                                amp_ratios,
                                np.cos(phase_differences),
                                np.sin(phase_differences),
                                time_differences])
+
+    def get_transform_kwargs(self, coef):
+        """
+        Return dictionary with the following kwargs, useful to
+        instatiate the coordinate transformation:
+            * mchirp_guess
+            * phase_refdet_0
+            * amp_ref_det
+            * t0_refdet
+        """
+        ampcoef, phasecoef = self._split_amp_phase_coef(coef)
+        mchirp_guess = self.phase_model.guess_mchirp(phasecoef)
+        i_refdet = config.EVENT_DATA_KWARGS['detector_names'].index(
+            config.PRIOR_KWARGS['ref_det_name'])
+        amp_ref_det = ampcoef[i_refdet]
+
+        phases, times = self.phase_model.get_detector_phases_and_times(
+            phasecoef)
+        phase_refdet_0 = phases[i_refdet]
+        t0_refdet = times[i_refdet]
+
+        return {'mchirp_guess': mchirp_guess,
+                'phase_refdet_0': phase_refdet_0,
+                'amp_ref_det': amp_ref_det,
+                't0_refdet': t0_refdet}
 
 
 class AmplitudeModel:
@@ -149,7 +182,8 @@ class AmplitudeModel:
         tapering = self._sigmoid(
             (log10_fcut - np.log10(frequencies)) / self.tapering_width)
 
-        profile = frequencies ** (-7/6) * tapering
+        # 1e-20 is made up so that `amplitudes` ~ O(1)
+        profile = 1e-20 * frequencies ** (-7/6) * tapering
         return np.outer(amplitudes, profile)
 
     def guess_log10_fcut(self, frequencies, wht_filter, amplitude):
@@ -258,13 +292,14 @@ class PhaseModel:
     #     ?: optional dimensions
 
     _int_pn_exponents = np.array([-5/3, -1, -2/3])
+    _max_mchirp_guess = 50.0
 
     @classmethod
     def from_scratch(cls,
                      frequencies,
                      fiducial_wht_filter,
                      n_phasecoef=2,
-                     mchirp_rng=(1.0, np.inf),
+                     mchirp_rng=(1.0, 50.0),
                      q_rng=(0.05, 1.0),
                      n_examples=10**4,
                      pn_phase_tol=0.1,
@@ -275,7 +310,7 @@ class PhaseModel:
         frequencies: (n_freq,) float array
             Frequencies at which the fiducial whitening filter is
             reported (Hz).
-        
+
         fiducial_wht_filter: (n_det, n_freq) float array
             Fiducial whitening filter used to orthogonalize phase bases.
             E.g. from a `cogwheel.EventData`, but remove the frequencies
@@ -411,15 +446,21 @@ class PhaseModel:
         """Return array of `t2-t1` for each pair of detectors."""
         pncoef = self._phasecoef_to_pncoef(phasecoef)
         phases = pncoef[: self.n_det] % (2*np.pi)
-        times = pncoef[self.n_det : 2*self.n_det] / (2*np.pi)
+        times = -pncoef[self.n_det : 2*self.n_det] / (2*np.pi)
         return phases, times
 
     def guess_mchirp(self, phasecoef):
         """Return estimate of chirp mass (Msun)."""
         pncoef = self._phasecoef_to_pncoef(phasecoef)
-        ind_0pn = 2 * self.n_det
-        mchirp = (-128/3*pncoef[ind_0pn]) ** (-3/5) / (np.pi*lal.MTSUN_SI)
-        return mchirp
+        coef_0pn = pncoef[2 * self.n_det]
+
+        if coef_0pn > 0:
+            # Due to noise, the best fit `phasecoef` may be unphysical
+            # i.e. would produce `mchirp**(-5/3) < 0`
+            return self._max_mchirp_guess
+
+        mchirp = (-128/3*coef_0pn) ** (-3/5) / (np.pi*lal.MTSUN_SI)
+        return min(mchirp, self._max_mchirp_guess)
 
     def guess_phasecoef(self, phase):
         """
@@ -466,9 +507,8 @@ class PhaseModel:
         time_differences: float array of length `n_det * (n_det-1) / 2`
             Arrival time difference in each pair of detectors.
         """
-        pncoef = self._phasecoef_to_dpncoef_mat @ phasecoef
-        det_phase, det_time, _ = np.split(pncoef, [self.n_det, 2*self.n_det])
-        det1, det2 = np.triu_indices(self.n_det, 1)  # All possible detector pairs
+        det_phase, det_time = self.get_detector_phases_and_times(phasecoef)
+        det1, det2 = np.triu_indices(self.n_det, 1)  # All possible det pairs
         phase_differences = det_phase[det1] - det_phase[det2]
         time_differences = det_time[det1] - det_time[det2]
         return phase_differences, time_differences
