@@ -17,7 +17,7 @@ class TransformMixin:
     """
     def lnprior(self, *args, **kwargs):
         """Intentionally not implemented."""
-        del args, kwargs
+        del self, args, kwargs
         raise NotImplementedError(
             'This class is intended to be used for its `transform` '
             'and `inverse_transform` only.')
