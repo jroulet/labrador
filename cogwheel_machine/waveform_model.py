@@ -473,9 +473,8 @@ class PhaseModel:
         time_differences: float array of length `n_det * (n_det-1) / 2`
             Arrival time difference in each pair of detectors.
         """
-        pncoef = self._phasecoef_to_dpncoef_mat @ phasecoef
-        det_phase, det_time, _ = np.split(pncoef, [self.n_det, 2*self.n_det])
-        det1, det2 = np.triu_indices(self.n_det, 1)  # All possible detector pairs
+        det_phase, det_time = self.get_detector_phases_and_times(phasecoef)
+        det1, det2 = np.triu_indices(self.n_det, 1)  # All possible det pairs
         phase_differences = det_phase[det1] - det_phase[det2]
         time_differences = det_time[det1] - det_time[det2]
         return phase_differences, time_differences
