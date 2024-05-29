@@ -412,7 +412,7 @@ class PhaseModel:
         """Return array of `t2-t1` for each pair of detectors."""
         pncoef = self._phasecoef_to_pncoef(phasecoef)
         phases = pncoef[: self.n_det] % (2*np.pi)
-        times = pncoef[self.n_det : 2*self.n_det] / (2*np.pi)
+        times = -pncoef[self.n_det : 2*self.n_det] / (2*np.pi)
         return phases, times
 
     def guess_mchirp(self, phasecoef):
