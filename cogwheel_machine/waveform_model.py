@@ -156,7 +156,8 @@ class AmplitudeModel:
         tapering = self._sigmoid(
             (log10_fcut - np.log10(frequencies)) / self.tapering_width)
 
-        profile = frequencies ** (-7/6) * tapering
+        # 1e-20 is made up so that `amplitudes` ~ O(1)
+        profile = 1e-20 * frequencies ** (-7/6) * tapering
         return np.outer(amplitudes, profile)
 
     def guess_log10_fcut(self, frequencies, wht_filter, amplitude):
