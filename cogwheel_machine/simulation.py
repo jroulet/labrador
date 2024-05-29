@@ -15,10 +15,18 @@ from cogwheel import data
 from cogwheel import gw_utils
 from cogwheel import waveform
 
+from . import config
 from . import semicoherent_likelihood
+from .transform import TargetSpaceTransform
 
 
-def simulate_and_preprocess_sample(simulator, data_preprocessor, parameters):
+_TRANSFORM_DIC = {
+    key: config.PRIOR_KWARGS[key]
+    for key in ('detector_pair', 'tgps', 'ref_det_name', 'f_avg')}
+
+
+def simulate_and_preprocess_sample(simulator, data_preprocessor,
+                                   parameters):
     """
     Generate a signal based on parameters, add a noise realization,
     find a reference waveform and compress the data by heterodyning.
@@ -28,9 +36,37 @@ def simulate_and_preprocess_sample(simulator, data_preprocessor, parameters):
     compressed_data: 1-d float32 array
         Features.
     """
-    simulated_input = simulator.generate_data_and_reference_waveform(parameters)
-    compressed_data = data_preprocessor.preprocess_data(**simulated_input)
-    return compressed_data
+    simulated_input = simulator.generate_data_and_reference_waveform(
+        parameters)
+    compressed_data, transform_kwargs = data_preprocessor.preprocess_data(
+        **simulated_input)
+    folded_sampled_params, unfolding_label = _get_folded_sampled_params(
+        parameters, transform_kwargs)
+    return compressed_data, folded_sampled_params, unfolding_label
+
+
+def _get_folded_sampled_params(parameters, transform_kwargs):
+    """
+    Return
+    ------
+    folded_sampled_params: float array of shape (n_params,)
+    unfolding_label: int
+    """
+    transform = TargetSpaceTransform(**_TRANSFORM_DIC, **transform_kwargs)
+    sampled_params = transform.inverse_transform(
+        **parameters[transform.standard_params])
+
+    # Determine which region the truth would be unfolded to:
+    values = np.fromiter(sampled_params.values(),
+                         float)[transform._folded_inds]
+    midpoint = (transform.cubemin
+                + transform.folded_cubesize)[transform._folded_inds]
+    flags = values > midpoint
+    # Convert the array of booleans to an integer
+    unfolding_label = sum(val << i for i, val in enumerate(flags))
+
+    folded_sampled_params = transform.fold(**sampled_params)
+    return folded_sampled_params, unfolding_label
 
 
 def simulate_and_preprocess_samples(simulator,
@@ -67,14 +103,21 @@ def simulate_and_preprocess_samples(simulator,
 
     Return
     ------
-    float32 array of shape (n_simulations, n_features)
+    simulation_data: float32 array of shape (n_simulations, n_features)
+    folded_sampled_params: float32 array of shape (n_simulations, n_params)
+    unfolding_labels: int array of shape(n_simulations,)
     """
     with multiprocessing.Pool(processes) as pool:
-        simulation_data = pool.starmap(
+        results = pool.starmap(
             simulate_and_preprocess_sample,
             ((simulator, data_preprocessor, parameters)
              for _, parameters in simulation_parameters.iterrows()))
-    return np.array(simulation_data)
+
+    simulation_data, folded_sampled_params, unfolding_labels = zip(*results)
+
+    return (np.array(simulation_data, np.float32),
+            np.array(folded_sampled_params, np.float32),
+            np.array(unfolding_labels))
 
 
 class Simulator:
@@ -240,10 +283,16 @@ class DataPreprocessor:
         rb_splines = like.rb_splines.reinstantiate(
             fbin=None, pn_phase_tol=self.pn_phase_tol_compression)
         heterodyned_data = rb_splines.get_summary_weights(
-            like.event_data.blued_strain[:, like.event_data.fslice] * h_df.conj())
+            like.event_data.blued_strain[:, like.event_data.fslice]
+            * h_df.conj())
+
         geometry_features = like.waveform_model.get_geometry_features(coef)
+
         preprocessed_data = np.concatenate([heterodyned_data.real.flat,
                                             heterodyned_data.imag.flat,
                                             coef,
                                             geometry_features])
-        return preprocessed_data.astype(np.float32)
+
+        transform_kwargs = like.waveform_model.get_transform_kwargs(coef)
+
+        return preprocessed_data.astype(np.float32), transform_kwargs

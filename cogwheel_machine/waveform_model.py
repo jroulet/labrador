@@ -12,6 +12,7 @@ import lal
 import cogwheel.gw_utils
 
 from .rbsplines import RelativeBinningSplines
+from . import config
 
 
 class PhenomenologicalWaveformGenerator:
@@ -125,6 +126,31 @@ class PhenomenologicalWaveformGenerator:
                                np.cos(phase_differences),
                                np.sin(phase_differences),
                                time_differences])
+
+    def get_transform_kwargs(self, coef):
+        """
+        Return dictionary with the following kwargs, useful to
+        instatiate the coordinate transformation:
+            * mchirp_guess
+            * phase_refdet_0
+            * amp_ref_det
+            * t0_refdet
+        """
+        ampcoef, phasecoef = self._split_amp_phase_coef(coef)
+        mchirp_guess = self.phase_model.guess_mchirp(phasecoef)
+        i_refdet = config.EVENT_DATA_KWARGS['detector_names'].index(
+            config.PRIOR_KWARGS['ref_det_name'])
+        amp_ref_det = ampcoef[i_refdet]
+
+        phases, times = self.phase_model.get_detector_phases_and_times(
+            phasecoef)
+        phase_refdet_0 = phases[i_refdet]
+        t0_refdet = times[i_refdet]
+
+        return {'mchirp_guess': mchirp_guess,
+                'phase_refdet_0': phase_refdet_0,
+                'amp_ref_det': amp_ref_det,
+                't0_refdet': t0_refdet}
 
 
 class AmplitudeModel:
