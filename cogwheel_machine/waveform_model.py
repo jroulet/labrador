@@ -48,12 +48,12 @@ class PhenomenologicalWaveformGenerator:
             Waveform at detectors.
         """
         assert coef.shape == (self.n_coef,)
-        ampcoef, phasecoef = self._split_amp_phase_coef(coef)
+        ampcoef, phasecoef = self.split_amp_phase_coef(coef)
         amplitude = self.amplitude_model(frequencies, ampcoef)
         phase = self.phase_model(frequencies, phasecoef)
         return amplitude * np.exp(1j*phase)
 
-    def _split_amp_phase_coef(self, coef):
+    def split_amp_phase_coef(self, coef):
         """Return ampcoef, phasecoef from coef."""
         return np.split(coef, [self.amplitude_model.n_ampcoef])
 
@@ -136,7 +136,7 @@ class PhenomenologicalWaveformGenerator:
             * amp_ref_det
             * t0_refdet
         """
-        ampcoef, phasecoef = self._split_amp_phase_coef(coef)
+        ampcoef, phasecoef = self.split_amp_phase_coef(coef)
         mchirp_guess = self.phase_model.guess_mchirp(phasecoef)
         i_refdet = config.EVENT_DATA_KWARGS['detector_names'].index(
             config.PRIOR_KWARGS['ref_det_name'])

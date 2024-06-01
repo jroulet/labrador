@@ -276,15 +276,19 @@ class DataPreprocessor:
                     *[(-np.inf, np.inf)] * (len(shapecoef_guess) - 1)]
         ).x
         coef = like.fit_amp_phase(shapecoef)
-        h_df = like.waveform_model(
-            like.event_data.frequencies[like.event_data.fslice], coef)
+        ampcoef, phasecoef = like.waveform_model.split_amp_phase_coef(coef)
 
-        # Downsample
+        phasor_df = np.exp(1j*like.waveform_model.phase_model(
+            like.event_data.frequencies[like.event_data.fslice], phasecoef))
+        amp = ampcoef[:like.waveform_model.n_det]
+
+        # Downsample and rescale so that the amplitude is always similar.
         rb_splines = like.rb_splines.reinstantiate(
             fbin=None, pn_phase_tol=self.pn_phase_tol_compression)
         heterodyned_data = rb_splines.get_summary_weights(
             like.event_data.blued_strain[:, like.event_data.fslice]
-            * h_df.conj())
+            * phasor_df.conj()
+            ) / amp[:, np.newaxis] * 1e-26  # factor is made up so numbers ~ O(1)
 
         geometry_features = like.waveform_model.get_geometry_features(coef)
 
@@ -292,7 +296,6 @@ class DataPreprocessor:
                                             heterodyned_data.imag.flat,
                                             coef,
                                             geometry_features])
-
         transform_kwargs = like.waveform_model.get_transform_kwargs(coef)
 
         return preprocessed_data.astype(np.float32), transform_kwargs
