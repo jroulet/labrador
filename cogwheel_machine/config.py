@@ -29,3 +29,5 @@ EVENT_DATA_KWARGS = {
     'tgps': TGPS,
     'tcoarse': 0.,
     }
+
+PN_PHASE_TOL_COMPRESSION = 1.0
