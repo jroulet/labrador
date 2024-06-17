@@ -8,7 +8,6 @@ DataPreprocessor:
     Compress data by heterodyning against a reference waveform.
 """
 import multiprocessing
-import scipy.optimize
 import numpy as np
 
 from cogwheel import data
@@ -264,19 +263,42 @@ class DataPreprocessor:
             waveform_model=self.waveform_model,
             n_coherent_segments=self.n_coherent_segments)
 
-        shapecoef_guess = like.guess_shapecoef(frequencies,
-                                               ref_waveform_phase,
-                                               ref_waveform_amp)
+        coef = like.fit_coef(frequencies,
+                             ref_waveform_phase=ref_waveform_phase,
+                             ref_waveform_amp=ref_waveform_amp)
 
-        shapecoef = scipy.optimize.minimize(
-            lambda shapecoef: -like.semicoherent_lnlike(shapecoef),
-            x0=shapecoef_guess,
-            tol=.1,
-            bounds=[(1., 3.5),
-                    *[(-np.inf, np.inf)] * (len(shapecoef_guess) - 1)]
-        ).x
-        coef = like.fit_amp_phase(shapecoef)
+        heterodyned_data = self._get_heterodyned_data(like, coef)
 
+        geometry_features = like.waveform_model.get_geometry_features(coef)
+
+        preprocessed_data = np.concatenate([heterodyned_data.real.flat,
+                                            heterodyned_data.imag.flat,
+                                            coef,
+                                            geometry_features])
+        transform_kwargs = like.waveform_model.get_transform_kwargs(coef)
+
+        return preprocessed_data.astype(np.float32), transform_kwargs
+
+    def _get_heterodyned_data(self, like, coef):
+        """
+        Parameters
+        ----------
+        like: SemicoherentLikelihood
+
+        coef: float array
+            Parameters of the best-fit phenomenological waveform, that
+            will be used to heterodyne the data.
+
+        Return
+        ------
+        heterodyned_data: complex array of shape (n_det, n_freq)
+            Data, heterodyned with a reference waveform defined by
+            `coef`. The frequency cutoff parameter is ignored in the
+            reference waveform, to preserve high-frequency data.
+            The amplitude is canceled out so that the average amplitude
+            of the heterodyned data is independent of the SNR of the
+            event.
+        """
         # Disable frequency cutoff
         ampcoef, phasecoef = like.waveform_model.split_amp_phase_coef(coef)
         ampcoef[-1] = np.inf
@@ -292,14 +314,6 @@ class DataPreprocessor:
         heterodyned_data = rb_splines.get_summary_weights(
             like.event_data.blued_strain[:, like.event_data.fslice]
             * h_df.conj()
-            ) / amp_d[:, np.newaxis]**2 * 1e-4  # factor is made up so numbers ~ O(1)
+            ) / amp_d[:, np.newaxis]**2 * 1e-4  # factor made up so ~ O(1)
 
-        geometry_features = like.waveform_model.get_geometry_features(coef)
-
-        preprocessed_data = np.concatenate([heterodyned_data.real.flat,
-                                            heterodyned_data.imag.flat,
-                                            coef,
-                                            geometry_features])
-        transform_kwargs = like.waveform_model.get_transform_kwargs(coef)
-
-        return preprocessed_data.astype(np.float32), transform_kwargs
+        return heterodyned_data

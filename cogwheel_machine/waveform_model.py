@@ -16,8 +16,43 @@ from . import config
 
 
 class PhenomenologicalWaveformGenerator:
+    """
+    Class that implementes a simple waveform model with the purpose of
+    finding a reference waveform quickly.
+
+    The phenomenological waveform is based on the 1.5pN expression for
+    the phase and the 0pN with a phenomenological cutoff for the
+    amplitude. The parameters of the waveform are named `coef` in the
+    code. `coef` are a concatenation of `ampcoef` and `phasecoef`.
+    `ampcoef` is an array of ``n_detectors + 1`` elements: the overall
+    amplitude at each detector plus the cutoff frequency.
+    `phasecoeff` is an array of ``2*n_detectors + 2`` elements: the
+    overall phase at each detector, the overall time (orthoganlized to
+    phasse) at each detector, and two coefficients that encode
+    information about the intrinsic parameters (orthogonalized to time,
+    phase, and each other). Also `shapecoef` are defined, which are the
+    same as `coef` but excluding the amplitude and phase parameters,
+    because these can be maximized over analytically.
+    The likelihood should be rather uncorrelated in these parameters,
+    easing the task of maximizing it.
+    """
     @classmethod
     def from_event_data(cls, event_data, pn_phase_tol):
+        """
+        Constructor that reads the target frequencies and detector names
+        from an existing ``EventData`` object.
+
+        Parameters
+        ----------
+        event_data: cogwheel.data.EventData
+            Data of the target event.
+
+        pn_phase_tol: float
+            Determines the internal frequency resolution at which the
+            phase model will compute inner products in order to
+            orthogonalize the phase bases. Lower tolerance means higher
+            resolution.
+        """
         frequencies = event_data.frequencies[event_data.fslice]
 
         amplitude_model = AmplitudeModel(len(event_data.detector_names))
@@ -28,6 +63,15 @@ class PhenomenologicalWaveformGenerator:
         return cls(amplitude_model, phase_model)
 
     def __init__(self, amplitude_model, phase_model):
+        """
+        Parameters
+        ----------
+        amplitude_model: AmplitudeModel
+            Phenomenological model for the amplitude of the waveform.
+
+        phase_model: PhaseModel
+            Phenomenological model for the phase of the waveform.
+        """
         assert phase_model.n_det == amplitude_model.n_det
         self.amplitude_model = amplitude_model
         self.phase_model = phase_model
@@ -54,7 +98,7 @@ class PhenomenologicalWaveformGenerator:
         return amplitude * np.exp(1j*phase)
 
     def split_amp_phase_coef(self, coef):
-        """Return ampcoef, phasecoef from coef."""
+        """Return `ampcoef`, `phasecoef` from `coef`."""
         return np.split(coef, [self.amplitude_model.n_ampcoef])
 
     def waveform_fiducial_amp_and_phase(self, frequencies, shapecoef):
@@ -84,6 +128,27 @@ class PhenomenologicalWaveformGenerator:
         return self(frequencies, coef)
 
     def coef_from_shapecoef(self, shapecoef, det_amp, det_phase):
+        """
+        Insert overall amplitude at each detector and phase at each
+        detector into the array of shape coefficients, to generate a
+        complete array of coefficients.
+
+        Parameters
+        ----------
+        shapecoef: float array
+            Waveform parameters other than detectors' amplitude and
+            phase.
+
+        det_amp: float array of shape (n_det,)
+            Overall amplitude at each detector.
+
+        det_phase: float array of shape (n_det,)
+            Overall phase at each detector.
+
+        Return
+        ------
+        coef: float array
+        """
         assert shapecoef.shape == (self.n_coef - 2*self.n_det,)
 
         n_shapeampcoef = self.amplitude_model.n_ampcoef - self.n_det
@@ -96,10 +161,12 @@ class PhenomenologicalWaveformGenerator:
 
     @property
     def n_coef(self):
+        """Number of phenomenological parameters, ``coef``."""
         return self.amplitude_model.n_ampcoef + self.phase_model.n_phasecoef
 
     @property
     def n_det(self):
+        """Number of detectors."""
         return self.amplitude_model.n_det
 
     def get_geometry_features(self, coef):
@@ -156,6 +223,16 @@ class PhenomenologicalWaveformGenerator:
 class AmplitudeModel:
     """Simple phenomenological model for the waveform amplitude."""
     def __init__(self, n_det, tapering_width=0.1):
+        """
+        Parameters
+        ----------
+        n_det: int
+            Number of detectors.
+
+        tapering_width: float
+            Scale over which the frequency-domain waveform tapers at the
+            high frequency cutoff (dex).
+        """
         self.n_det = n_det
         self.tapering_width = tapering_width
 
@@ -254,6 +331,7 @@ class AmplitudeModel:
 
     @property
     def n_ampcoef(self):
+        """Number of amplitude parameters."""
         return self.n_det + 1
 
 
@@ -388,17 +466,13 @@ class PhaseModel:
                    _phasecoef_to_dpncoef_mat=phasecoef_to_dpncoef_mat,
                    _avg_pncoef=avg_pncoef)
 
-    @classmethod
-    def from_npz(cls, filename):
-        raise NotImplementedError
-
     def __init__(self,
                  fbin,
                  _dphase_to_phasecoef_mat,
                  _phasecoef_to_dpncoef_mat,
                  _avg_pncoef):
         """
-        Generic constructor, use `from_npz` or `from_scratch` instead.
+        Generic constructor, use `from_scratch` instead.
         """
         self._fbin = fbin  # f
         self._dphase_to_phasecoef_mat = _dphase_to_phasecoef_mat  # cdf
@@ -435,11 +509,13 @@ class PhaseModel:
 
     @property
     def n_det(self):
+        """Number of detectors."""
         _, n_det, _ = self._dphase_to_phasecoef_mat.shape
         return n_det
 
     @property
     def n_phasecoef(self):
+        """Number of phase parameters."""
         return self._dphase_to_phasecoef_mat.shape[0]
 
     def get_detector_phases_and_times(self, phasecoef):
