@@ -87,6 +87,11 @@ class MassesTransform(TransformMixin, Prior):
 
 
 class PhaseTransform(TransformMixin, gw_prior.UniformPhasePrior):
+    """
+    Coordinate transformation for the orbital phase.
+    The coordinate is cogwheel's ``phi_ref_hat`` except the baseline
+    phase ``phi_refdet_0` is passed by the user.
+    """
     def __init__(self, *, tgps, ref_det_name, f_avg, phase_refdet_0,
                  **kwargs):
         """
@@ -118,6 +123,11 @@ class PhaseTransform(TransformMixin, gw_prior.UniformPhasePrior):
 
 
 class TimeTransform(TransformMixin, Prior):
+    """
+    Coordinate transformation for the geocenter time of arrival.
+    The coordiante is the arrival time at the reference detector, minus
+    a fiducial arrival time at the reference detector.
+    """
     standard_params = ['t_geocenter']
     range_dic = {'dt_refdet': (np.nan, np.nan)}
     conditioned_on = ['ra', 'dec']
@@ -166,6 +176,11 @@ class TimeTransform(TransformMixin, Prior):
 
 
 class DistanceTransform(TransformMixin, Prior):
+    """
+    Coordinate transformation for the distance.
+    The coordinate is `relative_dhat`, i.e. cogwheel's d_hat divided by
+    a fiducial d_hat.
+    """
     standard_params = ['d_luminosity']
     range_dic = {'relative_dhat': (np.nan, np.nan)}
     conditioned_on = ['ra', 'dec', 'psi', 'iota', 'm1', 'm2']
@@ -214,6 +229,7 @@ class DistanceTransform(TransformMixin, Prior):
 
 
 class TargetSpaceTransform(CombinedPrior):
+    """Full coordinate transformation for all waveform parameters."""
     prior_classes = [MassesTransform,
                      gw_prior.IsotropicInclinationPrior,
                      gw_prior.UniformPolarizationPrior,

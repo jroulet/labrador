@@ -4,7 +4,7 @@ maximized to define a reference waveform.
 It uses a phenomenological waveform model with few, uncorrelated
 parameters.
 """
-from scipy import interpolate
+from scipy import interpolate, optimize
 import numpy as np
 
 import lal
@@ -106,6 +106,7 @@ class SemicoherentLikelihood:
 
     @property
     def n_coherent_segments(self):
+        """Number of coherent segments."""
         return self._n_coherent_segments
 
     @n_coherent_segments.setter
@@ -123,7 +124,47 @@ class SemicoherentLikelihood:
         _, hh_d, dh_semicoherent_d = self._get_dh_hh(shapecoef)
         return np.sum(dh_semicoherent_d**2 / hh_d) / 2
 
-    def guess_shapecoef(self, frequencies, ref_waveform_phase,
+    def fit_coef(self, frequencies, *, ref_waveform_phase,
+                 ref_waveform_amp):
+        """
+        Find a phenomenological waveform that fits the data by starting
+        from a guess that is matched to a user-provided waveform and
+        refining the guess to maximize the semi-coherent likelihood.
+
+        Parameters
+        ----------
+        frequencies: float array of shape (n_freq,)
+            Frequency array on which the user's reference waveform is
+            defined. For now, it must match
+            ``event_data.frequencies[event_data.fslice]``.
+
+        ref_waveform_amp: float array of shape (n_det, n_freq)
+            User-provided reference waveform amplitude.
+
+        ref_waveform_phase: float array of shape (n_det, n_freq)
+            User-provided reference waveform unwrapped phase.
+
+        Return
+        ------
+        coef: float array
+            Parameters of the best-fit phenomenological waveform.
+        """
+        shapecoef_guess = self._guess_shapecoef(
+            frequencies,
+            ref_waveform_phase=ref_waveform_phase,
+            ref_waveform_amp=ref_waveform_amp)
+
+        shapecoef = optimize.minimize(
+            lambda shapecoef: -self.semicoherent_lnlike(shapecoef),
+            x0=shapecoef_guess,
+            tol=.1,
+            bounds=[(1., 3.5),
+                    *[(-np.inf, np.inf)] * (len(shapecoef_guess) - 1)]
+            ).x
+        coef = self._fit_amp_phase(shapecoef)
+        return coef
+
+    def _guess_shapecoef(self, frequencies, *, ref_waveform_phase,
                         ref_waveform_amp):
         """
         Find amplitude and phase coefficients that best match a given
@@ -153,7 +194,7 @@ class SemicoherentLikelihood:
              phasecoef_guess[self.waveform_model.phase_model.n_det:]])
         return shapecoef_guess
 
-    def fit_amp_phase(self, shapecoef):
+    def _fit_amp_phase(self, shapecoef):
         """
         Find best fit amplitude and phase given a waveform shape.
 
@@ -161,7 +202,7 @@ class SemicoherentLikelihood:
         ----------
         shapecoef: float array
             Coefficients characterizing the waveform shape.
-            You may use the output of ``.guess_shapecoef`` for this.
+            You may use the output of ``._guess_shapecoef`` for this.
 
         Return
         ------
