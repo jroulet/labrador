@@ -175,8 +175,8 @@ class SemicoherentLikelihood:
         shapecoef: float array
         """
         # TODO generalize this to arbitrary frequencies
-        assert np.array_equal(frequencies,
-                              self.event_data.frequencies[self.event_data.fslice])
+        assert np.array_equal(
+            frequencies, self.event_data.frequencies[self.event_data.fslice])
 
         ref_wf_phase_fbin = interpolate.make_interp_spline(
             frequencies, ref_waveform_phase, axis=1, k=1)(self.rb_splines.fbin)
@@ -184,10 +184,11 @@ class SemicoherentLikelihood:
         phasecoef_guess = self.waveform_model.phase_model.guess_phasecoef(
             ref_wf_phase_fbin)
 
-        log10_fcut_guess = self.waveform_model.amplitude_model.guess_log10_fcut(
-            frequencies,
-            self.event_data.wht_filter[:, self.event_data.fslice],
-            ref_waveform_amp)
+        log10_fcut_guess \
+            = self.waveform_model.amplitude_model.guess_log10_fcut(
+                frequencies,
+                self.event_data.wht_filter[:, self.event_data.fslice],
+                ref_waveform_amp)
 
         shapecoef_guess = np.concatenate(
             [[log10_fcut_guess],
@@ -246,8 +247,8 @@ class SemicoherentLikelihood:
         h0_fbin = np.exp(1j * phase_fbin)
 
         self._d_h_weights = self.rb_splines.get_summary_weights(
-            self.event_data.blued_strain[:, self.event_data.fslice] * h0_f.conj()
-            ) / h0_fbin.conj()
+            self.event_data.blued_strain[:, self.event_data.fslice]
+            * h0_f.conj()) / h0_fbin.conj()
 
         self._h_h_weights = self.rb_splines.get_summary_weights(
             self.event_data.wht_filter[:, self.event_data.fslice]**2)

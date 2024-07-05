@@ -471,9 +471,7 @@ class PhaseModel:
                  _dphase_to_phasecoef_mat,
                  _phasecoef_to_dpncoef_mat,
                  _avg_pncoef):
-        """
-        Generic constructor, use `from_scratch` instead.
-        """
+        """Generic constructor, use `from_scratch` instead."""
         self._fbin = fbin  # f
         self._dphase_to_phasecoef_mat = _dphase_to_phasecoef_mat  # cdf
         self._phasecoef_to_dpncoef_mat = _phasecoef_to_dpncoef_mat  # nc
@@ -502,7 +500,7 @@ class PhaseModel:
     @property
     def fbin(self):
         """
-        Frequencies at which the weights to ortogonalize coordinates
+        Frequencies at which the weights to orthogonalize coordinates
         were computed. Users should not modify this once created.
         """
         return self._fbin
