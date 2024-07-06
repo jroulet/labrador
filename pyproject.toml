@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0", "setuptools_scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cogwheel-machine"
+dynamic = ["version"]
+
+dependencies = [
+  "cogwheel-pe",
+]
+
+maintainers = [
+  {name = "Javier Roulet", email = "jroulet@caltech.edu"}
+]
+readme = "README.md"
+
+[tool.setuptools.packages]
+find = {}
+
+[tool.pylint.basic]
+good-names = ["i", "j", "k", "ex", "Run", "_",
+              "ra", "m1", "m2", "q", "dt", "ax"]
+
+ignored-modules = [
+  "cogwheel",
+  "lal",
+]
+
+[tool.pylint.format]
+max-line-length = 79

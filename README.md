@@ -2,9 +2,15 @@
 
 Combine simulation-based inference with gravitational-wave specific tricks such as relative binning, folding, and coordinate transformations, to get the best of both worlds.
 
-## Prerequisites
+## Installation
 
-Install [`cogwheel`](https://github.com/jroulet/cogwheel). 
+    conda create -n ENVIRONMENT_NAME cogwheel-pe
+    conda activate ENVIRONMENT_NAME
+    git clone git@github.com:jroulet/cogwheel-machine.git
+    cd cogwheel-machine
+    pip install -e .
+
+(replace `ENVIRONMENT_NAME` by a name of your choice)
 
 For now this code has no other dependencies, although soon we will require ML libraries.
 
