@@ -365,7 +365,7 @@ def _check_sim_dir(sim_dir):
 
 def submit_condor(sim_dir,
                   request_cpus,
-                  request_memory='1G',
+                  request_memory='5G',
                   request_disk='1G',
                   **submit_kwargs):
     """
