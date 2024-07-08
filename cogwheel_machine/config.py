@@ -5,6 +5,9 @@ TODO: This could be automatically saved in the simulation directory?
 Maybe turn into a JSONMixin?
 """
 
+from cogwheel_machine.training_priors import NoSpinTrainingPrior
+
+
 # Fiducial reference time, not the time of any actual event.
 # (The training should use Earth-fixed coordinates. But since the
 # existing implementations use ra, dec, we hack them by using a fiducial
@@ -31,3 +34,9 @@ EVENT_DATA_KWARGS = {
     }
 
 PN_PHASE_TOL_COMPRESSION = 1.0
+
+N_SIMULATIONS = 100  # Increase for real-life usage!
+
+PRIOR_CLASS = NoSpinTrainingPrior
+
+APPROXIMANT = 'IMRPhenomD'

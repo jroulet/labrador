@@ -1,4 +1,8 @@
 """
+This module defines the classes Simulator and DataPreprocessor, and can
+be run as a script to produce training data.
+
+
 Classes
 -------
 Simulator:
@@ -7,25 +11,26 @@ Simulator:
 DataPreprocessor:
     Compress data by heterodyning against a reference waveform.
 """
+import argparse
 import multiprocessing
+from pathlib import Path
 import numpy as np
+import pandas as pd
 
 from cogwheel import data
 from cogwheel import gw_utils
 from cogwheel import waveform
+from cogwheel.validation import load_config
+import cogwheel.utils
 
-from . import config
 from . import semicoherent_likelihood
 from .transform import TargetSpaceTransform
-
-
-_TRANSFORM_DIC = {
-    key: config.PRIOR_KWARGS[key]
-    for key in ('detector_pair', 'tgps', 'ref_det_name', 'f_avg')}
+from .generate_parameters import PARAMETERS_FILENAME, CONFIG_FILENAME
+from .waveform_model import PhenomenologicalWaveformGenerator
 
 
 def simulate_and_preprocess_sample(simulator, data_preprocessor,
-                                   parameters):
+                                   parameters, transform_dic):
     """
     Generate a signal based on parameters, add a noise realization,
     find a reference waveform and compress the data by heterodyning.
@@ -40,18 +45,34 @@ def simulate_and_preprocess_sample(simulator, data_preprocessor,
     compressed_data, transform_kwargs = data_preprocessor.preprocess_data(
         **simulated_input)
     folded_sampled_params, unfolding_label = _get_folded_sampled_params(
-        parameters, transform_kwargs)
+        parameters, transform_kwargs, transform_dic)
     return compressed_data, folded_sampled_params, unfolding_label
 
 
-def _get_folded_sampled_params(parameters, transform_kwargs):
+def get_transform_dic(config):
+    """
+    Return a dictionary with transform kwargs that are the same across
+    simulations.
+    """
+    return {key: config.PRIOR_KWARGS[key]
+            for key in ('detector_pair', 'tgps', 'ref_det_name', 'f_avg')}
+
+
+def get_i_refdet(config):
+    """Return index of the reference detector."""
+    return config.EVENT_DATA_KWARGS['detector_names'].index(
+        config.PRIOR_KWARGS['ref_det_name'])
+
+
+def _get_folded_sampled_params(parameters, transform_kwargs,
+                               transform_dic):
     """
     Return
     ------
     folded_sampled_params: float array of shape (n_params,)
     unfolding_label: int
     """
-    transform = TargetSpaceTransform(**_TRANSFORM_DIC, **transform_kwargs)
+    transform = TargetSpaceTransform(**transform_dic, **transform_kwargs)
     sampled_params = transform.inverse_transform(
         **parameters[transform.standard_params])
 
@@ -71,6 +92,7 @@ def _get_folded_sampled_params(parameters, transform_kwargs):
 def simulate_and_preprocess_samples(simulator,
                                     data_preprocessor,
                                     simulation_parameters,
+                                    transform_dic,
                                     processes):
     """
     Run ``simulate_and_preprocess_sample()`` on a set of simulation
@@ -96,7 +118,7 @@ def simulate_and_preprocess_samples(simulator,
         simulation. The columns must contain all
         ``._waveform_generator.params``.
 
-    processes: int
+    processes: int or None
         The number of worker processes to use. If `processes` is
         `None` then the number returned by `os.cpu_count()` is used.
 
@@ -109,7 +131,7 @@ def simulate_and_preprocess_samples(simulator,
     with multiprocessing.Pool(processes) as pool:
         results = pool.starmap(
             simulate_and_preprocess_sample,
-            ((simulator, data_preprocessor, parameters)
+            ((simulator, data_preprocessor, parameters, transform_dic)
              for _, parameters in simulation_parameters.iterrows()))
 
     simulation_data, folded_sampled_params, unfolding_labels = zip(*results)
@@ -187,6 +209,7 @@ class DataPreprocessor:
 
     def __init__(self,
                  waveform_model,
+                 i_refdet,
                  n_coherent_segments=8,
                  pn_phase_tol_compression=1.0):
         """
@@ -211,6 +234,7 @@ class DataPreprocessor:
         self.waveform_model = waveform_model
         self.n_coherent_segments = n_coherent_segments
         self.pn_phase_tol_compression = pn_phase_tol_compression
+        self.i_refdet = i_refdet
 
     def preprocess_data(self,
                         event_data,
@@ -275,7 +299,8 @@ class DataPreprocessor:
                                             heterodyned_data.imag.flat,
                                             coef,
                                             geometry_features])
-        transform_kwargs = like.waveform_model.get_transform_kwargs(coef)
+        transform_kwargs = like.waveform_model.get_transform_kwargs(
+            coef, self.i_refdet)
 
         return preprocessed_data.astype(np.float32), transform_kwargs
 
@@ -317,3 +342,110 @@ class DataPreprocessor:
             ) / amp_d[:, np.newaxis]**2 * 1e-4  # factor made up so ~ O(1)
 
         return heterodyned_data
+
+
+def _check_sim_dir(sim_dir):
+    new_filenames = ('simulation_data.npy',
+                     'folded_sampled_params.npy',
+                     'unfolding_labels.npy')
+    existing = [path for filename in new_filenames
+                if (path := sim_dir/filename).exists()]
+    if existing:
+        raise FileExistsError(f'{existing} already exist!')
+
+    config_file = sim_dir/CONFIG_FILENAME
+    if not config_file.exists():
+        raise FileNotFoundError(f'Missing {config_file}')
+
+    parameters_file = sim_dir/PARAMETERS_FILENAME
+    if not parameters_file.exists():
+        raise FileNotFoundError(
+            f'Missing {parameters_file}, run `generate_parameters.py`.')
+
+
+def submit_condor(sim_dir,
+                  request_cpus,
+                  request_memory='5G',
+                  request_disk='1G',
+                  **submit_kwargs):
+    """
+    Submit an HTCondor job to generate simulation parameters.
+
+    This method generates 'simulation.{sub,sh,out,err,log}',
+    files, the user should provide any instructions for the submit file
+    as `**submit_kwargs`.
+
+    Parameters
+    ----------
+    sim_dir: str, os.PathLike
+        Simulations directory, should contain files `config.py` and
+        `simulation_parameters.feather`.
+
+    request_cpus, request_memory, request_disk: int or str
+        Specifications in the HTCondor submit file.
+
+    **submit_kwargs
+        Further options to include in the HTCondor submit file. Do
+        not pass `executable`, `output`, `error`, `log`, `args`,
+        `queue`, which will be dealt with automatically.
+    """
+    sim_dir = Path(sim_dir).resolve()
+    _check_sim_dir(sim_dir)
+
+    submit_kwargs = {
+        'submit_path': sim_dir/'simulation.sub',
+        'executable': sim_dir/'simulation.sh',
+        'output': sim_dir/'simulation.out',
+        'error': sim_dir/'simulation.err',
+        'log': sim_dir/'simulation.log',
+        'args': f'{sim_dir} --processes {request_cpus}',
+        'request_cpus': request_cpus,
+        'request_memory': request_memory,
+        'request_disk': request_disk,
+        } | submit_kwargs
+
+    cogwheel.utils.submit_condor(**submit_kwargs)
+
+
+def main(sim_dir, processes=None):
+    sim_dir = Path(sim_dir)
+    _check_sim_dir(sim_dir)
+
+    config = load_config(sim_dir/CONFIG_FILENAME)
+    simulation_parameters = pd.read_feather(sim_dir/PARAMETERS_FILENAME)
+
+    simulator = Simulator(config.EVENT_DATA_KWARGS, config.APPROXIMANT)
+
+    dummy_event_data = data.EventData.gaussian_noise(
+        **config.EVENT_DATA_KWARGS)
+    waveform_model = PhenomenologicalWaveformGenerator.from_event_data(
+        event_data=dummy_event_data, pn_phase_tol=0.1)
+
+    data_preprocessor = DataPreprocessor(
+        waveform_model,
+        i_refdet=get_i_refdet(config),
+        pn_phase_tol_compression=config.PN_PHASE_TOL_COMPRESSION)
+
+    simulation_data, folded_sampled_params, unfolding_labels \
+        = simulate_and_preprocess_samples(
+            simulator,
+            data_preprocessor,
+            simulation_parameters,
+            transform_dic=get_transform_dic(config),
+            processes=processes)
+
+    np.save(sim_dir/'simulation_data.npy', simulation_data)
+    np.save(sim_dir/'folded_sampled_params.npy', folded_sampled_params)
+    np.save(sim_dir/'unfolding_labels.npy', unfolding_labels)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+        description='Simulate signals to generate training data.')
+    parser.add_argument(
+        'sim_dir',
+        help='''Simulation directory path, must contain files
+                `config.py`. and `simulation_parameters.feather`.''')
+
+    parser.add_argument('--processes', type=int, help='Number of processes')
+    main(**vars(parser.parse_args()))
