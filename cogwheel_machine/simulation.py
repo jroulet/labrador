@@ -324,6 +324,7 @@ class DataPreprocessor:
             of the heterodyned data is independent of the SNR of the
             event.
         """
+        coef = coef.copy()
         # Disable frequency cutoff
         ampcoef, phasecoef = like.waveform_model.split_amp_phase_coef(coef)
         ampcoef[-1] = np.inf
