@@ -1,3 +1,4 @@
+import argparse
 from pathlib import Path
 import numpy as np
 import torch
@@ -39,3 +40,14 @@ def main(sim_dir):
     torch.save(posterior, sim_dir/f'posterior_{rundir.name}.pt')
 
     print(posterior)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+        description='Training NN from existing data')
+    parser.add_argument(
+        'sim_dir',
+        help='''Training directory path, must contain files
+                `folded_sampled_params.npy`. and `simulation_data.npy`.''')
+
+    main(**vars(parser.parse_args()))
