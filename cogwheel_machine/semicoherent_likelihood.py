@@ -84,7 +84,7 @@ class SemicoherentLikelihood:
             ``n_coherent_segments=1`` corresponds to fully coherent.
 
         rb_splines: rbsplines.RelativeBinningSplines
-            Determines the frequency resolution at which (d|h) and (h|h)
+            Determines the frequency resolution at which (d|h) and ⟨h|h⟩
             are computed.
         """
         np.testing.assert_allclose(rb_splines.fbin,
@@ -148,6 +148,12 @@ class SemicoherentLikelihood:
         ------
         coef: float array
             Parameters of the best-fit phenomenological waveform.
+
+        dh_semicoherent: float array of shape (n_det,)
+            Semicoherent ⟨d|h⟩ of the best fit waveform.
+
+        h_h: float array of shape (n_det,)
+            ⟨h|h⟩ of the best fit waveform.
         """
         shapecoef_guess = self._guess_shapecoef(
             frequencies,
@@ -161,8 +167,7 @@ class SemicoherentLikelihood:
             bounds=[(1., 3.5),
                     *[(-np.inf, np.inf)] * (len(shapecoef_guess) - 1)]
             ).x
-        coef = self._fit_amp_phase(shapecoef)
-        return coef
+        return self._fit_amp_phase(shapecoef)
 
     def _guess_shapecoef(self, frequencies, *, ref_waveform_phase,
                         ref_waveform_amp):
@@ -211,6 +216,12 @@ class SemicoherentLikelihood:
             `shapecoef` but with additional entries for detector
             amplitudes and phases that maximize the likelihood.
             Can be passed to ``.waveform_model`` to produce a waveform.
+
+        dh_semicoherent: float array of shape (n_det,)
+            Semicoherent ⟨d|h⟩ of the best fit waveform.
+
+        h_h: float array of shape (n_det,)
+            ⟨h|h⟩ of the best fit waveform.
         """
         dh_d, hh_d, dh_semicoherent_d = self._get_dh_hh(shapecoef)
 
@@ -220,7 +231,9 @@ class SemicoherentLikelihood:
         coef = self.waveform_model.coef_from_shapecoef(shapecoef,
                                                        det_amp=best_amp,
                                                        det_phase=best_phase)
-        return coef
+        dh_semicoherent = np.abs(dh_semicoherent_d) * best_amp
+        h_h = hh_d * best_amp**2
+        return coef, dh_semicoherent, h_h
 
     def _get_dh_hh(self, shapecoef):
         """With fiducial amp_det=1, phase_det=0."""

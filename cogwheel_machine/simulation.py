@@ -42,11 +42,26 @@ def simulate_and_preprocess_sample(simulator, data_preprocessor,
     """
     simulated_input = simulator.generate_data_and_reference_waveform(
         parameters)
-    compressed_data, transform_kwargs = data_preprocessor.preprocess_data(
-        **simulated_input)
+    compressed_data, transform_kwargs, d_h0_semicoherent, h0_h0 \
+        = data_preprocessor.preprocess_data(**simulated_input)
     folded_sampled_params, unfolding_label = _get_folded_sampled_params(
         parameters, transform_kwargs, transform_dic)
-    return compressed_data, folded_sampled_params, unfolding_label
+
+    arrs = {'d_h0_semicoherent': d_h0_semicoherent,
+            'h0_h0': h0_h0,
+            'd_h': simulated_input['event_data'].injection['d_h'],
+            'h_h': simulated_input['event_data'].injection['h_h']}
+
+    derived_parameters = {}
+    for key, arr in arrs.items():
+        derived_parameters[key] = arr.sum()
+        for i, det in enumerate(simulated_input['event_data'].detector_names):
+            derived_parameters[f'{key}_{det}'] = arr[i]
+
+    return (compressed_data,
+            folded_sampled_params,
+            unfolding_label,
+            derived_parameters)
 
 
 def get_transform_dic(config):
@@ -134,11 +149,13 @@ def simulate_and_preprocess_samples(simulator,
             ((simulator, data_preprocessor, parameters, transform_dic)
              for _, parameters in simulation_parameters.iterrows()))
 
-    simulation_data, folded_sampled_params, unfolding_labels = zip(*results)
+    simulation_data, folded_sampled_params, unfolding_labels, derived = zip(
+        *results)
 
     return (np.array(simulation_data, np.float32),
             np.array(folded_sampled_params, np.float32),
-            np.array(unfolding_labels))
+            np.array(unfolding_labels),
+            pd.DataFrame.from_records(derived))
 
 
 class Simulator:
@@ -287,9 +304,10 @@ class DataPreprocessor:
             waveform_model=self.waveform_model,
             n_coherent_segments=self.n_coherent_segments)
 
-        coef = like.fit_coef(frequencies,
-                             ref_waveform_phase=ref_waveform_phase,
-                             ref_waveform_amp=ref_waveform_amp)
+        coef, d_h0_semicoherent, h0_h0 = like.fit_coef(
+            frequencies,
+            ref_waveform_phase=ref_waveform_phase,
+            ref_waveform_amp=ref_waveform_amp)
 
         heterodyned_data = self._get_heterodyned_data(like, coef)
 
@@ -302,7 +320,10 @@ class DataPreprocessor:
         transform_kwargs = like.waveform_model.get_transform_kwargs(
             coef, self.i_refdet)
 
-        return preprocessed_data.astype(np.float32), transform_kwargs
+        return (preprocessed_data.astype(np.float32),
+                transform_kwargs,
+                d_h0_semicoherent,
+                h0_h0)
 
     def _get_heterodyned_data(self, like, coef):
         """
@@ -427,7 +448,7 @@ def main(sim_dir, processes=None):
         i_refdet=get_i_refdet(config),
         pn_phase_tol_compression=config.PN_PHASE_TOL_COMPRESSION)
 
-    simulation_data, folded_sampled_params, unfolding_labels \
+    simulation_data, folded_sampled_params, unfolding_labels, derived \
         = simulate_and_preprocess_samples(
             simulator,
             data_preprocessor,
@@ -438,6 +459,9 @@ def main(sim_dir, processes=None):
     np.save(sim_dir/'simulation_data.npy', simulation_data)
     np.save(sim_dir/'folded_sampled_params.npy', folded_sampled_params)
     np.save(sim_dir/'unfolding_labels.npy', unfolding_labels)
+
+    cogwheel.utils.update_dataframe(simulation_parameters, derived)
+    simulation_parameters.to_feather(sim_dir/PARAMETERS_FILENAME)
 
 
 if __name__ == '__main__':
