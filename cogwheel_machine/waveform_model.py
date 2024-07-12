@@ -25,9 +25,9 @@ class PhenomenologicalWaveformGenerator:
     code. `coef` are a concatenation of `ampcoef` and `phasecoef`.
     `ampcoef` is an array of ``n_detectors + 1`` elements: the overall
     amplitude at each detector plus the cutoff frequency.
-    `phasecoeff` is an array of ``2*n_detectors + 2`` elements: the
-    overall phase at each detector, the overall time (orthoganlized to
-    phasse) at each detector, and two coefficients that encode
+    `phasecoef` is an array of ``2*n_detectors + 2`` elements: the
+    overall phase at each detector, the overall time (orthogonalized to
+    phase) at each detector, and two coefficients that encode
     information about the intrinsic parameters (orthogonalized to time,
     phase, and each other). Also `shapecoef` are defined, which are the
     same as `coef` but excluding the amplitude and phase parameters,
@@ -168,8 +168,11 @@ class PhenomenologicalWaveformGenerator:
         """Number of detectors."""
         return self.amplitude_model.n_det
 
-    def get_geometry_features(self, coef):
+    def process_coef(self, coef, i_refdet):
         """
+        Return array with the same information as `coef` but transformed
+        in a way that makes it more suitable for a neural network.
+
         Parameters
         ----------
         coef: float array of shape (`.n_coef`,)
@@ -177,21 +180,42 @@ class PhenomenologicalWaveformGenerator:
 
         Return
         ------
-        float array with summary quantities related to arrival
-        amplitude, phase and time, expected to naturally capture the
-        extrinsic parameters of the source.
+        float32 array
+            A concatenation of the following quantities:
+            * amp_rms                                         1
+            * amp_ratios                                  n_det
+            * cos(phase_differences)      n_det * (n_det-1) / 2
+            * sin(phase_differences)      n_det * (n_det-1) / 2
+            * time_differences            n_det * (n_det-1) / 2
+            * intrinsic                                       3
+            * cos(ref_det_phase)                              1
+            * sin(ref_det_phase)                              1
+            * ref_det_time                                    1
         """
         ampcoef, phasecoef = np.split(coef, [self.amplitude_model.n_ampcoef])
         amp_rms, amp_ratios \
             = self.amplitude_model.get_detector_amp_rms_and_ratios(ampcoef)
-        phase_differences, time_differences \
-            = self.phase_model.get_detector_phase_and_time_differences(
-                phasecoef)
+
+        det_phase, det_time = self.phase_model.get_detector_phases_and_times(
+            phasecoef)
+        det1, det2 = np.triu_indices(self.n_det, 1)  # All possible det pairs
+        phase_differences = det_phase[det1] - det_phase[det2]
+        time_differences = det_time[det1] - det_time[det2]
+
+        intrinsic = np.concatenate([
+            ampcoef[self.n_det:],  # Exclude detector amplitude
+            phasecoef[2*self.n_det:]  # Exclude detector phase & time
+            ])
         return np.concatenate([[amp_rms],
                                amp_ratios,
                                np.cos(phase_differences),
                                np.sin(phase_differences),
-                               time_differences])
+                               time_differences,
+                               intrinsic,
+                               [np.cos(det_phase[i_refdet]),
+                                np.sin(det_phase[i_refdet]),
+                                det_time[i_refdet]]
+                               ])
 
     def get_transform_kwargs(self, coef, i_refdet):
         """
@@ -564,25 +588,6 @@ class PhaseModel:
         return np.linalg.inv(
             self._phasecoef_to_dpncoef_mat[:self.n_det, :self.n_det]
             ) @ det_phase
-
-    def get_detector_phase_and_time_differences(self, phasecoef):
-        """
-        Return detector phase differences and time differences, which
-        should contain most of the information about sky location.
-
-        Return
-        ------
-        phase_differences: float array of length `n_det * (n_det-1) / 2`
-            Arrival phase difference in each pair of detectors.
-
-        time_differences: float array of length `n_det * (n_det-1) / 2`
-            Arrival time difference in each pair of detectors.
-        """
-        det_phase, det_time = self.get_detector_phases_and_times(phasecoef)
-        det1, det2 = np.triu_indices(self.n_det, 1)  # All possible det pairs
-        phase_differences = det_phase[det1] - det_phase[det2]
-        time_differences = det_time[det1] - det_time[det2]
-        return phase_differences, time_differences
 
     def _phasecoef_to_pncoef(self, phasecoef):
         return self._avg_pncoef + self._phasecoef_to_dpncoef_mat @ phasecoef
