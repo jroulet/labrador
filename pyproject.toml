@@ -8,6 +8,7 @@ dynamic = ["version"]
 
 dependencies = [
   "cogwheel-pe",
+  "numpy<2",
 ]
 
 maintainers = [
