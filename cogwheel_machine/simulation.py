@@ -54,12 +54,15 @@ def simulate_and_preprocess_sample(simulator, data_preprocessor,
     """
     simulated_input = simulator.generate_data_and_reference_waveform(
         parameters)
+
     preprocessed_data, transform_kwargs = data_preprocessor.preprocess_data(
         **simulated_input)
 
     folded_sampled_params, unfolding_label = _get_folded_sampled_params(
         parameters, transform_kwargs, transform_dic)
+
     return preprocessed_data, folded_sampled_params, unfolding_label
+
 
 
 def get_transform_dic(config):
@@ -347,9 +350,10 @@ class DataPreprocessor:
             waveform_model=self.waveform_model,
             n_coherent_segments=self.n_coherent_segments)
 
-        coef = like.fit_coef(frequencies,
-                             ref_waveform_phase=ref_waveform_phase,
-                             ref_waveform_amp=ref_waveform_amp)
+        coef, d_h0_semicoherent, h0_h0 = like.fit_coef(
+            frequencies,
+            ref_waveform_phase=ref_waveform_phase,
+            ref_waveform_amp=ref_waveform_amp)
 
         heterodyned_data, heterodyned_signal, fbin \
             = like.get_heterodyned_data_and_signal(
@@ -357,11 +361,18 @@ class DataPreprocessor:
 
         processed_coef = self.waveform_model.process_coef(coef, self.i_refdet)
 
-        return {'heterodyned_data': heterodyned_data,
-                'heterodyned_signal': heterodyned_signal,
-                'fbin': fbin,
-                'coef': coef,
-                'processed_coef': processed_coef}
+        preprocessed_data = {
+            'heterodyned_data': heterodyned_data,
+            'heterodyned_signal': heterodyned_signal,
+            'fbin': fbin,
+            'coef': coef,
+            'processed_coef': processed_coef,
+            'd_h0_semicoherent': d_h0_semicoherent,
+            'h0_h0': h0_h0,
+            'd_h': event_data.injection['d_h'],
+            'h_h': event_data.injection['h_h']}
+
+        return preprocessed_data
 
 def _check_sim_dir(sim_dir):
     new_filenames = ('simulation_data.npy',
