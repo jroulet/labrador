@@ -4,7 +4,7 @@ Combine simulation-based inference with gravitational-wave specific tricks such 
 
 ## Installation
 
-    conda create -n ENVIRONMENT_NAME python-lalsimulation
+    conda create -n ENVIRONMENT_NAME python-lalsimulation -c conda-forge
     conda activate ENVIRONMENT_NAME
     git clone git@github.com:jroulet/cogwheel-machine.git
     cd cogwheel-machine
