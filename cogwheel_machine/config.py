@@ -1,8 +1,5 @@
 """
 Settings for the training that need to be shared across modules.
-
-TODO: This could be automatically saved in the simulation directory?
-Maybe turn into a JSONMixin?
 """
 
 from cogwheel_machine.training_priors import NoSpinTrainingPrior
