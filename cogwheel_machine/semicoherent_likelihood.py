@@ -84,7 +84,7 @@ class SemicoherentLikelihood:
             ``n_coherent_segments=1`` corresponds to fully coherent.
 
         rb_splines: rbsplines.RelativeBinningSplines
-            Determines the frequency resolution at which (d|h) and (h|h)
+            Determines the frequency resolution at which (d|h) and ⟨h|h⟩
             are computed.
         """
         np.testing.assert_allclose(rb_splines.fbin,
@@ -148,6 +148,12 @@ class SemicoherentLikelihood:
         ------
         coef: float array
             Parameters of the best-fit phenomenological waveform.
+
+        dh_semicoherent: float array of shape (n_det,)
+            Semicoherent ⟨d|h⟩ of the best fit waveform.
+
+        h_h: float array of shape (n_det,)
+            ⟨h|h⟩ of the best fit waveform.
         """
         shapecoef_guess = self._guess_shapecoef(
             frequencies,
@@ -161,8 +167,7 @@ class SemicoherentLikelihood:
             bounds=[(1., 3.5),
                     *[(-np.inf, np.inf)] * (len(shapecoef_guess) - 1)]
             ).x
-        coef = self._fit_amp_phase(shapecoef)
-        return coef
+        return self._fit_amp_phase(shapecoef)
 
     def _guess_shapecoef(self, frequencies, *, ref_waveform_phase,
                         ref_waveform_amp):
@@ -211,6 +216,12 @@ class SemicoherentLikelihood:
             `shapecoef` but with additional entries for detector
             amplitudes and phases that maximize the likelihood.
             Can be passed to ``.waveform_model`` to produce a waveform.
+
+        dh_semicoherent: float array of shape (n_det,)
+            Semicoherent ⟨d|h⟩ of the best fit waveform.
+
+        h_h: float array of shape (n_det,)
+            ⟨h|h⟩ of the best fit waveform.
         """
         dh_d, hh_d, dh_semicoherent_d = self._get_dh_hh(shapecoef)
 
@@ -220,7 +231,9 @@ class SemicoherentLikelihood:
         coef = self.waveform_model.coef_from_shapecoef(shapecoef,
                                                        det_amp=best_amp,
                                                        det_phase=best_phase)
-        return coef
+        dh_semicoherent = np.abs(dh_semicoherent_d) * best_amp
+        h_h = hh_d * best_amp**2
+        return coef, dh_semicoherent, h_h
 
     def _get_dh_hh(self, shapecoef):
         """With fiducial amp_det=1, phase_det=0."""
@@ -252,3 +265,69 @@ class SemicoherentLikelihood:
 
         self._h_h_weights = self.rb_splines.get_summary_weights(
             self.event_data.wht_filter[:, self.event_data.fslice]**2)
+
+    def get_heterodyned_data_and_signal(self, coef, pn_phase_tol=None):
+        """
+        Parameters
+        ----------
+        coef: float array
+            Parameters of the best-fit phenomenological waveform, that
+            will be used to heterodyne the data.
+
+        pn_phase_tol: float, optional
+            Inversely proportional to the frequency resolution of the
+            heterodyned data.
+
+        Return
+        ------
+        heterodyned_data: complex array of shape (n_det, n_freq)
+            Data, heterodyned with a reference waveform defined by
+            `coef`. The frequency cutoff parameter is ignored in the
+            reference waveform, to preserve high-frequency data.
+            The amplitude is canceled out so that the average amplitude
+            of the heterodyned data is independent of the SNR of the
+            event.
+
+        heterodyned_signal: complex array of shape (n_det, n_freq)
+            Similar to `heterodyned_data` but with the noise realization
+            subtracted. Note, this information is inaccesible except in
+            simulations.
+
+        fbin: float array of shape (n_freq,)
+            Frequencies at which the heterodyned data are evaluated.
+        """
+        coef = coef.copy()
+        # Disable frequency cutoff
+        ampcoef, phasecoef = self.waveform_model.split_amp_phase_coef(coef)
+        ampcoef[-1] = np.inf
+        coef = np.concatenate([ampcoef, phasecoef])
+        h_df = self.waveform_model(
+            self.event_data.frequencies[self.event_data.fslice], coef)
+
+        amp_d = ampcoef[:self.waveform_model.n_det]
+
+        # Define coarse frequency grid:
+        if pn_phase_tol is None:
+            rb_splines = self.rb_splines
+        else:
+            rb_splines = self.rb_splines.reinstantiate(
+                fbin=None, pn_phase_tol=pn_phase_tol)
+
+        def heterodyne(event_data):
+            # Downsample and rescale so amplitude is always similar:
+            return rb_splines.get_summary_weights(
+                event_data.blued_strain[:, event_data.fslice] * h_df.conj()
+                ) / amp_d[:, np.newaxis]**2 * 1e-4  # factor made up so ~ O(1)
+
+        heterodyned_data = heterodyne(self.event_data)
+
+        event_data_noiseless = self.event_data.reinstantiate(
+            strain=np.zeros_like(self.event_data.strain), injection=None)
+        # This recomputes the waveform; if it ever becomes a bottleneck
+        # we may want to restructure the code:
+        event_data_noiseless.inject_signal(
+            self.event_data.injection['par_dic'],
+            self.event_data.injection['approximant'])
+        heterodyned_signal = heterodyne(event_data_noiseless)
+
+        return heterodyned_data, heterodyned_signal, rb_splines.fbin

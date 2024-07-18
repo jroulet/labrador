@@ -33,20 +33,36 @@ def simulate_and_preprocess_sample(simulator, data_preprocessor,
                                    parameters, transform_dic):
     """
     Generate a signal based on parameters, add a noise realization,
-    find a reference waveform and compress the data by heterodyning.
+    find a reference waveform and preprocess the data by heterodyning.
 
     Return
     ------
-    compressed_data: 1-d float32 array
-        Features.
+    preprocessed_data: dict
+        Contains the following entries
+            * heterodyned_data: complex array of shape (n_det, n_freq)
+            * heterodyned_signal: complex array of shape (n_det, n_freq)
+            * fbin: float array of shape (n_freq,)
+            * coef: 1-d float array
+            * processed_coef: 1-d float array
+
+    folded_sampled_params: float array of shape (n_params,)
+        Signal parameters expressed in the folded target space.
+
+    unfolding_label: int
+        Index of the region that the parameters belong to before
+        applying folding. Takes a value between [0, 2**n_folded_params).
     """
     simulated_input = simulator.generate_data_and_reference_waveform(
         parameters)
-    compressed_data, transform_kwargs = data_preprocessor.preprocess_data(
+
+    preprocessed_data, transform_kwargs = data_preprocessor.preprocess_data(
         **simulated_input)
+
     folded_sampled_params, unfolding_label = _get_folded_sampled_params(
         parameters, transform_kwargs, transform_dic)
-    return compressed_data, folded_sampled_params, unfolding_label
+
+    return preprocessed_data, folded_sampled_params, unfolding_label
+
 
 
 def get_transform_dic(config):
@@ -70,7 +86,11 @@ def _get_folded_sampled_params(parameters, transform_kwargs,
     Return
     ------
     folded_sampled_params: float array of shape (n_params,)
+        Signal parameters expressed in the folded target space.
+
     unfolding_label: int
+        Index of the region that the parameters belong to before
+        applying folding. Takes a value between [0, 2**n_folded_params).
     """
     transform = TargetSpaceTransform(**transform_dic, **transform_kwargs)
     sampled_params = transform.inverse_transform(
@@ -118,15 +138,31 @@ def simulate_and_preprocess_samples(simulator,
         simulation. The columns must contain all
         ``._waveform_generator.params``.
 
+    transform_dic: dict
+        Transform kwargs that are the same across simulations. See
+        ``get_transform_dic``.
+
     processes: int or None
         The number of worker processes to use. If `processes` is
         `None` then the number returned by `os.cpu_count()` is used.
 
     Return
     ------
-    simulation_data: float32 array of shape (n_simulations, n_features)
-    folded_sampled_params: float32 array of shape (n_simulations, n_params)
-    unfolding_labels: int array of shape(n_simulations,)
+    preprocessed_data: dict
+        Contains the following entries
+            * heterodyned_data: (n_sim, n_det, n_freq) complex array
+            * heterodyned_signal: (n_sim, n_det, n_freq) complex array
+            * fbin: (n_freq,) float array
+            * coef: (n_sim, n_coef) float array
+            * processed_coef: (n_sim, n_processed_coef) float array
+
+    folded_sampled_params: (n_sim, n_params) float32 array
+            Signal parameters expressed in the folded target space.
+
+    unfolding_labels: (n_sim,) int array
+        Index of the region that the parameters of each simulation
+        belong to before applying folding. Takes values between
+        [0, 2**n_folded_params).
     """
     with multiprocessing.Pool(processes) as pool:
         results = pool.starmap(
@@ -134,9 +170,18 @@ def simulate_and_preprocess_samples(simulator,
             ((simulator, data_preprocessor, parameters, transform_dic)
              for _, parameters in simulation_parameters.iterrows()))
 
-    simulation_data, folded_sampled_params, unfolding_labels = zip(*results)
+    preprocessed_data, folded_sampled_params, unfolding_labels = zip(*results)
 
-    return (np.array(simulation_data, np.float32),
+    # Turn list of dict into dict of arrays
+    preprocessed_data = {key: np.array([dic[key] for dic in preprocessed_data])
+                         for key in preprocessed_data[0]}
+
+    # fbin should be identical across simulations, keep only one:
+    fbin = preprocessed_data['fbin'][0]
+    assert np.equal(fbin, preprocessed_data['fbin']).all()
+    preprocessed_data['fbin'] = fbin
+
+    return (preprocessed_data,
             np.array(folded_sampled_params, np.float32),
             np.array(unfolding_labels))
 
@@ -270,13 +315,31 @@ class DataPreprocessor:
 
         Return
         ------
-        preprocessed_data: float array
-            Contains the real and imaginary part of the heterodyned data
-            at low frequency resolution, the parameters of the
-            phenomenological reference waveform, and a few extra
-            features that summarize the detector amplitude, phase and
-            time differences.
+        preprocessed_data: dict
+            Contains the following entries
+                * heterodyned_data
+                * heterodyned_signal
+                * fbin
+                * coef
+                * processed_coef
+
+        transform_kwargs: dict
+            Contains event-dependent keyword arguments to
+            ``transform.TargetSpaceTransform``.
         """
+        preprocessed_data = self._fit_waveform_and_heterodyne_data(
+            event_data, frequencies, ref_waveform_amp, ref_waveform_phase)
+
+        transform_kwargs = self.waveform_model.get_transform_kwargs(
+            preprocessed_data['coef'], self.i_refdet)
+
+        return preprocessed_data, transform_kwargs
+
+    def _fit_waveform_and_heterodyne_data(self,
+                                          event_data,
+                                          frequencies,
+                                          ref_waveform_amp,
+                                          ref_waveform_phase):
         # TODO generalize frequencies
         assert np.array_equal(frequencies,
                               event_data.frequencies[event_data.fslice])
@@ -287,62 +350,29 @@ class DataPreprocessor:
             waveform_model=self.waveform_model,
             n_coherent_segments=self.n_coherent_segments)
 
-        coef = like.fit_coef(frequencies,
-                             ref_waveform_phase=ref_waveform_phase,
-                             ref_waveform_amp=ref_waveform_amp)
+        coef, d_h0_semicoherent, h0_h0 = like.fit_coef(
+            frequencies,
+            ref_waveform_phase=ref_waveform_phase,
+            ref_waveform_amp=ref_waveform_amp)
 
-        heterodyned_data = self._get_heterodyned_data(like, coef)
+        heterodyned_data, heterodyned_signal, fbin \
+            = like.get_heterodyned_data_and_signal(
+                coef, self.pn_phase_tol_compression)
 
-        geometry_features = like.waveform_model.get_geometry_features(coef)
+        processed_coef = self.waveform_model.process_coef(coef, self.i_refdet)
 
-        preprocessed_data = np.concatenate([heterodyned_data.real.flat,
-                                            heterodyned_data.imag.flat,
-                                            coef,
-                                            geometry_features])
-        transform_kwargs = like.waveform_model.get_transform_kwargs(
-            coef, self.i_refdet)
+        preprocessed_data = {
+            'heterodyned_data': heterodyned_data,
+            'heterodyned_signal': heterodyned_signal,
+            'fbin': fbin,
+            'coef': coef,
+            'processed_coef': processed_coef,
+            'd_h0_semicoherent': d_h0_semicoherent,
+            'h0_h0': h0_h0,
+            'd_h': event_data.injection['d_h'],
+            'h_h': event_data.injection['h_h']}
 
-        return preprocessed_data.astype(np.float32), transform_kwargs
-
-    def _get_heterodyned_data(self, like, coef):
-        """
-        Parameters
-        ----------
-        like: SemicoherentLikelihood
-
-        coef: float array
-            Parameters of the best-fit phenomenological waveform, that
-            will be used to heterodyne the data.
-
-        Return
-        ------
-        heterodyned_data: complex array of shape (n_det, n_freq)
-            Data, heterodyned with a reference waveform defined by
-            `coef`. The frequency cutoff parameter is ignored in the
-            reference waveform, to preserve high-frequency data.
-            The amplitude is canceled out so that the average amplitude
-            of the heterodyned data is independent of the SNR of the
-            event.
-        """
-        # Disable frequency cutoff
-        ampcoef, phasecoef = like.waveform_model.split_amp_phase_coef(coef)
-        ampcoef[-1] = np.inf
-        coef = np.concatenate([ampcoef, phasecoef])
-        h_df = like.waveform_model(
-            like.event_data.frequencies[like.event_data.fslice], coef)
-
-        amp_d = ampcoef[:like.waveform_model.n_det]
-
-        # Downsample and rescale so that the amplitude is always similar.
-        rb_splines = like.rb_splines.reinstantiate(
-            fbin=None, pn_phase_tol=self.pn_phase_tol_compression)
-        heterodyned_data = rb_splines.get_summary_weights(
-            like.event_data.blued_strain[:, like.event_data.fslice]
-            * h_df.conj()
-            ) / amp_d[:, np.newaxis]**2 * 1e-4  # factor made up so ~ O(1)
-
-        return heterodyned_data
-
+        return preprocessed_data
 
 def _check_sim_dir(sim_dir):
     new_filenames = ('simulation_data.npy',
@@ -426,7 +456,7 @@ def main(sim_dir, processes=None):
         i_refdet=get_i_refdet(config),
         pn_phase_tol_compression=config.PN_PHASE_TOL_COMPRESSION)
 
-    simulation_data, folded_sampled_params, unfolding_labels \
+    preprocessed_data, folded_sampled_params, unfolding_labels \
         = simulate_and_preprocess_samples(
             simulator,
             data_preprocessor,
@@ -434,7 +464,7 @@ def main(sim_dir, processes=None):
             transform_dic=get_transform_dic(config),
             processes=processes)
 
-    np.save(sim_dir/'simulation_data.npy', simulation_data)
+    np.savez(sim_dir/'preprocessed_data.npz', **preprocessed_data)
     np.save(sim_dir/'folded_sampled_params.npy', folded_sampled_params)
     np.save(sim_dir/'unfolding_labels.npy', unfolding_labels)
 
