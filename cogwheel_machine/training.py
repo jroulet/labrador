@@ -16,7 +16,7 @@ def main(sim_dir):
     simulation_parameters = np.load(
         sim_dir/'folded_sampled_params.npy')
 
-    simulation_data = np.load(sim_dir/'simulation_data.npy')
+    simulation_data = np.load(sim_dir/'compressed_data.npy')
 
     theta = torch.as_tensor(simulation_parameters, dtype=torch.float32)
     x = torch.as_tensor(simulation_data, dtype=torch.float32)
