@@ -16,8 +16,8 @@ PRIOR_KWARGS = {
     'detector_pair': 'HL',
     'tgps': TGPS,
     'ref_det_name': 'L',
-    'f_avg': 50.,
-    'f_ref': 50.,
+    'f_avg': 100.,
+    'f_ref': 100.,
     'd_hat_max': 400
 }
 

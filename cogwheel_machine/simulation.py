@@ -255,6 +255,7 @@ class DataPreprocessor:
     def __init__(self,
                  waveform_model,
                  i_refdet,
+                 f_ref,
                  n_coherent_segments=8,
                  pn_phase_tol_compression=1.0):
         """
@@ -280,6 +281,7 @@ class DataPreprocessor:
         self.n_coherent_segments = n_coherent_segments
         self.pn_phase_tol_compression = pn_phase_tol_compression
         self.i_refdet = i_refdet
+        self.f_ref = f_ref
 
     def preprocess_data(self,
                         event_data,
@@ -331,7 +333,7 @@ class DataPreprocessor:
             event_data, frequencies, ref_waveform_amp, ref_waveform_phase)
 
         transform_kwargs = self.waveform_model.get_transform_kwargs(
-            preprocessed_data['coef'], self.i_refdet)
+            preprocessed_data['coef'], self.i_refdet, self.f_ref)
 
         return preprocessed_data, transform_kwargs
 
@@ -438,6 +440,7 @@ def submit_condor(sim_dir,
 
 
 def main(sim_dir, processes=None):
+    """Generate and preprocess training data."""
     sim_dir = Path(sim_dir)
     _check_sim_dir(sim_dir)
 
@@ -454,6 +457,7 @@ def main(sim_dir, processes=None):
     data_preprocessor = DataPreprocessor(
         waveform_model,
         i_refdet=get_i_refdet(config),
+        f_ref=config.PRIOR_KWARGS['f_ref'],
         pn_phase_tol_compression=config.PN_PHASE_TOL_COMPRESSION)
 
     preprocessed_data, folded_sampled_params, unfolding_labels \

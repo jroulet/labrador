@@ -217,10 +217,10 @@ class PhenomenologicalWaveformGenerator:
                                 det_time[i_refdet]]
                                ])
 
-    def get_transform_kwargs(self, coef, i_refdet):
+    def get_transform_kwargs(self, coef, i_refdet, f_ref):
         """
         Return dictionary with the following kwargs, useful to
-        instatiate the coordinate transformation:
+        instantiate the coordinate transformation:
             * mchirp_guess
             * phase_refdet_0
             * amp_ref_det
@@ -230,10 +230,11 @@ class PhenomenologicalWaveformGenerator:
         mchirp_guess = self.phase_model.guess_mchirp(phasecoef)
         amp_ref_det = ampcoef[i_refdet]
 
-        phases, times = self.phase_model.get_detector_phases_and_times(
-            phasecoef)
-        phase_refdet_0 = phases[i_refdet]
+        _, times = self.phase_model.get_detector_phases_and_times(phasecoef)
         t0_refdet = times[i_refdet]
+
+        phase_refdet_0 = self.phase_model(
+            np.array([f_ref]), phasecoef)[i_refdet, 0]
 
         return {'mchirp_guess': mchirp_guess,
                 'phase_refdet_0': phase_refdet_0,
