@@ -18,8 +18,13 @@ def main(sim_dir):
 
     simulation_data = np.load(sim_dir/'compressed_data.npy')
 
-    theta = torch.as_tensor(simulation_parameters, dtype=torch.float32)
-    x = torch.as_tensor(simulation_data, dtype=torch.float32)
+    mask = np.load(sim_dir/'mask.npy')
+
+    simulation_parameters_masked = simulation_parameters[mask]
+    simulation_data_masked = simulation_data[mask]
+
+    theta = torch.as_tensor(simulation_parameters_masked, dtype=torch.float32)
+    x = torch.as_tensor(simulation_data_masked, dtype=torch.float32)
 
     neural_posterior = sbi.utils.posterior_nn(model="nsf", hidden_features=256)
 
