@@ -37,3 +37,7 @@ N_SIMULATIONS = 100  # Increase for real-life usage!
 PRIOR_CLASS = NoSpinTrainingPrior
 
 APPROXIMANT = 'IMRPhenomD'
+
+# Semicoherent SNR of the reference waveform, exclude simulations
+# outside this range:
+SNR0_RANGE = 8.0, 50.0
