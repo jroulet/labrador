@@ -16,8 +16,8 @@ PRIOR_KWARGS = {
     'detector_pair': 'HL',
     'tgps': TGPS,
     'ref_det_name': 'L',
-    'f_avg': 50.,
-    'f_ref': 50.,
+    'f_avg': 100.,
+    'f_ref': 100.,
     'd_hat_max': 400
 }
 
@@ -37,3 +37,7 @@ N_SIMULATIONS = 100  # Increase for real-life usage!
 PRIOR_CLASS = NoSpinTrainingPrior
 
 APPROXIMANT = 'IMRPhenomD'
+
+# Semicoherent SNR of the reference waveform, exclude simulations
+# outside this range:
+SNR0_RANGE = 8.0, 50.0

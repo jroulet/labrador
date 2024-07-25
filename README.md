@@ -4,7 +4,7 @@ Combine simulation-based inference with gravitational-wave specific tricks such 
 
 ## Installation
 
-    conda create -n ENVIRONMENT_NAME python-lalsimulation -c conda-forge
+    conda create -n ENVIRONMENT_NAME cogwheel-pe -c conda-forge
     conda activate ENVIRONMENT_NAME
     git clone git@github.com:jroulet/cogwheel-machine.git
     cd cogwheel-machine
@@ -19,9 +19,11 @@ For now this code has no other dependencies, although soon we will require ML li
 There are several lines of development that can happen more or less in parallel:
 
 * Compressing data further e.g. with autoencoders (Joshua, Jay, Matias)
-* Interfacing with SBI to predict the folded posterior (Marco)
 * Training a classifier to unfold the posterior (Lucy)
 * Encoding PSD information
+* Send coordinate bounds to infinity
+* Implement SNR cuts
+* Use weighted samples to compute the loss function
 
 ## Usage
 
