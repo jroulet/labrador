@@ -26,7 +26,7 @@ def main(sim_dir):
     theta = torch.as_tensor(simulation_parameters_masked, dtype=torch.float32)
     x = torch.as_tensor(simulation_data_masked, dtype=torch.float32)
 
-    neural_posterior = sbi.utils.posterior_nn(model="nsf", hidden_features=256, num_transforms=16)
+    neural_posterior = sbi.utils.posterior_nn(model="nsf", hidden_features=256)
 
     rundir = cogwheel.utils.get_rundir(sim_dir)
 
@@ -37,7 +37,7 @@ def main(sim_dir):
     inference = inference.append_simulations(theta, x)
 
     density_estimator = inference.train(
-        training_batch_size=4096, stop_after_epochs=50,
+        training_batch_size=4096, stop_after_epochs=100,
         learning_rate=0.001, show_train_summary=True)
 
     posterior = inference.build_posterior(density_estimator)
