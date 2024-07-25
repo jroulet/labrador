@@ -37,7 +37,7 @@ def main(sim_dir):
     inference = inference.append_simulations(theta, x)
 
     density_estimator = inference.train(
-        training_batch_size=4096, stop_after_epochs=50,
+        training_batch_size=8192, stop_after_epochs=50,
         learning_rate=0.001, show_train_summary=True)
 
     posterior = inference.build_posterior(density_estimator)
