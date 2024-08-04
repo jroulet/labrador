@@ -221,13 +221,13 @@ class PhenomenologicalWaveformGenerator:
         """
         Return dictionary with the following kwargs, useful to
         instantiate the coordinate transformation:
-            * mchirp_guess
+            * coef0pn
             * phase_refdet_0
             * amp_ref_det
             * t0_refdet
         """
         ampcoef, phasecoef = self.split_amp_phase_coef(coef)
-        mchirp_guess = self.phase_model.guess_mchirp(phasecoef)
+        coef0pn = self.phase_model.get_coef0pn(phasecoef)
         amp_ref_det = ampcoef[i_refdet]
 
         _, times = self.phase_model.get_detector_phases_and_times(phasecoef)
@@ -236,7 +236,7 @@ class PhenomenologicalWaveformGenerator:
         phase_refdet_0 = self.phase_model(
             np.array([f_ref]), phasecoef)[i_refdet, 0]
 
-        return {'mchirp_guess': mchirp_guess,
+        return {'coef0pn': coef0pn,
                 'phase_refdet_0': phase_refdet_0,
                 'amp_ref_det': amp_ref_det,
                 't0_refdet': t0_refdet}
@@ -392,7 +392,6 @@ class PhaseModel:
     #     ?: optional dimensions
 
     _int_pn_exponents = np.array([-5/3, -1, -2/3])
-    _max_mchirp_guess = 50.0
 
     @classmethod
     def from_scratch(cls,
@@ -545,18 +544,14 @@ class PhaseModel:
         times = -pncoef[self.n_det : 2*self.n_det] / (2*np.pi)
         return phases, times
 
-    def guess_mchirp(self, phasecoef):
-        """Return estimate of chirp mass (Msun)."""
+    def get_coef0pn(self, phasecoef):
+        """
+        Return estimate of the 0PN coefficient.
+
+        Multiply this by (f/Hz)^{-5/3} to get the phase evolution.
+        """
         pncoef = self._phasecoef_to_pncoef(phasecoef)
-        coef_0pn = pncoef[2 * self.n_det]
-
-        if coef_0pn > 0:
-            # Due to noise, the best fit `phasecoef` may be unphysical
-            # i.e. would produce `mchirp**(-5/3) < 0`
-            return self._max_mchirp_guess
-
-        mchirp = (-128/3*coef_0pn) ** (-3/5) / (np.pi*lal.MTSUN_SI)
-        return min(mchirp, self._max_mchirp_guess)
+        return pncoef[2 * self.n_det]
 
     def guess_phasecoef(self, phase):
         """
