@@ -66,7 +66,7 @@ def get_masked_preprocessed_data(sim_dir):
 
     Returns
     -------
-    dict: keys match those of the `compressed_data` structured array.
+    dict: keys match those of the `preprocessed_data` structured array.
     """
     sim_dir = Path(sim_dir)
 

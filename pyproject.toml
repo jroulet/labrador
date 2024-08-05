@@ -33,6 +33,7 @@ good-names = ["i", "j", "k", "ex", "Run", "_",
 ignored-modules = [
   "cogwheel",
   "lal",
+  "pandas",
 ]
 
 [tool.pylint.format]

@@ -33,7 +33,7 @@ EVENT_DATA_KWARGS = {
 
 PN_PHASE_TOL_COMPRESSION = 1.0
 
-N_SIMULATIONS = 100  # Increase for real-life usage!
+N_SIMULATIONS = 10**2  # Increase for real-life usage!
 
 PRIOR_CLASS = NoSpinTrainingPrior
 
