@@ -2,8 +2,11 @@ import argparse
 from pathlib import Path
 
 import cogwheel.utils
+from cogwheel.validation import load_config
 
-from .utils import load_config, PARAMETERS_FILENAME
+
+CONFIG_FILENAME = 'config.py'  # TODO: Perhaps should go elsewhere
+PARAMETERS_FILENAME = 'simulation_parameters.feather'
 
 
 def submit_condor(sim_dir,
@@ -61,7 +64,7 @@ def main(sim_dir):
     sim_dir = Path(sim_dir)
     _check_sim_dir(sim_dir)
 
-    config = load_config(sim_dir)
+    config = load_config(sim_dir/CONFIG_FILENAME)
 
     prior = config.PRIOR_CLASS(**config.PRIOR_KWARGS)
     simulation_parameters = prior.generate_random_samples(config.N_SIMULATIONS)
@@ -73,6 +76,10 @@ def _check_sim_dir(sim_dir):
     parameters_file = sim_dir/PARAMETERS_FILENAME
     if parameters_file.exists():
         raise FileExistsError(f'{parameters_file} already exists!')
+
+    config_file = sim_dir/CONFIG_FILENAME
+    if not config_file.exists():
+        raise FileNotFoundError(f'Missing {config_file}')
 
 
 if __name__ == '__main__':
