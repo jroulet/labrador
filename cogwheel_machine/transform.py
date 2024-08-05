@@ -1,9 +1,11 @@
 """
 Define ``TargetSpaceTransform``, a class that implements a
-coordinate transformation that give a first approximation to the
+coordinate transformation that gives a first approximation to the
 normalizing flow.
 """
 import numpy as np
+
+import lal
 
 from cogwheel.prior import Prior, CombinedPrior
 from cogwheel import gw_utils, gw_prior
@@ -27,36 +29,49 @@ class MassesTransform(TransformMixin, Prior):
     Coordinate transformation for the masses, in which the posterior
     should be almost independent of the data.
 
-    This is achieved by having a guess of the chirp mass (based on
-    the reference waveform) and also reparametrizing the chirp mass
-    so that the uncertainties are homogeneous.
-    The coordinate associated to chirp-mass is
-    `diff_reparametrized_mchirp`, which is the difference between the
-    reparametrized chirp mass and the reparametrized chirp mass guess.
-    The posterior for this should resemble a Gaussian centered at 0.
+    This is achieved by reparametrizing the chirp mass in terms of the
+    0-pN coefficient, so that the uncertainties are homogeneous.
+    The 0-pN coefficient $-3 / 128 (pi mchirp Hz)^{-5/3}$ has a maximum
+    value of 0, attained for high mchirp (for which the pN is not valid
+    in the detector band). Thus we regularize it by smoothly switching
+    to a linear relation above `mchirp_break`.
+    The coordinate associated to chirp-mass is `diff_regularized0pn`,
+    which is the difference between the regularized 0pN coefficient and
+    our guess for it from the reference waveform.
+    To the extent that the 0pN term is a good description of the
+    waveform, the posterior for this quantity should resemble a Gaussian
+    centered at 0.
     """
-    range_dic = {'diff_reparametrized_mchirp': (np.nan, np.nan),
-                 'lnq': (np.nan, np.nan)}
+    range_dic = {'diff_regularized0pn': (-np.inf, np.inf),
+                 'lnq': (-np.inf, 0.0)}
     standard_params = ['m1', 'm2']
 
-    def __init__(self, mchirp_guess, **kwargs):
+    def __init__(self, coef0pn, mchirp_break=60.0, **kwargs):
         """
         Parameters
         ----------
-        mchirp_guess: float
-            Estimate of the chirp-mass (Msun).
+        coef0pn: float
+            Estimate of the 0-pN coefficient from the reference
+            waveform.
+
+        mchirp_break: float
+            Chirp mass (Msun) at which to shift from the post-Newtonian
+            regime to a linear regime for the chirp-mass
+            reparametrization.
+
+        See also
+        --------
+        waveform_model.PhenomenologicalWaveformGenerator.get_transform_kwargs
+        waveform_model.PhaseModel.get_coef0pn
         """
         super().__init__(**kwargs)
-        self.mchirp_guess = mchirp_guess
-        self._mchirp_reparametrizer = gw_utils._ChirpMassRangeEstimator()
-        self._reparametrized_mchirp_guess = self._reparametrized_mchirp(
-            mchirp_guess)
+        self.mchirp_break = mchirp_break
+        self.coef0pn = coef0pn
 
-    def transform(self, diff_reparametrized_mchirp, lnq):
+    def transform(self, diff_regularized0pn, lnq):
         """``sampled_params`` to ``inverse_params``."""
-        reparametrized_mchirp = (self._reparametrized_mchirp_guess
-                                 + diff_reparametrized_mchirp)
-        mchirp = self._mchirp(reparametrized_mchirp)
+        regularized0pn = self.coef0pn + diff_regularized0pn
+        mchirp = self._mchirp(regularized0pn)
 
         q = np.exp(-np.abs(lnq))
         m1 = mchirp * (1 + q)**.2 / q**.6
@@ -68,21 +83,44 @@ class MassesTransform(TransformMixin, Prior):
         q = m2 / m1
         mchirp = m1 * q**.6 / (1 + q)**.2
 
-        reparametrized_mchirp = self._reparametrized_mchirp(mchirp)
-        diff_reparametrized_mchirp = (reparametrized_mchirp
-                                      - self._reparametrized_mchirp_guess)
-        return {'diff_reparametrized_mchirp': diff_reparametrized_mchirp,
+        regularized0pn = self._regularized0pn(mchirp)
+        diff_regularized0pn = regularized0pn - self.coef0pn
+        return {'diff_regularized0pn': diff_regularized0pn,
                 'lnq': np.log(q)}
-
-    def _reparametrized_mchirp(self, mchirp):
-        return self._mchirp_reparametrizer._x_of_mchirp(mchirp)
-
-    def _mchirp(self, reparametrized_mchirp):
-        return self._mchirp_reparametrizer._mchirp_of_x(reparametrized_mchirp)
 
     def get_init_dict(self):
         """Keyword arguments to reproduce the class instance."""
-        return {'mchirp_guess': self.mchirp_guess}
+        return {'coef0pn': self.coef0pn,
+                'mchirp_break': self.mchirp_break}
+
+    def _regularized0pn(self, mchirp):
+        mchirp = np.asarray(mchirp)  # piecewise needs arrays
+        return np.piecewise(mchirp,
+                            [mchirp < self.mchirp_break],
+                            [self._regularized0pn_low,
+                             self._regularized0pn_high])[()]
+
+    def _regularized0pn_low(self, mchirp):
+        return -3 / 128 * (np.pi*mchirp*lal.MTSUN_SI)**(-5/3)
+
+    def _regularized0pn_high(self, mchirp):
+        return (1/128 * (np.pi*self.mchirp_break*lal.MTSUN_SI)**(-5/3)
+                * (5*mchirp / self.mchirp_break - 8))
+
+    def _mchirp(self, regularized0pn):
+        regularized0pn = np.asarray(regularized0pn)  # piecewise needs arrays
+        boundary = self.mchirp_to_regularized0pn(self.mchirp_break)
+        return np.piecewise(regularized0pn,
+                            [regularized0pn < boundary],
+                            [self._mchirp_low, self._mchirp_high])[()]
+
+    def _mchirp_low(self, regularized0pn):
+        return (-128/3*regularized0pn) ** (-3/5) / (np.pi*lal.MTSUN_SI)
+
+    def _mchirp_high(self, regularized0pn):
+        return self.mchirp_break / 5 * (
+            128*(np.pi*lal.MTSUN_SI*self.mchirp_break)**(5/3)*regularized0pn
+            + 8)
 
 
 class PhaseTransform(TransformMixin, gw_prior.UniformPhasePrior):
@@ -181,7 +219,7 @@ class DistanceTransform(TransformMixin, Prior):
     a fiducial d_hat.
     """
     standard_params = ['d_luminosity']
-    range_dic = {'relative_dhat': (np.nan, np.nan)}
+    range_dic = {'relative_dhat': (0.0, np.inf)}
     conditioned_on = ['ra', 'dec', 'psi', 'iota', 'm1', 'm2']
 
     def __init__(self, *, tgps, ref_det_name, amp_ref_det, **kwargs):
@@ -200,7 +238,8 @@ class DistanceTransform(TransformMixin, Prior):
             detector (units don't matter as long as they are
             consistent across training and production).
         """
-        super().__init__(tgps=tgps, ref_det_name=ref_det_name, **kwargs)
+        super().__init__(tgps=tgps, ref_det_name=ref_det_name,
+                         amp_ref_det=amp_ref_det, **kwargs)
         self.amp_ref_det = amp_ref_det
 
         self._distance_transformer = gw_prior.UniformLuminosityVolumePrior(
