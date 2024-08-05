@@ -401,7 +401,7 @@ def submit_condor(sim_dir,
                   request_disk='1G',
                   **submit_kwargs):
     """
-    Submit an HTCondor job to generate simulation parameters.
+    Submit an HTCondor job to simulate training data.
 
     This method generates 'simulation.{sub,sh,out,err,log}',
     files, the user should provide any instructions for the submit file

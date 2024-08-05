@@ -6,8 +6,7 @@ normalizing flow.
 import numpy as np
 
 from cogwheel.prior import Prior, CombinedPrior
-from cogwheel import gw_utils
-from cogwheel import gw_prior
+from cogwheel import gw_utils, gw_prior
 
 
 class TransformMixin:
