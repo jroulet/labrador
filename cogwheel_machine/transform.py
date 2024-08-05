@@ -8,7 +8,7 @@ import numpy as np
 import lal
 
 from cogwheel.prior import Prior, CombinedPrior
-from cogwheel import gw_prior
+from cogwheel import gw_utils, gw_prior
 
 
 class TransformMixin:
