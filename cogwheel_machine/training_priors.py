@@ -75,6 +75,16 @@ class UniformDHatPrior(UniformPriorMixin, UniformLuminosityVolumePrior):
     Flat in `d_hat` (https://arxiv.org/pdf/2207.03508#equation.3.18).
     """
 
+class PhasePrior(UniformPriorMixin, IdentityTransformMixin, Prior):
+    """Uniform prior for the phase. No change of coordinates."""
+    # The reason why this class is used here instead of
+    # cogwheel.gw_prior.UniformPhasePrior is that UniformPhasePrior
+    # would default to `phase_refdet_0 = 0` during training, and a
+    # different phase_refdet_0 during post-processing, giving
+    # conflicting values for phi_ref_hat. In this class there is no
+    # phi_ref_hat.
+    range_dic = {'phi_ref': (0, 2*np.pi)}
+
 
 # ----------------------------------------------------------------------
 # Combine the modular priors:
@@ -87,7 +97,7 @@ class NoSpinTrainingPrior(RegisteredPriorMixin,
                      IsotropicSkyLocationPrior,
                      UniformTimePrior,
                      UniformPolarizationPrior,
-                     UniformPhasePrior,
+                     PhasePrior,
                      UniformDHatPrior,
                      ZeroAlignedSpinsPrior,
                      ZeroInplaneSpinsPrior,
