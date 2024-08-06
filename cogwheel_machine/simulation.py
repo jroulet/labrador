@@ -13,6 +13,7 @@ DataPreprocessor:
 """
 import argparse
 import multiprocessing
+import os
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -404,9 +405,8 @@ def submit_condor(sim_dir,
     """
     Submit an HTCondor job to simulate training data.
 
-    This method generates 'simulation.{sub,sh,out,err,log}',
-    files, the user should provide any instructions for the submit file
-    as `**submit_kwargs`.
+    This will generate the following files:
+        {submission_scripts}/simulation.{sub,sh,out,err,log}
 
     Parameters
     ----------
@@ -424,13 +424,15 @@ def submit_condor(sim_dir,
     """
     sim_dir = Path(sim_dir).resolve()
     _check_sim_dir(sim_dir)
+    scripts_dir = sim_dir/'submission_scripts'
+    os.makedirs(scripts_dir, exist_ok=True)
 
     submit_kwargs = {
-        'submit_path': sim_dir/'simulation.sub',
-        'executable': sim_dir/'simulation.sh',
-        'output': sim_dir/'simulation.out',
-        'error': sim_dir/'simulation.err',
-        'log': sim_dir/'simulation.log',
+        'submit_path': scripts_dir/'simulation.sub',
+        'executable': scripts_dir/'simulation.sh',
+        'output': scripts_dir/'simulation.out',
+        'error': scripts_dir/'simulation.err',
+        'log': scripts_dir/'simulation.log',
         'args': f'{sim_dir} --processes {request_cpus}',
         'request_cpus': request_cpus,
         'request_memory': request_memory,
