@@ -22,6 +22,7 @@ def create_mask(sim_dir):
         Path to simulation directory.
     """
     sim_dir = Path(sim_dir)
+    utils.check_version(sim_dir)
 
     config = utils.load_config(sim_dir)
     summary = utils.get_summary(sim_dir, apply_mask=False)
@@ -43,6 +44,7 @@ def simple_compression(sim_dir):
     It is a float32 array of shape (n_simulations, n_features).
     """
     sim_dir = Path(sim_dir)
+    utils.check_version(sim_dir)
 
     preprocessed_data = np.load(sim_dir/utils.PREPROCESSED_DATA_FILENAME)
 

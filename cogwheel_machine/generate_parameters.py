@@ -74,6 +74,8 @@ def _check_sim_dir(sim_dir):
     if parameters_file.exists():
         raise FileExistsError(f'{parameters_file} already exists!')
 
+    utils.write_version(sim_dir)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(

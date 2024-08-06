@@ -1,11 +1,13 @@
 """Utility functions and constants."""
 
+import logging
 from pathlib import Path
 import numpy as np
 import pandas as pd
 
 import cogwheel.validation
 
+from cogwheel_machine import __version__
 
 CONFIG_FILENAME = 'config.py'
 PARAMETERS_FILENAME = 'simulation_parameters.feather'
@@ -14,6 +16,7 @@ FOLDED_SAMPLED_PARAMS_FILENAME = 'folded_sampled_params.npy'
 UNFOLDING_LABELS_FILENAME = 'unfolding_labels.npy'
 MASK_FILENAME = 'mask.npy'
 COMPRESSED_DATA_FILENAME = 'compressed_data.npy'
+VERSION_FILENAME = 'version.txt'
 
 
 def load_config(sim_dir):
@@ -80,3 +83,28 @@ def get_masked_preprocessed_data(sim_dir):
             preprocessed_data[key] = arr[mask]
 
     return preprocessed_data
+
+
+def check_version(sim_dir):
+    """
+    Check that the version of cogwheel_machine recorded in `sim_dir`
+    matches the current one.
+
+    Issue a warning if not. Raise ``FileNotFoundError`` if `sim_dir`
+    does not contain a version file.
+    """
+    sim_dir = Path(sim_dir)
+    with open(sim_dir/VERSION_FILENAME, encoding='utf-8') as file:
+        version = file.read()
+
+    if version != __version__:
+        logging.warning(f'{sim_dir} was populated using a different version of'
+                        f' `cogwheel_machine`, {version!r}. '
+                        f'The current version is {__version__!r}.')
+
+
+def write_version(sim_dir):
+    """Write the version of cogwheel_machine to a file in `sim_dir`."""
+    sim_dir = Path(sim_dir)
+    with open(sim_dir/VERSION_FILENAME, 'w', encoding='utf-8') as file:
+        file.write(__version__)
