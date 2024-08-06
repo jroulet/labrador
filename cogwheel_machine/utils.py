@@ -75,9 +75,10 @@ def get_summary(sim_dir, apply_mask=True):
     summary = pd.read_feather(sim_dir/PARAMETERS_FILENAME)
 
     # Add SNR
-    preprocessed_data = np.load(sim_dir/PREPROCESSED_DATA_FILENAME)
-    for key in 'd_h', 'h_h', 'd_h0_semicoherent', 'h0_h0':
-        summary[key] = preprocessed_data[key].sum(axis=1)
+    with np.load(sim_dir/PREPROCESSED_DATA_FILENAME) as preprocessed_data:
+        for key in 'd_h', 'h_h', 'd_h0_semicoherent', 'h0_h0':
+            summary[key] = preprocessed_data[key].sum(axis=1)
+
     summary['snr'] = summary['d_h'] / np.sqrt(summary['h_h'])
     summary['snr0'] = summary['d_h0_semicoherent'] / np.sqrt(summary['h0_h0'])
 
@@ -97,7 +98,7 @@ def get_summary(sim_dir, apply_mask=True):
     return summary
 
 
-def get_masked_preprocessed_data(sim_dir):
+def get_preprocessed_data(sim_dir, apply_mask=True):
     """
     Load preprocessed_data and apply the mask to it.
 
@@ -112,7 +113,10 @@ def get_masked_preprocessed_data(sim_dir):
     """
     sim_dir = Path(sim_dir)
 
-    mask = np.load(sim_dir/MASK_FILENAME)
+    if apply_mask:
+        mask = np.load(sim_dir/MASK_FILENAME)
+    else:
+        mask = slice(None)
 
     preprocessed_data = {}
     for key, arr in np.load(sim_dir/PREPROCESSED_DATA_FILENAME).items():

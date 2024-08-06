@@ -31,7 +31,7 @@ EVENT_DATA_KWARGS = {
     'tcoarse': 0.,
     }
 
-PN_PHASE_TOL_COMPRESSION = 1.0
+PN_PHASE_TOL_COMPRESSION = 0.1
 
 N_SIMULATIONS = 10**2  # Increase for real-life usage!
 
