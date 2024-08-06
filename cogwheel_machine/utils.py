@@ -1,6 +1,8 @@
 """Utility functions and constants."""
 
 import logging
+import os
+import shutil
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -8,6 +10,8 @@ import pandas as pd
 import cogwheel.validation
 
 from cogwheel_machine import __version__
+from cogwheel_machine import config as example_config
+
 
 CONFIG_FILENAME = 'config.py'
 PARAMETERS_FILENAME = 'simulation_parameters.feather'
@@ -22,6 +26,41 @@ VERSION_FILENAME = 'version.txt'
 def load_config(sim_dir):
     """Return module `config` from a simulations directory."""
     return cogwheel.validation.load_config(sim_dir/CONFIG_FILENAME)
+
+
+def setup_sim_dir(location, prefix='set_'):
+    """
+    Set up a simulations directory with an example config.py file.
+
+
+    Parameters
+    ----------
+    location: os.PathLike
+        Path in which to create the simulations directory ``sim_dir``.
+
+    prefix: str
+        ``sim_dir`` will be named as the prefix follwed by a number, to
+        make it unique.
+
+    Returns
+    -------
+    sim_dir: os.PathLike
+        Path to the newly created simulations directory.
+    """
+    # Choose a unique name for the simulations directory
+    location = Path(location)
+    counter = 0
+    while (sim_dir := location/f'{prefix}{counter}').exists():
+        counter += 1
+
+    os.makedirs(sim_dir)
+    source = Path(example_config.__file__)
+    destination = (sim_dir/CONFIG_FILENAME).resolve()
+    shutil.copyfile(source, destination)
+
+    print(f'Created a new config file at {destination}. Edit it as needed.')
+
+    return sim_dir
 
 
 def get_summary(sim_dir, apply_mask=True):
