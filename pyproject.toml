@@ -16,8 +16,15 @@ maintainers = [
 ]
 readme = "README.md"
 
-[tool.setuptools.packages]
-find = {}
+[project.urls]
+"Source" = "https://github.com/jroulet/cogwheel-machine"
+
+[tool.setuptools.packages.find]
+namespaces = false
+
+[tool.setuptools_scm]
+local_scheme = "no-local-version"
+version_scheme = "post-release"
 
 [tool.pylint.basic]
 good-names = ["i", "j", "k", "ex", "Run", "_",
@@ -26,6 +33,7 @@ good-names = ["i", "j", "k", "ex", "Run", "_",
 ignored-modules = [
   "cogwheel",
   "lal",
+  "pandas",
 ]
 
 [tool.pylint.format]

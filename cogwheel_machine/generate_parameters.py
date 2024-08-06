@@ -3,7 +3,7 @@ from pathlib import Path
 
 import cogwheel.utils
 
-from .utils import load_config, PARAMETERS_FILENAME
+from . import utils
 
 
 def submit_condor(sim_dir,
@@ -61,18 +61,20 @@ def main(sim_dir):
     sim_dir = Path(sim_dir)
     _check_sim_dir(sim_dir)
 
-    config = load_config(sim_dir)
+    config = utils.load_config(sim_dir)
 
     prior = config.PRIOR_CLASS(**config.PRIOR_KWARGS)
     simulation_parameters = prior.generate_random_samples(config.N_SIMULATIONS)
 
-    simulation_parameters.to_feather(sim_dir/PARAMETERS_FILENAME)
+    simulation_parameters.to_feather(sim_dir/utils.PARAMETERS_FILENAME)
 
 
 def _check_sim_dir(sim_dir):
-    parameters_file = sim_dir/PARAMETERS_FILENAME
+    parameters_file = sim_dir/utils.PARAMETERS_FILENAME
     if parameters_file.exists():
         raise FileExistsError(f'{parameters_file} already exists!')
+
+    utils.write_version(sim_dir)
 
 
 if __name__ == '__main__':

@@ -1,7 +1,12 @@
 """Prior classes intended to generate simulation parameters."""
 import numpy as np
 
-from cogwheel.prior import Prior, UniformPriorMixin, FixedPrior
+from cogwheel.prior import (
+    Prior,
+    UniformPriorMixin,
+    IdentityTransformMixin,
+    FixedPrior)
+
 from cogwheel.gw_prior.combined import (
     UniformLuminosityVolumePrior,
     RegisteredPriorMixin,
@@ -10,7 +15,6 @@ from cogwheel.gw_prior.combined import (
     IsotropicSkyLocationPrior,
     UniformTimePrior,
     UniformPolarizationPrior,
-    UniformPhasePrior,
     ZeroInplaneSpinsPrior,
     ZeroTidalDeformabilityPrior,
     FixedReferenceFrequencyPrior)
