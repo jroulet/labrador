@@ -100,30 +100,34 @@ def get_summary(sim_dir, apply_mask=True):
 
 def get_preprocessed_data(sim_dir, apply_mask=True):
     """
-    Load preprocessed_data and apply the mask to it.
+    Load ``preprocessed_data`` and apply the ``mask`` to it.
 
     Parameters
     ----------
     sim_dir: os.PathLike
         Directory with training data.
 
+    apply_mask: bool
+        Whether to apply the mask in {sim_dir}/{MASK_FILENAME} to the
+        loaded arrays.
+
     Returns
     -------
-    dict: keys match those of the `preprocessed_data` structured array.
+    dict: keys match those of ``preprocessed_data``.
     """
     sim_dir = Path(sim_dir)
 
+    mask = None
     if apply_mask:
         mask = np.load(sim_dir/MASK_FILENAME)
-    else:
-        mask = slice(None)
 
     preprocessed_data = {}
-    for key, arr in np.load(sim_dir/PREPROCESSED_DATA_FILENAME).items():
-        if key == 'fbin':
-            preprocessed_data[key] = arr
-        else:
-            preprocessed_data[key] = arr[mask]
+    with np.load(sim_dir/PREPROCESSED_DATA_FILENAME) as file:
+        for key, arr in file.items():
+            if key == 'fbin' or not apply_mask:
+                preprocessed_data[key] = arr
+            else:
+                preprocessed_data[key] = arr[mask]
 
     return preprocessed_data
 
