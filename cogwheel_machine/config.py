@@ -32,6 +32,7 @@ EVENT_DATA_KWARGS = {
     }
 
 PN_PHASE_TOL_COMPRESSION = 0.1
+N_COHERENT_SEGMENTS = 8
 
 N_SIMULATIONS = 10**2  # Increase for real-life usage!
 
