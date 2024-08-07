@@ -461,7 +461,8 @@ def main(sim_dir, processes=None):
         waveform_model,
         i_refdet=get_i_refdet(config),
         f_ref=config.PRIOR_KWARGS['f_ref'],
-        pn_phase_tol_compression=config.PN_PHASE_TOL_COMPRESSION)
+        pn_phase_tol_compression=config.PN_PHASE_TOL_COMPRESSION,
+        n_coherent_segments=config.N_COHERENT_SEGMENTS)
 
     preprocessed_data, folded_sampled_params, unfolding_labels \
         = simulate_and_preprocess_samples(
