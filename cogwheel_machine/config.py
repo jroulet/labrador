@@ -1,8 +1,9 @@
 """
 Settings for the training that need to be shared across modules.
 """
-
+import numpy as np
 from cogwheel_machine.training_priors import NoSpinTrainingPrior
+from cogwheel_machine.transform import TargetSpaceTransform
 
 
 # Fiducial reference time, not the time of any actual event.
@@ -30,14 +31,16 @@ EVENT_DATA_KWARGS = {
     'tcoarse': 0.,
     }
 
-PN_PHASE_TOL_COMPRESSION = 1.0
+PN_PHASE_TOL_COMPRESSION = 0.1
 
-N_SIMULATIONS = 100  # Increase for real-life usage!
+N_SIMULATIONS = 10**2  # Increase for real-life usage!
 
 PRIOR_CLASS = NoSpinTrainingPrior
 
+TRANSFORM_CLASS = TargetSpaceTransform
+
 APPROXIMANT = 'IMRPhenomD'
 
-# Semicoherent SNR of the reference waveform, exclude simulations
-# outside this range:
-SNR0_RANGE = 8.0, 50.0
+MASK_CONDITIONS = [('snr0', np.greater, 8),
+                   ('snr0', np.less, 50),
+                  ]

@@ -13,6 +13,7 @@ DataPreprocessor:
 """
 import argparse
 import multiprocessing
+import os
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -20,13 +21,12 @@ import pandas as pd
 from cogwheel import data
 from cogwheel import gw_utils
 from cogwheel import waveform
-from cogwheel.validation import load_config
 import cogwheel.utils
 
 from . import semicoherent_likelihood
 from .transform import TargetSpaceTransform
-from .generate_parameters import PARAMETERS_FILENAME, CONFIG_FILENAME
 from .waveform_model import PhenomenologicalWaveformGenerator
+from . import utils
 
 
 def simulate_and_preprocess_sample(simulator, data_preprocessor,
@@ -64,7 +64,6 @@ def simulate_and_preprocess_sample(simulator, data_preprocessor,
     return preprocessed_data, folded_sampled_params, unfolding_label
 
 
-
 def get_transform_dic(config):
     """
     Return a dictionary with transform kwargs that are the same across
@@ -97,10 +96,10 @@ def _get_folded_sampled_params(parameters, transform_kwargs,
         **parameters[transform.standard_params])
 
     # Determine which region the truth would be unfolded to:
-    values = np.fromiter(sampled_params.values(),
-                         float)[transform._folded_inds]
-    midpoint = (transform.cubemin
-                + transform.folded_cubesize)[transform._folded_inds]
+    folded_inds = transform._folded_inds
+    values = np.fromiter(sampled_params.values(), float)[folded_inds]
+    midpoint = (transform.cubemin[folded_inds]
+                + transform.folded_cubesize[folded_inds])
     flags = values > midpoint
     # Convert the array of booleans to an integer
     unfolding_label = sum(val << i for i, val in enumerate(flags))
@@ -376,20 +375,23 @@ class DataPreprocessor:
 
         return preprocessed_data
 
+
 def _check_sim_dir(sim_dir):
-    new_filenames = ('simulation_data.npy',
-                     'folded_sampled_params.npy',
-                     'unfolding_labels.npy')
+    utils.check_version(sim_dir)
+
+    new_filenames = (utils.PREPROCESSED_DATA_FILENAME,
+                     utils.FOLDED_SAMPLED_PARAMS_FILENAME,
+                     utils.UNFOLDING_LABELS_FILENAME)
     existing = [path for filename in new_filenames
                 if (path := sim_dir/filename).exists()]
     if existing:
         raise FileExistsError(f'{existing} already exist!')
 
-    config_file = sim_dir/CONFIG_FILENAME
+    config_file = sim_dir/utils.CONFIG_FILENAME
     if not config_file.exists():
         raise FileNotFoundError(f'Missing {config_file}')
 
-    parameters_file = sim_dir/PARAMETERS_FILENAME
+    parameters_file = sim_dir/utils.PARAMETERS_FILENAME
     if not parameters_file.exists():
         raise FileNotFoundError(
             f'Missing {parameters_file}, run `generate_parameters.py`.')
@@ -401,11 +403,10 @@ def submit_condor(sim_dir,
                   request_disk='1G',
                   **submit_kwargs):
     """
-    Submit an HTCondor job to generate simulation parameters.
+    Submit an HTCondor job to simulate training data.
 
-    This method generates 'simulation.{sub,sh,out,err,log}',
-    files, the user should provide any instructions for the submit file
-    as `**submit_kwargs`.
+    This will generate the following files:
+        {submission_scripts}/simulation.{sub,sh,out,err,log}
 
     Parameters
     ----------
@@ -423,13 +424,15 @@ def submit_condor(sim_dir,
     """
     sim_dir = Path(sim_dir).resolve()
     _check_sim_dir(sim_dir)
+    scripts_dir = sim_dir/'submission_scripts'
+    os.makedirs(scripts_dir, exist_ok=True)
 
     submit_kwargs = {
-        'submit_path': sim_dir/'simulation.sub',
-        'executable': sim_dir/'simulation.sh',
-        'output': sim_dir/'simulation.out',
-        'error': sim_dir/'simulation.err',
-        'log': sim_dir/'simulation.log',
+        'submit_path': scripts_dir/'simulation.sub',
+        'executable': scripts_dir/'simulation.sh',
+        'output': scripts_dir/'simulation.out',
+        'error': scripts_dir/'simulation.err',
+        'log': scripts_dir/'simulation.log',
         'args': f'{sim_dir} --processes {request_cpus}',
         'request_cpus': request_cpus,
         'request_memory': request_memory,
@@ -444,8 +447,8 @@ def main(sim_dir, processes=None):
     sim_dir = Path(sim_dir)
     _check_sim_dir(sim_dir)
 
-    config = load_config(sim_dir/CONFIG_FILENAME)
-    simulation_parameters = pd.read_feather(sim_dir/PARAMETERS_FILENAME)
+    config = utils.load_config(sim_dir)
+    simulation_parameters = pd.read_feather(sim_dir/utils.PARAMETERS_FILENAME)
 
     simulator = Simulator(config.EVENT_DATA_KWARGS, config.APPROXIMANT)
 
@@ -468,9 +471,10 @@ def main(sim_dir, processes=None):
             transform_dic=get_transform_dic(config),
             processes=processes)
 
-    np.savez(sim_dir/'preprocessed_data.npz', **preprocessed_data)
-    np.save(sim_dir/'folded_sampled_params.npy', folded_sampled_params)
-    np.save(sim_dir/'unfolding_labels.npy', unfolding_labels)
+    np.savez(sim_dir/utils.PREPROCESSED_DATA_FILENAME, **preprocessed_data)
+    np.save(sim_dir/utils.FOLDED_SAMPLED_PARAMS_FILENAME,
+            folded_sampled_params)
+    np.save(sim_dir/utils.UNFOLDING_LABELS_FILENAME, unfolding_labels)
 
 
 if __name__ == '__main__':
