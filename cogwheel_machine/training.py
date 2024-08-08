@@ -2,6 +2,7 @@
 import argparse
 from pathlib import Path
 import numpy as np
+
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
@@ -23,10 +24,13 @@ def main(sim_dir):
     sim_dir = Path(sim_dir)
     config = utils.load_config(sim_dir)
 
-    mask = np.load(sim_dir/'mask.npy')
-    simulation_parameters = np.load(sim_dir/'folded_sampled_params.npy'
-                                   )[mask][:config.MAX_TRAINING_EXAMPLES]
-    simulation_data = np.load(sim_dir/'compressed_data.npy'
+    mask = np.load(sim_dir/utils.MASK_FILENAME)
+
+    simulation_parameters = np.load(
+        sim_dir/utils.FOLDED_SAMPLED_PARAMS_FILENAME
+        )[mask][:config.MAX_TRAINING_EXAMPLES]
+
+    simulation_data = np.load(sim_dir/utils.COMPRESSED_DATA_FILENAME
                              )[mask][:config.MAX_TRAINING_EXAMPLES]
 
     theta = torch.as_tensor(simulation_parameters, dtype=torch.float32)
@@ -43,16 +47,16 @@ def main(sim_dir):
 
     density_estimator = inference.train(**config.TRAIN_KWARGS)
     posterior = inference.build_posterior(density_estimator)
-    torch.save(posterior, rundir/'posterior.pt')
+    torch.save(posterior, rundir/utils.POSTERIOR_FILENAME)
     print(posterior)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description='Training NN from existing data')
+        description='Train neural posterior estimator from existing data')
     parser.add_argument(
         'sim_dir',
-        help='''Training directory path, must contain files
-                `folded_sampled_params.npy`. and `simulation_data.npy`.''')
+        help='''Training directory path, must contain files `mask.npy`,
+                `folded_sampled_params.npy` and `simulation_data.npy`.''')
 
     main(**vars(parser.parse_args()))

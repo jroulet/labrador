@@ -21,6 +21,7 @@ UNFOLDING_LABELS_FILENAME = 'unfolding_labels.npy'
 MASK_FILENAME = 'mask.npy'
 COMPRESSED_DATA_FILENAME = 'compressed_data.npy'
 VERSION_FILENAME = 'version.txt'
+POSTERIOR_FILENAME = 'posterior.pt'
 
 
 def load_config(sim_dir):
