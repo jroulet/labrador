@@ -21,9 +21,6 @@ There are several lines of development that can happen more or less in parallel:
 * Compressing data further e.g. with autoencoders (Joshua, Jay, Matias)
 * Training a classifier to unfold the posterior (Lucy)
 * Encoding PSD information
-* Send coordinate bounds to infinity
-* Implement SNR cuts
-* Use weighted samples to compute the loss function
 
 ## Usage
 
