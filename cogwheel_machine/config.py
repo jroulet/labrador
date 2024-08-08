@@ -45,3 +45,19 @@ APPROXIMANT = 'IMRPhenomD'
 MASK_CONDITIONS = [('snr0', np.greater, 8),
                    ('snr0', np.less, 50),
                   ]
+
+# ----------------------------------------------------------------------
+# Training
+
+# kwargs to sbi.utils.posterior_nn
+POSTERIOR_NN_KWARGS = {'model': 'nsf',
+                       'hidden_features': 256}
+
+# kwargs to sbi.inference.SNPE.train
+TRAIN_KWARGS = {'training_batch_size': 8192,
+                'stop_after_epochs': 20,
+                'learning_rate': 1e-3,
+                'show_train_summary': True}
+
+MAX_TRAINING_EXAMPLES = None  # int
+DEVICE = 'cuda'
