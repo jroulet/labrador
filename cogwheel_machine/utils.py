@@ -1,4 +1,26 @@
-"""Utility functions and constants."""
+"""
+Utility functions and constants.
+
+File structure:
+The final file structure of a trained model should look as below. The
+user only edits the files `data_config.py` and `model_config.py` by
+hand, all the rest are created by the various modules of the code.
+
+parentdir/                                 # E.g. 'coghweel-machine/data/'
+└── rundir/                                # E.g. 'run_0'
+    ├── datadir/                           # 'training_data' or 'test_data'
+    │   ├── compressed_data.npy
+    │   ├── folded_sampled_parameters.npy
+    │   ├── mask.npy
+    │   ├── preprocessed_data.npz
+    │   ├── simulation_parameters.feather
+    │   └── unfolding_labels.npy
+    ├── modeldir/                          # E.g. 'model_0'
+    │   ├── model_config.py
+    │   └── posterior.pt
+    ├── data_config.py
+    └── version.txt
+"""
 
 import logging
 import os
@@ -10,10 +32,13 @@ import pandas as pd
 import cogwheel.validation
 
 from cogwheel_machine import __version__
-from cogwheel_machine import config as example_config
 
 
-CONFIG_FILENAME = 'config.py'
+EXAMPLE_CONFIGS_DIR = Path(__file__).parent/'example_configs'
+TRAINING_DIR = 'training_data'
+TEST_DIR = 'test_data'
+DATA_CONFIG_FILENAME = 'data_config.py'
+MODEL_CONFIG_FILENAME = 'model_config.py'
 PARAMETERS_FILENAME = 'simulation_parameters.feather'
 PREPROCESSED_DATA_FILENAME = 'preprocessed_data.npz'
 FOLDED_SAMPLED_PARAMS_FILENAME = 'folded_sampled_params.npy'
@@ -24,59 +49,112 @@ VERSION_FILENAME = 'version.txt'
 POSTERIOR_FILENAME = 'posterior.pt'
 
 
-def load_config(sim_dir):
-    """Return module `config` from a simulations directory."""
-    return cogwheel.validation.load_config(sim_dir/CONFIG_FILENAME)
+def load_data_config(rundir):
+    """Return module `data_config` from a run directory."""
+    return cogwheel.validation.load_config(rundir/DATA_CONFIG_FILENAME)
 
 
-def setup_sim_dir(location, prefix='set_'):
+def load_model_config(modeldir):
+    """Return module `config` from a run directory."""
+    return cogwheel.validation.load_config(modeldir/MODEL_CONFIG_FILENAME)
+
+
+def make_unique_dir(location, prefix):
     """
-    Set up a simulations directory with an example config.py file.
+    Make a new directory inside `location` ensuring it has a unique
+    name of the form `{prefix}{counter}`.
 
+    Return a ``pathlib.Path`` object pointing to that directory.
+    """
+    location = Path(location)
+    counter = 0
+    while (dirname := location/f'{prefix}{counter}').exists():
+        counter += 1
+    os.makedirs(dirname)
+    return dirname
+
+
+def setup_rundir(parentdir, prefix='run_'):
+    """
+    Set up a run directory with an example data_config.py file.
 
     Parameters
     ----------
-    location: os.PathLike
-        Path in which to create the simulations directory ``sim_dir``.
+    parentdir: os.PathLike
+        Path in which to create the run directory ``rundir``.
 
     prefix: str
-        ``sim_dir`` will be named as the prefix follwed by a number, to
+        ``rundir`` will be named as the prefix follwed by a number, to
         make it unique.
 
     Returns
     -------
-    sim_dir: os.PathLike
-        Path to the newly created simulations directory.
+    rundir: os.PathLike
+        Path to the newly created run directory.
     """
-    # Choose a unique name for the simulations directory
-    location = Path(location)
-    counter = 0
-    while (sim_dir := location/f'{prefix}{counter}').exists():
-        counter += 1
+    rundir = make_unique_dir(parentdir, prefix)
 
-    os.makedirs(sim_dir)
-    source = Path(example_config.__file__)
-    destination = (sim_dir/CONFIG_FILENAME).resolve()
+    source = EXAMPLE_CONFIGS_DIR/DATA_CONFIG_FILENAME
+    destination = (rundir/DATA_CONFIG_FILENAME).resolve()
     shutil.copyfile(source, destination)
 
-    print(f'Created a new config file at {destination}. Edit it as needed.')
+    print(f'Created a new data config file at {destination}.',
+          'Edit it as needed.')
 
-    return sim_dir
+    return rundir
 
 
-def get_summary(sim_dir, apply_mask=True):
+def setup_modeldir(rundir, prefix='model_'):
+    """
+    Set up a model directory with an example model_config.py file.
+
+    Parameters
+    ----------
+    rundir: os.PathLike
+        Path in which to create the model directory ``modeldir``.
+
+    prefix: str
+        ``modeldir`` will be named as the prefix follwed by a number, to
+        make it unique.
+
+    Returns
+    -------
+    modeldir: os.PathLike
+        Path to the newly created model directory.
+    """
+    modeldir = make_unique_dir(rundir, prefix)
+
+    source = EXAMPLE_CONFIGS_DIR/MODEL_CONFIG_FILENAME
+    destination = (modeldir/MODEL_CONFIG_FILENAME).resolve()
+    shutil.copyfile(source, destination)
+
+    print(f'Created a new model config file at {destination}.',
+          'Edit it as needed.')
+    return modeldir
+
+
+def get_summary(datadir, apply_mask=True):
     """
     Return DataFrame with injection parameters, SNR, and parameters in
     the target space of the normalizing flow.
+
+    Parameters
+    ----------
+    datadir: os.PathLike
+        Path to the run directory in which training and test data have
+        been created.
+
+    apply_mask: bool
+        Whether to apply the boolean mask to the data.
     """
-    sim_dir = Path(sim_dir)
-    config = load_config(sim_dir)
+    datadir = Path(datadir)
+    config = load_data_config(datadir.parent)
 
     # Injection parameters
-    summary = pd.read_feather(sim_dir/PARAMETERS_FILENAME)
+    summary = pd.read_feather(datadir/PARAMETERS_FILENAME)
 
     # Add SNR
-    with np.load(sim_dir/PREPROCESSED_DATA_FILENAME) as preprocessed_data:
+    with np.load(datadir/PREPROCESSED_DATA_FILENAME) as preprocessed_data:
         for key in 'd_h', 'h_h', 'd_h0_semicoherent', 'h0_h0':
             summary[key] = preprocessed_data[key].sum(axis=1)
 
@@ -88,42 +166,41 @@ def get_summary(sim_dir, apply_mask=True):
     for par in config.TRANSFORM_CLASS.folded_params:
         columns[columns.index(par)] = f'folded_{par}'
     folded_sampled_params = pd.DataFrame(
-        np.load(sim_dir/FOLDED_SAMPLED_PARAMS_FILENAME), columns=columns)
+        np.load(datadir/FOLDED_SAMPLED_PARAMS_FILENAME), columns=columns)
     cogwheel.utils.update_dataframe(summary, folded_sampled_params)
 
     # Apply mask
     if apply_mask:
-        mask = np.load(sim_dir/MASK_FILENAME)
+        mask = np.load(datadir/MASK_FILENAME)
         summary = summary[mask]
 
     return summary
 
 
-def get_preprocessed_data(sim_dir, apply_mask=True):
+def get_preprocessed_data(datadir, apply_mask=True):
     """
     Load ``preprocessed_data`` and apply the ``mask`` to it.
 
     Parameters
     ----------
-    sim_dir: os.PathLike
-        Directory with training data.
+    datadir: os.PathLike
+        Path to the run directory in which training and test data have
+        been created.
 
     apply_mask: bool
-        Whether to apply the mask in {sim_dir}/{MASK_FILENAME} to the
+        Whether to apply the mask in {datadir}/{MASK_FILENAME} to the
         loaded arrays.
 
     Returns
     -------
     dict: keys match those of ``preprocessed_data``.
     """
-    sim_dir = Path(sim_dir)
-
     mask = None
     if apply_mask:
-        mask = np.load(sim_dir/MASK_FILENAME)
+        mask = np.load(datadir/MASK_FILENAME)
 
     preprocessed_data = {}
-    with np.load(sim_dir/PREPROCESSED_DATA_FILENAME) as file:
+    with np.load(datadir/PREPROCESSED_DATA_FILENAME) as file:
         for key, arr in file.items():
             if key == 'fbin' or not apply_mask:
                 preprocessed_data[key] = arr
@@ -133,26 +210,26 @@ def get_preprocessed_data(sim_dir, apply_mask=True):
     return preprocessed_data
 
 
-def check_version(sim_dir):
+def check_version(rundir):
     """
-    Check that the version of cogwheel_machine recorded in `sim_dir`
+    Check that the version of cogwheel_machine recorded in `rundir`
     matches the current one.
 
-    Issue a warning if not. Raise ``FileNotFoundError`` if `sim_dir`
+    Issue a warning if not. Raise ``FileNotFoundError`` if `rundir`
     does not contain a version file.
     """
-    sim_dir = Path(sim_dir)
-    with open(sim_dir/VERSION_FILENAME, encoding='utf-8') as file:
+    rundir = Path(rundir)
+    with open(rundir/VERSION_FILENAME, encoding='utf-8') as file:
         version = file.read()
 
     if version != __version__:
-        logging.warning(f'{sim_dir} was populated using a different version of'
+        logging.warning(f'{rundir} was populated using a different version of'
                         f' `cogwheel_machine`, {version!r}. '
                         f'The current version is {__version__!r}.')
 
 
-def write_version(sim_dir):
-    """Write the version of cogwheel_machine to a file in `sim_dir`."""
-    sim_dir = Path(sim_dir)
-    with open(sim_dir/VERSION_FILENAME, 'w', encoding='utf-8') as file:
+def write_version(rundir):
+    """Write the version of cogwheel_machine to a file in `rundir`."""
+    rundir = Path(rundir)
+    with open(rundir/VERSION_FILENAME, 'w', encoding='utf-8') as file:
         file.write(__version__)

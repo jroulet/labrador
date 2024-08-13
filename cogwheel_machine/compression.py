@@ -8,115 +8,180 @@ import numpy as np
 from . import utils
 
 
-def create_mask(sim_dir):
+def create_mask(rundir):
     """
-    Save a mask in {sim_dir}/{MASK_FILENAME} specifying which
-    simulations satisfy the cuts per ``config.MASK_CONDITIONS``.
+    Create and save masks for the training and test data, specifying
+    which simulations satisfy the cuts per ``config.MASK_CONDITIONS``.
 
     The mask is a boolean array of shape (n_simulations,) encoding
     which simulations satisfy the cuts.
 
     Parameters
     ----------
-    sim_dir: os.PathLike
-        Path to simulation directory.
+    rundir: os.PathLike
+        Path to run directory.
     """
-    sim_dir = Path(sim_dir)
-    utils.check_version(sim_dir)
+    rundir = Path(rundir)
+    utils.check_version(rundir)
 
-    config = utils.load_config(sim_dir)
-    summary = utils.get_summary(sim_dir, apply_mask=False)
+    config = utils.load_data_config(rundir)
 
-    mask = np.ones(len(summary), dtype=bool)
-    for par, logic, value in config.MASK_CONDITIONS:
-        mask &= logic(summary[par], value)
+    for datadir in rundir/utils.TRAINING_DIR, rundir/utils.TEST_DIR:
+        summary = utils.get_summary(datadir, apply_mask=False)
 
-    np.save(sim_dir/utils.MASK_FILENAME, mask)
+        mask = np.full(len(summary), True)
+        for par, logic, value in config.MASK_CONDITIONS:
+            mask &= logic(summary[par], value)
+
+        np.save(datadir/utils.MASK_FILENAME, mask)
 
 
-def _save_compressed_data(sim_dir, compressed_heterodyned_data):
+def _save_compressed_data(datadir, compressed_heterodyned_data):
     """
-    Create a file ``{sim_dir}/{COMPRESSED_DATA_FILENAME}`` with
-    compressed data.
+    Create a file with compressed data.
+
     The compressed data contains compressed heterodyned data and
     processed_coef.
     It is a float32 array of shape (n_simulations, n_features).
     """
-    sim_dir = Path(sim_dir)
-    utils.check_version(sim_dir)
+    datadir = Path(datadir)
 
-    with np.load(sim_dir/utils.PREPROCESSED_DATA_FILENAME) as file:
+    with np.load(datadir/utils.PREPROCESSED_DATA_FILENAME) as file:
         processed_coef = file['processed_coef']
 
     compressed_data = np.concatenate([compressed_heterodyned_data,
                                       processed_coef],
                                      axis=1, dtype=np.float32)
 
-    np.save(sim_dir/utils.COMPRESSED_DATA_FILENAME, compressed_data)
+    np.save(datadir/utils.COMPRESSED_DATA_FILENAME, compressed_data)
 
 
-def simple_compression(sim_dir):
+def simple_compression(rundir):
     """
     No compression other than the heterodyning itself.
 
-    Create a file ``{sim_dir}/{COMPRESSED_DATA_FILENAME}`` with
-    compressed data.
-    The compressed data contains flattened heterodyned data (real &
+    Create files with compressed data for the training and test sets.
+    The compressed data contains flattened heterodyned data (real and
     imaginary parts) and processed_coef.
     It is a float32 array of shape (n_simulations, n_features).
     """
-    sim_dir = Path(sim_dir)
+    rundir = Path(rundir)
+    utils.check_version(rundir)
 
-    with np.load(sim_dir/utils.PREPROCESSED_DATA_FILENAME) as file:
-        heterodyned_data = file['heterodyned_data']
+    for datadir in rundir/utils.TRAINING_DIR, rundir/utils.TEST_DIR:
+        with np.load(datadir/utils.PREPROCESSED_DATA_FILENAME) as file:
+            heterodyned_data = file['heterodyned_data']
 
-    n_sim, n_det, n_freq = heterodyned_data.shape
-    reshaped_heterodyned_data = heterodyned_data.reshape(n_sim, n_det * n_freq)
+        n_sim, n_det, n_freq = heterodyned_data.shape
+        reshaped = heterodyned_data.reshape(n_sim, n_det * n_freq)
 
-    _save_compressed_data(sim_dir, reshaped_heterodyned_data)
+        _save_compressed_data(datadir, reshaped)
 
 
-def svd_compression(sim_dir, target_loss=1e-3):
+def svd_compression(rundir, target_loss=1e-3):
     """
     Compress the heterodyned data using SVD.
 
-    Create a file ``{sim_dir}/{COMPRESSED_DATA_FILENAME}`` with
-    compressed data.
+    Create files with compressed data for the training and test sets.
     The compressed data contains SVD coefficients and processed_coef.
     It is a float32 array of shape (n_simulations, n_features).
 
     Parameters
     ----------
+    rundir: os.PathLike
+        Path to run directory.
+
     target_loss: float between 0 and 1
         How much information we afford to discard, in terms of the
-        fractional variance of the Wiener-filtered signal.
+        fractional variance of the Wiener-filtered signal. Smaller is
+        more conservative, at the expense of less compression.
     """
-    compressor = SVDCompressor(sim_dir)
-    data, _ = SVDCompressor.load_data_and_signal(sim_dir,
-                                                 apply_mask=False)
+    utils.check_version(rundir)
+    compressor = SVDCompressor.from_training_data(rundir)
     n_components = compressor.n_components(target_loss)
-    svd_coefficients = compressor.get_svd_coefficients(data, n_components)
-    _save_compressed_data(sim_dir, svd_coefficients)
+
+    for datadir in rundir/utils.TRAINING_DIR, rundir/utils.TEST_DIR:
+        data, _ = SVDCompressor.load_data_and_signal(datadir,
+                                                     apply_mask=False)
+        svd_coefficients = compressor.get_svd_coefficients(data, n_components)
+        _save_compressed_data(datadir, svd_coefficients)
+
+    compressor.to_npz(rundir)
 
 
 class SVDCompressor:
     """Class to compress data using SVD."""
-    def __init__(self, sim_dir):
+    @classmethod
+    def from_training_data(cls, rundir):
         """
         Load heterodyned data and signal, apply mask and construct SVD.
 
         Parameters
         ----------
-        sim_dir: os.PathLike
+        rundir: os.PathLike
             Directory with preprocessed data.
         """
-        data, signal  = self.load_data_and_signal(sim_dir)
+        # We will never want to create a compressor using the test data
+        datadir = Path(rundir)/utils.TRAINING_DIR
+
+        # Load heterodyned data (noisy) and signal (noiseless):
+        data, signal = cls.load_data_and_signal(datadir)
         noise = data - signal
-        self._mean_signal = np.mean(signal, axis=0)
-        self._std_noise = np.std(noise, axis=0)
-        self._vh_mat = self._compute_vh_mat(signal)
-        self._cumulative_variance = self._get_cumulative_variance(signal,
-                                                                  noise)
+
+        mean_signal = np.mean(signal, axis=0)
+        std_noise = np.std(noise, axis=0)
+
+        # "Whiten" the components using the measured spectrum
+        wht_signal = (signal - mean_signal) / std_noise
+        wht_noise = noise / std_noise
+
+        # Construct SVD bases using the (whitened) signals:
+        vh_mat = np.linalg.svd(wht_signal, full_matrices=False).Vh
+
+        # Construct Wiener filter
+        signal_svd_coef = wht_signal @ vh_mat.conjugate().transpose()
+        noise_svd_coef = wht_noise @ vh_mat.conjugate().transpose()
+
+        signal_spectrum = np.var(signal_svd_coef, axis=0)
+        noise_spectrum = np.var(noise_svd_coef, axis=0)
+
+        wiener_filter = signal_spectrum / (signal_spectrum + noise_spectrum)
+
+        # Cumulative variance of the Wiener-filtered signal, useful to
+        # later decide how many SVD components we should keep
+        cumulative_variance = np.cumsum(wiener_filter**2 * signal_spectrum)
+        cumulative_variance /= cumulative_variance[-1]
+
+        return cls(mean_signal, std_noise, vh_mat, cumulative_variance)
+
+    @classmethod
+    def from_npz(cls, rundir):
+        """Load instance from a .npz file."""
+        with np.load(cls.get_filename(rundir)) as file:
+            return cls(**file)
+
+    def __init__(self, _mean_signal, _std_noise, _vh_mat,
+                 _cumulative_variance):
+        """
+        This is a generic constructor, use ``.from_training_data`` or
+        ``.from_npz`` instead.
+        """
+        self._mean_signal = _mean_signal
+        self._std_noise = _std_noise
+        self._vh_mat = _vh_mat
+        self._cumulative_variance = _cumulative_variance
+
+    def to_npz(self, rundir):
+        """Save instance to a .npz file."""
+        np.savez(self.get_filename(rundir), **self.__dict__)
+
+    @classmethod
+    def get_filename(cls, rundir):
+        """
+        Return path to a .npz file in rundir, defining a convention for
+        where to save instances of this class.
+        """
+        return Path(rundir)/f'{cls.__name__}.npz'
 
     def get_svd_coefficients(self, data, n_components=None):
         """
@@ -157,9 +222,9 @@ class SVDCompressor:
         return np.searchsorted(self._cumulative_variance, 1-target_loss) + 1
 
     @staticmethod
-    def load_data_and_signal(sim_dir, apply_mask=True):
+    def load_data_and_signal(datadir, apply_mask=True):
         """Return heterodyned data and signal, reshaped for this class."""
-        preprocessed_data = utils.get_preprocessed_data(sim_dir, apply_mask)
+        preprocessed_data = utils.get_preprocessed_data(datadir, apply_mask)
 
         n_sim, n_det, n_freq = preprocessed_data['heterodyned_data'].shape
         shape = n_sim, n_det*n_freq
@@ -171,21 +236,3 @@ class SVDCompressor:
         signal = np.concatenate([complex_signal.real, complex_signal.imag],
                                 axis=1)
         return data, signal
-
-    def _compute_vh_mat(self, signal):
-        wht_signal = (signal - self._mean_signal) / self._std_noise
-        return np.linalg.svd(wht_signal, full_matrices=False).Vh
-
-    def _get_cumulative_variance(self, signal, noise):
-        """Relative cumulative variance of the Wiener-filtered signal."""
-        signal_spectrum = self._get_svd_coef_spectrum(signal)
-        noise_spectrum = self._get_svd_coef_spectrum(noise)
-
-        wiener_filter = signal_spectrum / (signal_spectrum + noise_spectrum)
-
-        cum_var_wf_signal = np.cumsum(wiener_filter**2 * signal_spectrum)
-        return cum_var_wf_signal / cum_var_wf_signal[-1]
-
-    def _get_svd_coef_spectrum(self, data):
-        svd_coef = self.get_svd_coefficients(data)
-        return np.var(svd_coef, axis=0)
