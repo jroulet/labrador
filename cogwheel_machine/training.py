@@ -15,6 +15,10 @@ from cogwheel_machine import utils
 def main(modeldir):
     """
     Train neural posterior estimator.
+
+    See also
+    --------
+    utils.setup_modeldir
     """
     modeldir = Path(modeldir)
     datadir = modeldir.parent/utils.TRAINING_DIR
@@ -29,8 +33,9 @@ def main(modeldir):
     simulation_data = np.load(datadir/utils.COMPRESSED_DATA_FILENAME
                              )[mask][:config.MAX_TRAINING_EXAMPLES]
 
-    theta = torch.as_tensor(simulation_parameters, dtype=torch.float32)
-    x = torch.as_tensor(simulation_data, dtype=torch.float32)
+    theta = torch.tensor(simulation_parameters, dtype=torch.float32
+                        ).to(config.DEVICE)
+    x = torch.tensor(simulation_data, dtype=torch.float32).to(config.DEVICE)
 
     neural_posterior = sbi.utils.posterior_nn(**config.POSTERIOR_NN_KWARGS)
 
@@ -47,7 +52,7 @@ def main(modeldir):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='Train neural posterior estimator from existing data')
-    parser.add_argument('rundir',
+    parser.add_argument('modeldir',
                         help='''Path of the run directory, must contain a
                                 (populated) `training_data/` subdirectory.''')
 
