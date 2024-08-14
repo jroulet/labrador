@@ -2,14 +2,54 @@
 import argparse
 from pathlib import Path
 import numpy as np
+import matplotlib.pyplot as plt
 
 import torch
 from torch.utils.tensorboard import SummaryWriter
+from tensorboard.backend.event_processing import event_accumulator
 
 from sbi.inference import SNPE
 import sbi.utils
 
 from cogwheel_machine import utils
+
+
+def load_logprob(modeldir):
+    """
+    Load the training and validation log probabilities of a trained
+    model.
+
+    The log probabilities are minus the loss.
+    """
+    accumulator = event_accumulator.EventAccumulator(modeldir.as_posix())
+    accumulator.Reload()
+
+    training_logprob = [
+        logprob.value for logprob in accumulator.Scalars('training_log_probs')]
+    validation_logprob = [
+        logprob.value
+        for logprob in accumulator.Scalars('validation_log_probs')]
+    return training_logprob, validation_logprob
+
+
+def plot_logprob(modeldir, save=True):
+    """
+    Plot the training and validation log probabilities of a trained
+    model.
+    """
+    training_logprob, validation_logprob = load_logprob(modeldir)
+
+    plt.figure()
+    plt.plot(training_logprob, label='Training')
+    plt.plot(validation_logprob, label='Validation')
+    plt.xlabel('Epoch')
+    plt.ylabel('Log Prob')
+    plt.legend()
+    plt.grid(ls=':')
+    plt.title(modeldir.name)
+
+    if save:
+        plt.savefig(modeldir/'logprob.pdf', bbox_inches='tight')
 
 
 def main(modeldir):
@@ -47,6 +87,7 @@ def main(modeldir):
     density_estimator = inference.train(**config.TRAIN_KWARGS)
     posterior = inference.build_posterior(density_estimator)
     torch.save(posterior, modeldir/utils.POSTERIOR_FILENAME)
+    plot_logprob(modeldir)
 
 
 if __name__ == '__main__':
