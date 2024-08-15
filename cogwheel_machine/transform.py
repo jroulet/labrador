@@ -109,7 +109,7 @@ class MassesTransform(TransformMixin, Prior):
 
     def _mchirp(self, regularized0pn):
         regularized0pn = np.asarray(regularized0pn)  # piecewise needs arrays
-        boundary = self.mchirp_to_regularized0pn(self.mchirp_break)
+        boundary = self._regularized0pn(self.mchirp_break)
         return np.piecewise(regularized0pn,
                             [regularized0pn < boundary],
                             [self._mchirp_low, self._mchirp_high])[()]
@@ -119,7 +119,7 @@ class MassesTransform(TransformMixin, Prior):
 
     def _mchirp_high(self, regularized0pn):
         return self.mchirp_break / 5 * (
-            128*(np.pi*lal.MTSUN_SI*self.mchirp_break)**(5/3)*regularized0pn
+            128*(np.pi*lal.MTSUN_SI*self.mchirp_break)**(5/3) * regularized0pn
             + 8)
 
 

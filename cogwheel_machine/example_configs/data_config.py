@@ -1,5 +1,6 @@
 """
-Settings for the training that need to be shared across modules.
+Settings for generating the training and testing sets, that need to be
+shared across modules.
 """
 import numpy as np
 from cogwheel_machine.training_priors import NoSpinTrainingPrior
@@ -34,7 +35,8 @@ EVENT_DATA_KWARGS = {
 PN_PHASE_TOL_COMPRESSION = 0.1
 N_COHERENT_SEGMENTS = 8
 
-N_SIMULATIONS = 10**2  # Increase for real-life usage!
+N_TRAINING_SIMULATIONS = 10**2  # Increase for real-life usage!
+N_TEST_SIMULATIONS = 10**2
 
 PRIOR_CLASS = NoSpinTrainingPrior
 
@@ -45,19 +47,3 @@ APPROXIMANT = 'IMRPhenomD'
 MASK_CONDITIONS = [('snr0', np.greater, 8),
                    ('snr0', np.less, 50),
                   ]
-
-# ----------------------------------------------------------------------
-# Training
-
-# kwargs to sbi.utils.posterior_nn
-POSTERIOR_NN_KWARGS = {'model': 'nsf',
-                       'hidden_features': 256}
-
-# kwargs to sbi.inference.SNPE.train
-TRAIN_KWARGS = {'training_batch_size': 8192,
-                'stop_after_epochs': 20,
-                'learning_rate': 1e-3,
-                'show_train_summary': True}
-
-MAX_TRAINING_EXAMPLES = None  # int
-DEVICE = 'cuda'

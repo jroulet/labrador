@@ -23,12 +23,14 @@ class TrainingDataTestCase(TestCase):
 		Generate a small amount of training data in a temporary
 		directory.
 		"""
-		with tempfile.TemporaryDirectory() as datadir:
-			sim_dir = utils.setup_sim_dir(datadir)
-			generate_parameters.main(sim_dir)
-			simulation.main(sim_dir)
-			compression.create_mask(sim_dir)
-			compression.svd_compression(sim_dir)
+		with tempfile.TemporaryDirectory() as parentdir:
+			rundir = utils.setup_rundir(parentdir)
+			generate_parameters.main(rundir)
+			simulation.main(rundir)
+			compression.create_mask(rundir)
+			compression.svd_compression(rundir)
+			print('Created these training data:')
+			os.system(f'tree {parentdir}')
 
 
 if __name__ == '__main__':
