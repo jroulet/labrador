@@ -6,16 +6,16 @@ The final file structure of a trained model should look as below. The
 user only edits the files `data_config.py` and `model_config.py` by
 hand, all the rest are created by the various modules of the code.
 
-parentdir/                                 # E.g. 'coghweel-machine/data/'
-└── rundir/                                # E.g. 'run_0'
-    ├── datadir/                           # 'training_data' or 'test_data'
+{parentdir}/                             # E.g. 'coghweel-machine/data/'
+└── {rundir}/                            # E.g. 'run_0'
+    ├── {datadir}/                       # 'training_data' or 'test_data'
     │   ├── compressed_data.npy
     │   ├── folded_sampled_parameters.npy
     │   ├── mask.npy
     │   ├── preprocessed_data.npz
     │   ├── simulation_parameters.feather
     │   └── unfolding_labels.npy
-    ├── modeldir/                          # E.g. 'model_0'
+    ├── {modeldir}/                      # E.g. 'model_0'
     │   ├── model_config.py
     │   └── posterior.pt
     ├── data_config.py
@@ -114,7 +114,7 @@ def setup_modeldir(rundir, prefix='model_'):
         Path in which to create the model directory ``modeldir``.
 
     prefix: str
-        ``modeldir`` will be named as the prefix follwed by a number, to
+        ``modeldir`` will be named as the prefix followed by a number, to
         make it unique.
 
     Returns
