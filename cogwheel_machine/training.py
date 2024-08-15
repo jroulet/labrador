@@ -32,6 +32,14 @@ def load_logprob(modeldir):
     return training_logprob, validation_logprob
 
 
+def load_runtime(modeldir):
+    """Array of length n_epochs with cumulative training time (h)."""
+    accumulator = event_accumulator.EventAccumulator(modeldir.as_posix())
+    accumulator.Reload()
+    durations = [x.value for x in accumulator.Scalars('epoch_durations_sec')]
+    return np.cumsum(durations) / 3600
+
+
 def plot_logprob(modeldir, save=True):
     """
     Plot the training and validation log probabilities of a trained
