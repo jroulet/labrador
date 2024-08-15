@@ -8,7 +8,6 @@ dynamic = ["version"]
 
 dependencies = [
   "cogwheel-pe",
-  "numpy<2",
   "sbi",
 ]
 
@@ -32,9 +31,7 @@ good-names = ["i", "j", "k", "ex", "Run", "_",
               "ra", "m1", "m2", "q", "dt", "ax"]
 
 ignored-modules = [
-  "cogwheel",
   "lal",
-  "pandas",
 ]
 
 [tool.pylint.format]

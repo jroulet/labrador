@@ -2,7 +2,6 @@
 This module defines the classes Simulator and DataPreprocessor, and can
 be run as a script to produce training data.
 
-
 Classes
 -------
 Simulator:
@@ -376,28 +375,35 @@ class DataPreprocessor:
         return preprocessed_data
 
 
-def _check_sim_dir(sim_dir):
-    utils.check_version(sim_dir)
+def _check_rundir(rundir):
+    utils.check_version(rundir)
+
+    datadirs = rundir/utils.TRAINING_DIR, rundir/utils.TEST_DIR
 
     new_filenames = (utils.PREPROCESSED_DATA_FILENAME,
                      utils.FOLDED_SAMPLED_PARAMS_FILENAME,
                      utils.UNFOLDING_LABELS_FILENAME)
-    existing = [path for filename in new_filenames
-                if (path := sim_dir/filename).exists()]
+
+    # Check that there is no data already
+    existing = [path for filename in new_filenames for datadir in datadirs
+                if (path := datadir/filename).exists()]
     if existing:
         raise FileExistsError(f'{existing} already exist!')
 
-    config_file = sim_dir/utils.CONFIG_FILENAME
-    if not config_file.exists():
-        raise FileNotFoundError(f'Missing {config_file}')
+    # Check that data_config file exists
+    data_config_file = rundir/utils.DATA_CONFIG_FILENAME
+    if not data_config_file.exists():
+        raise FileNotFoundError(f'Missing {data_config_file}')
 
-    parameters_file = sim_dir/utils.PARAMETERS_FILENAME
-    if not parameters_file.exists():
-        raise FileNotFoundError(
-            f'Missing {parameters_file}, run `generate_parameters.py`.')
+    # Check that simulation parameters have already been generated
+    for datadir in datadirs:
+        parameters_file = datadir/utils.PARAMETERS_FILENAME
+        if not parameters_file.exists():
+            raise FileNotFoundError(
+                f'Missing {parameters_file}, run `generate_parameters.py`.')
 
 
-def submit_condor(sim_dir,
+def submit_condor(rundir,
                   request_cpus,
                   request_memory='5G',
                   request_disk='1G',
@@ -410,7 +416,7 @@ def submit_condor(sim_dir,
 
     Parameters
     ----------
-    sim_dir: str, os.PathLike
+    rundir: str, os.PathLike
         Simulations directory, should contain files `config.py` and
         `simulation_parameters.feather`.
 
@@ -422,9 +428,9 @@ def submit_condor(sim_dir,
         not pass `executable`, `output`, `error`, `log`, `args`,
         `queue`, which will be dealt with automatically.
     """
-    sim_dir = Path(sim_dir).resolve()
-    _check_sim_dir(sim_dir)
-    scripts_dir = sim_dir/'submission_scripts'
+    rundir = Path(rundir).resolve()
+    _check_rundir(rundir)
+    scripts_dir = rundir/'submission_scripts'
     os.makedirs(scripts_dir, exist_ok=True)
 
     submit_kwargs = {
@@ -433,7 +439,7 @@ def submit_condor(sim_dir,
         'output': scripts_dir/'simulation.out',
         'error': scripts_dir/'simulation.err',
         'log': scripts_dir/'simulation.log',
-        'args': f'{sim_dir} --processes {request_cpus}',
+        'args': f'{rundir} --processes {request_cpus}',
         'request_cpus': request_cpus,
         'request_memory': request_memory,
         'request_disk': request_disk,
@@ -442,13 +448,30 @@ def submit_condor(sim_dir,
     cogwheel.utils.submit_condor(**submit_kwargs)
 
 
-def main(sim_dir, processes=None):
-    """Generate and preprocess training data."""
-    sim_dir = Path(sim_dir)
-    _check_sim_dir(sim_dir)
+def _populate_datadir(datadir, simulator, data_preprocessor,
+                      transform_dic, processes):
+    simulation_parameters = pd.read_feather(datadir/utils.PARAMETERS_FILENAME)
+    preprocessed_data, folded_sampled_params, unfolding_labels \
+        = simulate_and_preprocess_samples(
+            simulator,
+            data_preprocessor,
+            simulation_parameters,
+            transform_dic=transform_dic,
+            processes=processes)
 
-    config = utils.load_config(sim_dir)
-    simulation_parameters = pd.read_feather(sim_dir/utils.PARAMETERS_FILENAME)
+    np.savez(datadir/utils.PREPROCESSED_DATA_FILENAME, **preprocessed_data)
+    np.save(datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME,
+            folded_sampled_params)
+    np.save(datadir/utils.UNFOLDING_LABELS_FILENAME, unfolding_labels)
+
+
+
+def main(rundir, processes=None):
+    """Generate and preprocess training and test data."""
+    rundir = Path(rundir)
+    _check_rundir(rundir)
+
+    config = utils.load_data_config(rundir)
 
     simulator = Simulator(config.EVENT_DATA_KWARGS, config.APPROXIMANT)
 
@@ -463,26 +486,18 @@ def main(sim_dir, processes=None):
         f_ref=config.PRIOR_KWARGS['f_ref'],
         pn_phase_tol_compression=config.PN_PHASE_TOL_COMPRESSION,
         n_coherent_segments=config.N_COHERENT_SEGMENTS)
+    transform_dic=get_transform_dic(config)
 
-    preprocessed_data, folded_sampled_params, unfolding_labels \
-        = simulate_and_preprocess_samples(
-            simulator,
-            data_preprocessor,
-            simulation_parameters,
-            transform_dic=get_transform_dic(config),
-            processes=processes)
-
-    np.savez(sim_dir/utils.PREPROCESSED_DATA_FILENAME, **preprocessed_data)
-    np.save(sim_dir/utils.FOLDED_SAMPLED_PARAMS_FILENAME,
-            folded_sampled_params)
-    np.save(sim_dir/utils.UNFOLDING_LABELS_FILENAME, unfolding_labels)
+    for dirname in utils.TRAINING_DIR, utils.TEST_DIR:
+        _populate_datadir(rundir/dirname, simulator, data_preprocessor,
+                          transform_dic, processes)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description='Simulate signals to generate training data.')
+        description='Simulate signals to generate training and test data.')
     parser.add_argument(
-        'sim_dir',
+        'rundir',
         help='''Simulation directory path, must contain files
                 `config.py`. and `simulation_parameters.feather`.''')
 
