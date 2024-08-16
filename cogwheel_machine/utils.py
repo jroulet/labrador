@@ -51,11 +51,13 @@ POSTERIOR_FILENAME = 'posterior.pt'
 
 def load_data_config(rundir):
     """Return module `data_config` from a run directory."""
+    rundir = Path(rundir)
     return cogwheel.validation.load_config(rundir/DATA_CONFIG_FILENAME)
 
 
 def load_model_config(modeldir):
     """Return module `config` from a run directory."""
+    modeldir = Path(modeldir)
     return cogwheel.validation.load_config(modeldir/MODEL_CONFIG_FILENAME)
 
 
