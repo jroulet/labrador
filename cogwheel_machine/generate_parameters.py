@@ -3,9 +3,63 @@ import argparse
 import os
 from pathlib import Path
 
+import pandas as pd
+import scipy.stats.qmc
+
 import cogwheel.utils
+from cogwheel.prior import FixedPrior, UniformPriorMixin, CombinedPrior
 
 from . import utils
+
+
+def _is_uniform_prior(cls):
+    """
+    Return whether `cls` corresponds to a uniform prior.
+
+    That is: ``True`` if `cls` is a subclass of ``UniformPriorMixin``,
+    ``FixedPrior``, or a ``CombinedPrior`` that combines only these;
+    ``False`` otherwise.
+    """
+    # TODO move to cogwheel.prior
+    if issubclass(cls, CombinedPrior):
+        return all(_is_uniform_prior(prior_class)
+                   for prior_class in cls.prior_classes)
+
+    if issubclass(cls, UniformPriorMixin) or issubclass(cls, FixedPrior):
+        return True
+
+    return False
+
+
+def _generate_qmc_samples(prior, n_samples, seed=None):
+    """
+    Sample the parameter space uniformly.
+
+    Parameters
+    ----------
+    n_samples: int
+        How many samples to generate.
+
+    seed:
+        Passed to ``numpy.default_rng``, for reproducibility.
+
+    Return
+    ------
+    pd.DataFrame with columns per
+    ``.sampled_params + .standard_params``, with samples distributed
+    uniformly.
+    """
+    # TODO move to cogwheel.prior
+    if not _is_uniform_prior(prior.__class__):
+        raise RuntimeError(f'{prior} is not a uniform prior!')
+
+    samples = pd.DataFrame(
+        prior.cubemin + prior.cubesize * scipy.stats.qmc.Halton(
+            len(prior.sampled_params), seed=seed).random(n_samples),
+        columns=prior.sampled_params)
+
+    prior.transform_samples(samples)
+    return samples
 
 
 def submit_condor(rundir,
@@ -76,8 +130,14 @@ def main(rundir):
     for datadir, n_simulations in [
             (rundir/utils.TRAINING_DIR, config.N_TRAINING_SIMULATIONS),
             (rundir/utils.TEST_DIR, config.N_TEST_SIMULATIONS)]:
+
+        if config.QMC:
+            simulation_parameters = _generate_qmc_samples(prior, n_simulations)
+        else:
+            simulation_parameters = prior.generate_random_samples(
+                n_simulations)
+
         os.makedirs(datadir)
-        simulation_parameters = prior.generate_random_samples(n_simulations)
         simulation_parameters.to_feather(datadir/utils.PARAMETERS_FILENAME)
 
 
