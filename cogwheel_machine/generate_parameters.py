@@ -106,6 +106,18 @@ def submit_condor(rundir,
     cogwheel.utils.submit_condor(**submit_kwargs)
 
 
+
+def _write_datadir(prior, datadir, n_simulations, qmc):
+    if qmc:
+        simulation_parameters = _generate_qmc_samples(prior, n_simulations)
+    else:
+        simulation_parameters = prior.generate_random_samples(
+            n_simulations)
+
+    os.makedirs(datadir)
+    simulation_parameters.to_feather(datadir/utils.PARAMETERS_FILENAME)
+
+
 def main(rundir):
     """
     Parameters
@@ -127,18 +139,18 @@ def main(rundir):
 
     prior = config.PRIOR_CLASS(**config.PRIOR_KWARGS)
 
-    for datadir, n_simulations in [
-            (rundir/utils.TRAINING_DIR, config.N_TRAINING_SIMULATIONS),
-            (rundir/utils.TEST_DIR, config.N_TEST_SIMULATIONS)]:
+    # Training set:
+    _write_datadir(prior,
+                   rundir/utils.TRAINING_DIR,
+                   config.N_TRAINING_SIMULATIONS,
+                   qmc=config.QMC)
 
-        if config.QMC:
-            simulation_parameters = _generate_qmc_samples(prior, n_simulations)
-        else:
-            simulation_parameters = prior.generate_random_samples(
-                n_simulations)
-
-        os.makedirs(datadir)
-        simulation_parameters.to_feather(datadir/utils.PARAMETERS_FILENAME)
+    # Test set:
+    _write_datadir(prior,
+                   rundir/utils.TEST_DIR,
+                   config.N_TEST_SIMULATIONS,
+                   qmc=False)  # Two different quasirandom sequences can
+                               # have weird correlations.
 
 
 def _check_rundir(rundir):
