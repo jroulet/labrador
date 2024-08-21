@@ -1,6 +1,7 @@
 """Functions for training neural posterior estimators."""
 import argparse
 from pathlib import Path
+from cProfile import Profile
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -68,7 +69,7 @@ def main(modeldir):
     utils.setup_modeldir
     """
     modeldir = Path(modeldir)
-    datadir = modeldir.parent/utils.TRAINING_DIR
+    datadir = modeldir.resolve().parent/utils.TRAINING_DIR
     config = utils.load_model_config(modeldir)
 
     mask = np.load(datadir/utils.MASK_FILENAME)
@@ -92,7 +93,11 @@ def main(modeldir):
         summary_writer=SummaryWriter(modeldir)
         ).append_simulations(theta, x)
 
-    density_estimator = inference.train(**config.TRAIN_KWARGS)
+    with Profile() as profiler:
+        density_estimator = inference.train(**config.TRAIN_KWARGS)
+
+    profiler.dump_stats(modeldir/'profiling')
+
     posterior = inference.build_posterior(density_estimator)
     torch.save(posterior, modeldir/utils.POSTERIOR_FILENAME)
     plot_logprob(modeldir)
