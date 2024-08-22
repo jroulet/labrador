@@ -9,9 +9,13 @@ network.
 POSTERIOR_NN_KWARGS = {'model': 'nsf',
                        'hidden_features': 64}
 
+# embedding network
+EMBEDDING_LAYER_SIZES = None
+
 # kwargs to sbi.inference.SNPE.train
 TRAIN_KWARGS = {'training_batch_size': 8192,
                 'stop_after_epochs': 32,
+                'max_num_epochs':10000,
                 'learning_rate': 1e-3,
                 'show_train_summary': True}
 
