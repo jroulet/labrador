@@ -9,10 +9,9 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 from tensorboard.backend.event_processing import event_accumulator
 
-from sbi.inference import SNPE
 import sbi.utils
 
-from cogwheel_machine import utils
+from cogwheel_machine import utils, sbi_hacks
 
 
 def load_logprob(modeldir):
@@ -88,10 +87,11 @@ def main(modeldir):
 
     neural_posterior = sbi.utils.posterior_nn(**config.POSTERIOR_NN_KWARGS)
 
-    inference = SNPE(density_estimator=neural_posterior,
-                     device=config.DEVICE,
-                     summary_writer=SummaryWriter(modeldir)
-                     ).append_simulations(theta, x)
+    inference = sbi_hacks.SNPEFixedBatches(
+        density_estimator=neural_posterior,
+        device=config.DEVICE,
+        summary_writer=SummaryWriter(modeldir)
+        ).append_simulations(theta, x)
 
     with Profile() as profiler:
         density_estimator = inference.train(**config.TRAIN_KWARGS)
