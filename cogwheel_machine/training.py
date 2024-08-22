@@ -62,24 +62,6 @@ def plot_logprob(modeldir, save=True):
         plt.savefig(modeldir/'logprob.pdf', bbox_inches='tight')
         
 
-class SummaryNet(nn.Module): 
-    
-    def __init__(self): 
-        super().__init__()
-        # 1D convolutional layer
-        #self.conv1 = nn.Conv1d(in_channels=1, out_channels=6, kernel_size=5, padding=2)
-        # Maxpool layer that reduces size
-        #self.pool = nn.MaxPool1d(kernel_size=8, stride=8)
-        # Fully connected layer
-        self.fc = nn.Linear(in_features=in_dim, out_features=out_dim) 
-        
-    def forward(self, x):
-        #x = self.pool(F.relu(self.conv1(x)))
-        #x = x.view(-1, 6*4*4)
-        x = F.relu(self.fc(x))
-        return x
-
-
 class FullyConnectedEmbeddingNetwork(nn.Module):
     def __init__(self, input_size, layer_sizes):
         """
