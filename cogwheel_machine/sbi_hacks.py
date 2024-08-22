@@ -60,4 +60,4 @@ class FixedBatchesDataLoader(list):
             raise ValueError('Batches are not the same size.')
 
         super().__init__(batches)
-        self.batch_size = len(batches[0])
+        self.batch_size = len(batches[0][0])
