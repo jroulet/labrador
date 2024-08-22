@@ -50,11 +50,34 @@ class SNPEFixedBatches(sbi.inference.SNPE):
         return train_loader, val_loader
 
 
-class FixedBatchesDataLoader(list):
+class FixedBatchesDataLoader:
     """A list of batches, always the same."""
-    def __init__(self, batches):
+    def __init__(self, batches, shuffle_batches=True):
+        """
+        Parameters
+        ----------
+        batches: list of lists of torch.Tensor
+            Each batch contains multiple tensors, e.g. data and parameters.
+
+        shuffle_batches: bool
+            Whether to iterate over the batches in random order every time.
+        """
         if len(set(map(len, batches))) != 1:
             raise ValueError('Batches are not the same size.')
 
-        super().__init__(batches)
+        self.batches = batches
+        self.shuffle_batches = shuffle_batches
+
         self.batch_size = len(batches[0][0])
+        self._rng = np.random.default_rng()
+
+    def __len__(self):
+        return len(self.batches)
+
+    def __iter__(self):
+        order = np.arange(len(self.batches))
+        if self.shuffle_batches:
+            self._rng.shuffle(order)
+
+        for i in order:
+            yield self.batches[i]
