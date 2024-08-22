@@ -29,17 +29,14 @@ class SNPEFixedBatches(sbi.inference.SNPE):
         if dataloader_kwargs:
             print(f'Ignoring `{dataloader_kwargs=}`')
 
-        theta, x, prior_masks = self.get_simulations(starting_round)
+        dataset = torch.utils.data.TensorDataset(
+            *self.get_simulations(starting_round))
 
-        dataset = torch.utils.data.TensorDataset(theta, x, prior_masks)
-
-        num_examples = len(dataset)
-        num_batches = num_examples // training_batch_size
+        num_batches = len(dataset) // training_batch_size
         batch_indices = np.split(np.arange(num_batches * training_batch_size),
                                  num_batches)
         batches = [dataset[inds] for inds in batch_indices]
 
-        
         num_training_batches = int(len(batches) * (1-validation_fraction))
 
         self.train_indices = np.concatenate(

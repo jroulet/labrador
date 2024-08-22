@@ -11,7 +11,7 @@ from tensorboard.backend.event_processing import event_accumulator
 
 import sbi.utils
 
-from cogwheel_machine import utils, sbi_hacks
+from cogwheel_machine import embedding, sbi_hacks, utils
 
 
 def load_logprob(modeldir):
@@ -84,6 +84,12 @@ def main(modeldir):
     theta = torch.tensor(simulation_parameters, dtype=torch.float32
                         ).to(config.DEVICE)
     x = torch.tensor(simulation_data, dtype=torch.float32).to(config.DEVICE)
+
+    if config.EMBEDDING_LAYER_SIZES:
+        embedding_net = embedding.FullyConnectedEmbeddingNetwork(
+            input_size=x.shape[1],
+            layer_sizes=config.EMBEDDING_LAYER_SIZES)
+        config.POSTERIOR_NN_KWARGS['embedding_net'] = embedding_net
 
     neural_posterior = sbi.utils.posterior_nn(**config.POSTERIOR_NN_KWARGS)
 
