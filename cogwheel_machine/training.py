@@ -6,7 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 import torch
-import torch.nn as nn 
+from torch import nn
 from torch.utils.tensorboard import SummaryWriter
 from tensorboard.backend.event_processing import event_accumulator
 
@@ -60,27 +60,30 @@ def plot_logprob(modeldir, save=True):
 
     if save:
         plt.savefig(modeldir/'logprob.pdf', bbox_inches='tight')
-        
+
 
 class FullyConnectedEmbeddingNetwork(nn.Module):
+    """Embedding network with hidden layers of variable size."""
     def __init__(self, input_size, layer_sizes):
         """
-        Initializes the FullyConnectedEmbeddingNetwork.
+        Parameters
+        ----------
+        input_size: int
+            The size of the input features.
 
-        Parameters:
-        - input_size (int): The size of the input features.
-        - layer_sizes (list of int): A list where each element
-        is the size of the corresponding hidden layer.
+        layer_sizes: list of int
+            Each element is the size of the corresponding hidden layer.
         """
-        super(FullyConnectedEmbeddingNetwork, self).__init__()
+        super().__init__()
 
         # Create a list of fully connected layers
         layers = []
         in_size = input_size
         for i, size in enumerate(layer_sizes):
             layers.append(nn.Linear(in_size, size))
+            # Add ReLU only after hidden layers:
             if i < len(layer_sizes) - 1:
-                layers.append(nn.ReLU())  # Add ReLU activation only after hidden layers
+                layers.append(nn.ReLU())
             in_size = size
 
         # Combine the layers into a sequential model
@@ -90,11 +93,14 @@ class FullyConnectedEmbeddingNetwork(nn.Module):
         """
         Forward pass through the network.
 
-        Parameters:
-        - x (torch.Tensor): Input tensor of shape (batch_size, input_size).
+        Parameters
+        ----------
+        x: torch.Tensor
+            Input tensor of shape (batch_size, input_size).
 
-        Returns:
-        - torch.Tensor: Output tensor of shape (batch_size, final_layer_size).
+        Returns
+        -------
+        torch.Tensor: Output of shape (batch_size, final_layer_size).
         """
         return self.fc_layers(x)
 
@@ -126,9 +132,9 @@ def main(modeldir):
 
     if config.EMBEDDING_LAYER_SIZES:
         embedding_net = FullyConnectedEmbeddingNetwork(
-            input_size=x.shape[1], layer_sizes=config.EMBEDDING_LAYER_SIZES)
-    else:
-        embedding_net = None
+            input_size=x.shape[1],
+            layer_sizes=config.EMBEDDING_LAYER_SIZES)
+        config.POSTERIOR_NN_KWARGS['embedding_net'] = embedding_net
 
     neural_posterior = sbi.utils.posterior_nn(**config.POSTERIOR_NN_KWARGS)
 
