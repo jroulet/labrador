@@ -37,6 +37,7 @@ N_COHERENT_SEGMENTS = 8
 
 N_TRAINING_SIMULATIONS = 10**2  # Increase for real-life usage!
 N_TEST_SIMULATIONS = 10**2
+QMC = True
 
 PRIOR_CLASS = NoSpinTrainingPrior
 

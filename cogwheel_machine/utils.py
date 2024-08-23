@@ -46,16 +46,19 @@ UNFOLDING_LABELS_FILENAME = 'unfolding_labels.npy'
 MASK_FILENAME = 'mask.npy'
 COMPRESSED_DATA_FILENAME = 'compressed_data.npy'
 VERSION_FILENAME = 'version.txt'
+INFERENCE_FILENAME = 'inference.pickle'
 POSTERIOR_FILENAME = 'posterior.pt'
 
 
 def load_data_config(rundir):
     """Return module `data_config` from a run directory."""
+    rundir = Path(rundir)
     return cogwheel.validation.load_config(rundir/DATA_CONFIG_FILENAME)
 
 
 def load_model_config(modeldir):
     """Return module `config` from a run directory."""
+    modeldir = Path(modeldir)
     return cogwheel.validation.load_config(modeldir/MODEL_CONFIG_FILENAME)
 
 
