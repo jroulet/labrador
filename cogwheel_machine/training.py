@@ -1,5 +1,6 @@
 """Functions for training neural posterior estimators."""
 import argparse
+import pickle
 from pathlib import Path
 from cProfile import Profile
 import numpy as np
@@ -60,15 +61,7 @@ def plot_logprob(modeldir, save=True):
         plt.savefig(modeldir/'logprob.pdf', bbox_inches='tight')
 
 
-def main(modeldir):
-    """
-    Train neural posterior estimator.
-
-    See also
-    --------
-    utils.setup_modeldir
-    """
-    modeldir = Path(modeldir)
+def _instantiate_inference(modeldir):
     datadir = modeldir.resolve().parent/utils.TRAINING_DIR
     config = utils.load_model_config(modeldir)
 
@@ -98,11 +91,45 @@ def main(modeldir):
         device=config.DEVICE,
         summary_writer=SummaryWriter(modeldir)
         ).append_simulations(theta, x)
+    return inference
+
+
+def main(modeldir):
+    """
+    Train neural posterior estimator.
+
+    Parameters
+    ----------
+    modeldir: os.PathLike
+        Path to directory inside a ``rundir``, containing a file
+        "model_config.py". If `modeldir` also contains a previously
+        trained model, it will resume training.
+
+    See Also
+    --------
+    utils.setup_modeldir
+    """
+    modeldir = Path(modeldir)
+    config = utils.load_model_config(modeldir)
+
+    inference_filename = modeldir/utils.INFERENCE_FILENAME
+    resume_training = inference_filename.exists()
+    if resume_training:
+        with open(inference_filename, 'rb') as file:
+            inference = pickle.load(file)
+    else:
+        inference = _instantiate_inference(modeldir)
 
     with Profile() as profiler:
-        density_estimator = inference.train(**config.TRAIN_KWARGS)
+        density_estimator = inference.train(
+            **config.TRAIN_KWARGS,
+            resume_training=resume_training,
+            force_first_round_loss=resume_training)
 
     profiler.dump_stats(modeldir/'profiling')
+
+    with open(inference_filename, 'wb') as file:
+        pickle.dump(inference, file)
 
     posterior = inference.build_posterior(density_estimator)
     torch.save(posterior, modeldir/utils.POSTERIOR_FILENAME)

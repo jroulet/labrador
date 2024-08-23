@@ -46,6 +46,7 @@ UNFOLDING_LABELS_FILENAME = 'unfolding_labels.npy'
 MASK_FILENAME = 'mask.npy'
 COMPRESSED_DATA_FILENAME = 'compressed_data.npy'
 VERSION_FILENAME = 'version.txt'
+INFERENCE_FILENAME = 'inference.pickle'
 POSTERIOR_FILENAME = 'posterior.pt'
 
 

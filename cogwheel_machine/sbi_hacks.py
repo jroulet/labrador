@@ -24,30 +24,49 @@ class SNPEFixedBatches(sbi.inference.SNPE):
                         resume_training=None,
                         dataloader_kwargs=None):
         """Return dataloaders for training and validation."""
-        if resume_training:
-            raise NotImplementedError
         if dataloader_kwargs:
             print(f'Ignoring `{dataloader_kwargs=}`')
 
         dataset = torch.utils.data.TensorDataset(
             *self.get_simulations(starting_round))
 
-        num_batches = len(dataset) // training_batch_size
-        batch_indices = np.split(np.arange(num_batches * training_batch_size),
-                                 num_batches)
-        batches = [dataset[inds] for inds in batch_indices]
+        if not resume_training:
+            # These allow to preserve the exact partition into batches
+            # as well as training/validation over multiple trainings.
+            self._train_ind_batches, self._val_ind_batches \
+                = self._get_train_val_batch_inds(
+                    len(dataset), training_batch_size, validation_fraction)
 
-        num_training_batches = int(len(batches) * (1-validation_fraction))
+            # Other methods assume this attribute exists
+            self.train_indices = np.concatenate(self._train_ind_batches)
 
-        self.train_indices = np.concatenate(
-            batch_indices[:num_training_batches])
-        self.val_indices = np.concatenate(
-            batch_indices[num_training_batches:])
+        train_batches = [dataset[inds] for inds in self._train_ind_batches]
+        val_batches = [dataset[inds] for inds in self._val_ind_batches]
 
-        train_loader = FixedBatchesDataLoader(batches[:num_training_batches])
-        val_loader = FixedBatchesDataLoader(batches[num_training_batches:])
+        train_loader = FixedBatchesDataLoader(train_batches)
+        val_loader = FixedBatchesDataLoader(val_batches)
 
         return train_loader, val_loader
+
+    @staticmethod
+    def _get_train_val_batch_inds(num_simulations, training_batch_size,
+                                  validation_fraction):
+        """
+        Returns
+        -------
+        train_ind_batches, val_ind_batches: list of int arrays
+            Indices of the training and validation simulations, arranged in
+            batches.
+        """
+        num_batches = num_simulations // training_batch_size
+        batch_indices = np.split(np.arange(num_batches * training_batch_size),
+                                 num_batches)
+
+        num_training_batches = int(
+            len(batch_indices) * (1-validation_fraction))
+        train_ind_batches = batch_indices[:num_training_batches]
+        val_ind_batches = batch_indices[num_training_batches:]
+        return train_ind_batches, val_ind_batches
 
 
 class FixedBatchesDataLoader:
