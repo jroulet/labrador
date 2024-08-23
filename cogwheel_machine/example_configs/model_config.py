@@ -13,7 +13,7 @@ POSTERIOR_NN_KWARGS = {'model': 'nsf',
 EMBEDDING_LAYER_SIZES = None  # list of ints (optional)
 
 # kwargs to sbi.inference.SNPE.train
-TRAIN_KWARGS = {'training_batch_size': 8192,
+TRAIN_KWARGS = {'training_batch_size': 65536,
                 'stop_after_epochs': 32,
                 'max_num_epochs': 10000,
                 'learning_rate': 1e-3,
