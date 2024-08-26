@@ -476,10 +476,7 @@ def main(rundir, processes=None):
 
     simulator = Simulator(config.EVENT_DATA_KWARGS, config.APPROXIMANT)
 
-    dummy_event_data = data.EventData.gaussian_noise(
-        **config.EVENT_DATA_KWARGS)
-    waveform_model = PhenomenologicalWaveformGenerator.from_event_data(
-        event_data=dummy_event_data, pn_phase_tol=0.1)
+    waveform_model = PhenomenologicalWaveformGenerator.from_rundir(rundir)
 
     data_preprocessor = DataPreprocessor(
         waveform_model,

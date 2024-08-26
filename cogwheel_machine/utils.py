@@ -236,3 +236,27 @@ def write_version(rundir):
     rundir = Path(rundir)
     with open(rundir/VERSION_FILENAME, 'w', encoding='utf-8') as file:
         file.write(__version__)
+
+
+class NpzMixin:
+    """
+    Implement ``.from_npz``, ``.to_npz`` and ``get_filename`` for
+    classes that only contain numpy.array attributes.
+    """
+    @classmethod
+    def from_npz(cls, directory):
+        """Load instance from a .npz file."""
+        with np.load(cls.get_filename(directory)) as file:
+            return cls(**file)
+
+    def to_npz(self, directory):
+        """Save instance to a .npz file."""
+        np.savez(self.get_filename(directory), **self.__dict__)
+
+    @classmethod
+    def get_filename(cls, directory):
+        """
+        Return path to a .npz file in directory, defining a convention
+        for where to save instances of this class.
+        """
+        return Path(directory)/f'{cls.__name__}.npz'
