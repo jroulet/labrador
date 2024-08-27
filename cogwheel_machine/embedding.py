@@ -70,9 +70,6 @@ class BlockMatrixEmbeddingNetwork(nn.Module):
         in_size = input_size
         for i, size in enumerate(layer_sizes):
             layers.append(nn.Linear(in_size, size))
-            # Add ReLU only after hidden layers:
-            if i < len(layer_sizes) - 1:
-                layers.append(nn.ReLU())
             in_size = size + unchanged_size  # Output size plus unchanged part for the next layer
 
         # Combine the layers into a sequential model
@@ -92,14 +89,18 @@ class BlockMatrixEmbeddingNetwork(nn.Module):
         torch.Tensor: Output of shape (batch_size, final_layer_size + unchanged_size).
         """
         # Split the input into two parts
-        x_processed = x[:, :-self.unchanged_size]
+        x_processed = x
         x_unchanged = x[:, -self.unchanged_size:]
+        relu = nn.ReLU()
 
         # Process the upper part with the influence of the unchanged part
-        for layer in self.fc_layers:
+        for i, layer in enumerate(self.fc_layers):
+            x_processed = layer(x_processed)
+            # Add ReLU only after hidden layers:
+            if i < len(self.fc_layers) - 1:
+                x_processed = relu(x_processed)
             # Concatenate unchanged part to the processed part
             x_processed = torch.cat((x_processed, x_unchanged), dim=1)
-            x_processed = layer(x_processed)
 
         # Combine the processed and unchanged parts
-        return torch.cat((x_processed, x_unchanged), dim=1)
+        return x_processed
