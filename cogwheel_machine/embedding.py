@@ -1,4 +1,5 @@
 """Embedding networks."""
+import torch
 from torch import nn
 
 
@@ -63,11 +64,10 @@ class BlockMatrixEmbeddingNetwork(nn.Module):
         super().__init__()
 
         self.unchanged_size = unchanged_size
-        self.processed_size = input_size - unchanged_size
         
         # Create a list of fully connected layers for the processed part
         layers = []
-        in_size = self.processed_size + unchanged_size  # Include unchanged part in each layer's input
+        in_size = input_size
         for i, size in enumerate(layer_sizes):
             layers.append(nn.Linear(in_size, size))
             # Add ReLU only after hidden layers:
@@ -92,8 +92,8 @@ class BlockMatrixEmbeddingNetwork(nn.Module):
         torch.Tensor: Output of shape (batch_size, final_layer_size + unchanged_size).
         """
         # Split the input into two parts
-        x_processed = x[:, :self.processed_size]
-        x_unchanged = x[:, self.unchanged_size:]
+        x_processed = x[:, :-self.unchanged_size]
+        x_unchanged = x[:, -self.unchanged_size:]
 
         # Process the upper part with the influence of the unchanged part
         for layer in self.fc_layers:
