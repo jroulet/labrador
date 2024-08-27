@@ -70,11 +70,12 @@ class PhenomenologicalWaveformGenerator:
             )[:n_svd_examples]
 
         return cls.from_waveforms(frequencies, wht_filter, waveform_generator,
-                                  simulation_parameters, pn_phase_tol=0.1)
+                                  simulation_parameters, config.PN_PHASE_TOL)
 
     @classmethod
-    def from_waveforms(cls, frequencies, fiducial_wht_filter, waveform_generator,
-                       simulation_parameters, pn_phase_tol):
+    def from_waveforms(cls, frequencies, fiducial_wht_filter,
+                       waveform_generator, simulation_parameters,
+                       pn_phase_tol):
         """
         Parameters
         ----------
@@ -703,7 +704,7 @@ class PhaseModel:
         seed: {None, int, numpy.random.Generator}
             For reproducible output, since the SVD examples are random.
         """
-        fbin, weights = cls._get_fbin_and_weights(
+        rb_splines, weights = cls._get_rbsplines_and_weights(
             frequencies, fiducial_wht_filter, pn_phase_tol)  # f, df
         n_det, _ = weights.shape
         n_ext = 2 * n_det  # phase & time at each detector
@@ -713,7 +714,7 @@ class PhaseModel:
         intpncoef_examples = cls._parameters_to_intpncoef(
             **parameter_examples)  # ni
 
-        qmat, rmat = cls._get_qr(fbin, weights)  # dfn, nn
+        qmat, rmat = cls._get_qr(rb_splines.fbin, weights)  # dfn, nn
 
         weightedphase_to_pncoef_mat = np.einsum('nN,dfN->ndf',
                                                 np.linalg.inv(rmat),
@@ -744,18 +745,18 @@ class PhaseModel:
         dphase_to_phasecoef_mat = np.einsum('dfc,df->cdf',
                                             weighted_dphase_basis,
                                             weights)  # cdf
-        return cls(fbin=fbin,
+        return cls(rb_splines=rb_splines,
                    _dphase_to_phasecoef_mat=dphase_to_phasecoef_mat,
                    _phasecoef_to_dpncoef_mat=phasecoef_to_dpncoef_mat,
                    _avg_pncoef=avg_pncoef)
 
     def __init__(self,
-                 fbin,
+                 rb_splines,
                  _dphase_to_phasecoef_mat,
                  _phasecoef_to_dpncoef_mat,
                  _avg_pncoef):
         """Generic constructor, use `from_scratch` instead."""
-        self._fbin = fbin  # f
+        self.rb_splines = rb_splines
         self._dphase_to_phasecoef_mat = _dphase_to_phasecoef_mat  # cdf
         self._phasecoef_to_dpncoef_mat = _phasecoef_to_dpncoef_mat  # nc
         self._avg_pncoef = _avg_pncoef  # n
@@ -779,14 +780,6 @@ class PhaseModel:
         pnphases = self._get_pnphases(frequencies, self.n_det)  # dfn
         pncoef = self._phasecoef_to_pncoef(phasecoef)  # n
         return pnphases @ pncoef  # df
-
-    @property
-    def fbin(self):
-        """
-        Frequencies at which the weights to orthogonalize coordinates
-        were computed. Users should not modify this once created.
-        """
-        return self._fbin
 
     @property
     def n_det(self):
@@ -830,9 +823,9 @@ class PhaseModel:
 
         phase_fbin = scipy.interpolate.make_interp_spline(
             frequencies, phase, axis=1, k=1
-            )(self.fbin)
+            )(self.rb_splines.fbin)
 
-        avg_phase = (self._get_pnphases(self.fbin, self.n_det)
+        avg_phase = (self._get_pnphases(self.rb_splines.fbin, self.n_det)
                      @ self._avg_pncoef)  # df
         dphase = phase_fbin - avg_phase  # df
         phasecoef = np.einsum('cdf,df->c',
@@ -855,8 +848,8 @@ class PhaseModel:
         return self._avg_pncoef + self._phasecoef_to_dpncoef_mat @ phasecoef
 
     @staticmethod
-    def _get_fbin_and_weights(frequencies, fiducial_wht_filter,
-                              pn_phase_tol):
+    def _get_rbsplines_and_weights(frequencies, fiducial_wht_filter,
+                                   pn_phase_tol):
         rb_splines = RelativeBinningSplines(frequencies,
                                             pn_phase_tol=pn_phase_tol)
         weights_f = frequencies**(-7/6) * fiducial_wht_filter
@@ -865,7 +858,7 @@ class PhaseModel:
         # (take abs because spline interpolation can produce values < 0)
 
         weights_fbin /= np.linalg.norm(weights_fbin)
-        return rb_splines.fbin, weights_fbin
+        return rb_splines, weights_fbin
 
     @classmethod
     def _get_qr(cls, frequencies, weights):

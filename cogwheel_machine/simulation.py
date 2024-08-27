@@ -256,7 +256,7 @@ class DataPreprocessor:
                  i_refdet,
                  f_ref,
                  n_coherent_segments=8,
-                 pn_phase_tol_compression=1.0):
+                 pn_phase_tol_compression=None):
         """
         Parameters
         ----------
@@ -345,7 +345,7 @@ class DataPreprocessor:
         assert np.array_equal(frequencies,
                               event_data.frequencies[event_data.fslice])
 
-        like = semicoherent_likelihood.SemicoherentLikelihood.from_event_data(
+        like = semicoherent_likelihood.SemicoherentLikelihood(
             event_data=event_data,
             ref_waveform_phase=ref_waveform_phase,
             waveform_model=self.waveform_model,
