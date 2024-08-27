@@ -43,3 +43,63 @@ class FullyConnectedEmbeddingNetwork(nn.Module):
         torch.Tensor: Output of shape (batch_size, final_layer_size).
         """
         return self.fc_layers(x)
+
+
+class BlockMatrixEmbeddingNetwork(nn.Module):
+    """Embedding network with block matrix structure."""
+    def __init__(self, input_size, layer_sizes, unchanged_size):
+        """
+        Parameters
+        ----------
+        input_size: int
+            The size of the input features.
+            
+        layer_sizes: list of int
+            Each element is the size of the corresponding hidden layer.
+
+        unchanged_size: int
+            The size of the part of the input that should remain unaffected.
+        """
+        super().__init__()
+
+        self.unchanged_size = unchanged_size
+        self.processed_size = input_size - unchanged_size
+        
+        # Create a list of fully connected layers for the processed part
+        layers = []
+        in_size = self.processed_size + unchanged_size  # Include unchanged part in each layer's input
+        for i, size in enumerate(layer_sizes):
+            layers.append(nn.Linear(in_size, size))
+            # Add ReLU only after hidden layers:
+            if i < len(layer_sizes) - 1:
+                layers.append(nn.ReLU())
+            in_size = size + unchanged_size  # Output size plus unchanged part for the next layer
+
+        # Combine the layers into a sequential model
+        self.fc_layers = nn.Sequential(*layers)
+
+    def forward(self, x):
+        """
+        Forward pass through the network.
+
+        Parameters
+        ----------
+        x: torch.Tensor
+            Input tensor of shape (batch_size, input_size).
+
+        Returns
+        -------
+        torch.Tensor: Output of shape (batch_size, final_layer_size + unchanged_size).
+        """
+        # Split the input into two parts
+        x_processed = x[:, :self.processed_size]
+        x_unchanged = x[:, self.unchanged_size:]
+
+        # Process the upper part with the influence of the unchanged part
+        for layer in self.fc_layers:
+            # Concatenate unchanged part to the processed part
+            x_processed = torch.cat((x_processed, x_unchanged), dim=1)
+            x_processed = layer(x_processed)
+
+        # Combine the processed and unchanged parts
+        return torch.cat((x_processed, x_unchanged), dim=1)

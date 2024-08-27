@@ -79,9 +79,10 @@ def _instantiate_inference(modeldir):
     x = torch.tensor(simulation_data, dtype=torch.float32).to(config.DEVICE)
 
     if config.EMBEDDING_LAYER_SIZES:
-        embedding_net = embedding.FullyConnectedEmbeddingNetwork(
+        embedding_net = embedding.BlockMatrixEmbeddingNetwork(
             input_size=x.shape[1],
-            layer_sizes=config.EMBEDDING_LAYER_SIZES)
+            layer_sizes=config.EMBEDDING_LAYER_SIZES,
+            unchanged_size=config.PARAMS_REFWF_SIZE)
         config.POSTERIOR_NN_KWARGS['embedding_net'] = embedding_net
 
     neural_posterior = sbi.utils.posterior_nn(**config.POSTERIOR_NN_KWARGS)
