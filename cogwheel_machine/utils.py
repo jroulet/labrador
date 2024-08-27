@@ -22,10 +22,16 @@ hand, all the rest are created by the various modules of the code.
     └── version.txt
 """
 
+import functools
 import logging
+import multiprocessing
 import os
+import pstats
 import shutil
+import tempfile
+import uuid
 from pathlib import Path
+from cProfile import Profile
 import numpy as np
 import pandas as pd
 
@@ -260,3 +266,40 @@ class NpzMixin:
         for where to save instances of this class.
         """
         return Path(directory)/f'{cls.__name__}.npz'
+
+
+def multiprocessing_starmap_profiled(func, iterable, processes=None):
+    """
+    Similar to ``multiprocessing.Pool().starmap`` but it also returns
+    profiling statistics.
+
+    Return
+    ------
+    results: list
+        ``[func(*args) for args in iterable]``.
+
+    stats: pstats.Stats
+        Profiling statistics.
+    """
+    with tempfile.TemporaryDirectory() as profile_dir:
+        profiled_func = functools.partial(_aux_profiled_func,
+                                          func=func, profile_dir=profile_dir)
+
+        with multiprocessing.Pool(processes) as pool:
+            results = pool.map(profiled_func, iterable)
+
+        # Aggregate the stats
+        stats = pstats.Stats()
+        for path in Path(profile_dir).glob('*.prof'):
+            stats.add(str(path))
+
+    return results, stats
+
+def _aux_profiled_func(args, func, profile_dir):
+    # Defined in top level so that it is pickleable for multiprocessing
+    with Profile() as profiler:
+        result = func(*args)
+
+    profiler.dump_stats(Path(profile_dir)/f'{uuid.uuid4()}.prof')
+
+    return result

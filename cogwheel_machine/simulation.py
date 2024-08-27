@@ -11,7 +11,6 @@ DataPreprocessor:
     Compress data by heterodyning against a reference waveform.
 """
 import argparse
-import multiprocessing
 import os
 from pathlib import Path
 import numpy as np
@@ -162,11 +161,11 @@ def simulate_and_preprocess_samples(simulator,
         belong to before applying folding. Takes values between
         [0, 2**n_folded_params).
     """
-    with multiprocessing.Pool(processes) as pool:
-        results = pool.starmap(
+    results, stats = utils.multiprocessing_starmap_profiled(
             simulate_and_preprocess_sample,
             ((simulator, data_preprocessor, parameters, transform_dic)
-             for _, parameters in simulation_parameters.iterrows()))
+             for _, parameters in simulation_parameters.iterrows()),
+            processes)
 
     preprocessed_data, folded_sampled_params, unfolding_labels = zip(*results)
     del results
@@ -182,7 +181,8 @@ def simulate_and_preprocess_samples(simulator,
 
     return (preprocessed_data,
             np.array(folded_sampled_params, np.float32),
-            np.array(unfolding_labels))
+            np.array(unfolding_labels),
+            stats)
 
 
 class Simulator:
@@ -452,7 +452,7 @@ def submit_condor(rundir,
 def _populate_datadir(datadir, simulator, data_preprocessor,
                       transform_dic, processes):
     simulation_parameters = pd.read_feather(datadir/utils.PARAMETERS_FILENAME)
-    preprocessed_data, folded_sampled_params, unfolding_labels \
+    preprocessed_data, folded_sampled_params, unfolding_labels, stats \
         = simulate_and_preprocess_samples(
             simulator,
             data_preprocessor,
@@ -464,6 +464,7 @@ def _populate_datadir(datadir, simulator, data_preprocessor,
     np.save(datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME,
             folded_sampled_params)
     np.save(datadir/utils.UNFOLDING_LABELS_FILENAME, unfolding_labels)
+    stats.dump_stats(datadir/'simulation_profiling')
 
 
 
