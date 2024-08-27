@@ -29,7 +29,6 @@ import os
 import pstats
 import shutil
 import tempfile
-import uuid
 from pathlib import Path
 from cProfile import Profile
 import numpy as np
@@ -186,7 +185,7 @@ def get_summary(datadir, apply_mask=True):
     return summary
 
 
-def get_preprocessed_data(datadir, apply_mask=True):
+def get_preprocessed_data(datadir, apply_mask=True) -> dict:
     """
     Load ``preprocessed_data`` and apply the ``mask`` to it.
 
@@ -285,21 +284,26 @@ def multiprocessing_starmap_profiled(func, iterable, processes=None):
         profiled_func = functools.partial(_aux_profiled_func,
                                           func=func, profile_dir=profile_dir)
 
-        with multiprocessing.Pool(processes) as pool:
+        with multiprocessing.Pool(processes, _worker_initializer) as pool:
             results = pool.map(profiled_func, iterable)
 
         # Aggregate the stats
-        stats = pstats.Stats()
-        for path in Path(profile_dir).glob('*.prof'):
-            stats.add(str(path))
+        paths = (path.as_posix() for path in Path(profile_dir).glob('*.prof'))
+        stats = pstats.Stats(*paths)
 
     return results, stats
 
+def _worker_initializer():
+    global profiler
+    profiler = Profile()
+
 def _aux_profiled_func(args, func, profile_dir):
     # Defined in top level so that it is pickleable for multiprocessing
-    with Profile() as profiler:
-        result = func(*args)
+    # global profiler
+    result = profiler.runcall(func, *args)
 
-    profiler.dump_stats(Path(profile_dir)/f'{uuid.uuid4()}.prof')
+    # Dump profile data after each call
+    process_id = multiprocessing.current_process().pid
+    profiler.dump_stats(Path(profile_dir)/f'{process_id}.prof')
 
     return result
