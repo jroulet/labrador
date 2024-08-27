@@ -2,7 +2,7 @@
 Example configuration file with parameters for the neural posterior
 estimation.
 
-This file may be copied into `run_dir` and edited before training the
+This file may be copied into `modeldir` and edited before training the
 network.
 """
 # kwargs to sbi.utils.posterior_nn
@@ -15,7 +15,7 @@ PARAMS_REFWF_SIZE = 10
 
 # kwargs to sbi.inference.SNPE.train
 TRAIN_KWARGS = {'training_batch_size': 65536,
-                'stop_after_epochs': 32,
+                'stop_after_epochs': (20, 0.2),
                 'max_num_epochs': 10000,
                 'learning_rate': 1e-3,
                 'show_train_summary': True}
