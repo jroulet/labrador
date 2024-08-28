@@ -32,7 +32,12 @@ EVENT_DATA_KWARGS = {
     'tcoarse': 0.,
     }
 
-PN_PHASE_TOL_COMPRESSION = 0.1
+PN_PHASE_TOL = 0.1
+
+# ``PN_PHASE_TOL_COMPRESSION = None`` makes PN_PHASE_TOL_COMPRESSION
+# equal to PN_PHASE_TOL, but simulations are faster if it is ``None``.
+PN_PHASE_TOL_COMPRESSION = None
+
 N_COHERENT_SEGMENTS = 8
 
 N_TRAINING_SIMULATIONS = 10**2  # Increase for real-life usage!

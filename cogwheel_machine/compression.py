@@ -109,7 +109,7 @@ def svd_compression(rundir, target_loss=1e-3):
     compressor.to_npz(rundir)
 
 
-class SVDCompressor:
+class SVDCompressor(utils.NpzMixin):
     """Class to compress data using SVD."""
     @classmethod
     def from_training_data(cls, rundir):
@@ -154,12 +154,6 @@ class SVDCompressor:
 
         return cls(mean_signal, std_noise, vh_mat, cumulative_variance)
 
-    @classmethod
-    def from_npz(cls, rundir):
-        """Load instance from a .npz file."""
-        with np.load(cls.get_filename(rundir)) as file:
-            return cls(**file)
-
     def __init__(self, _mean_signal, _std_noise, _vh_mat,
                  _cumulative_variance):
         """
@@ -170,18 +164,6 @@ class SVDCompressor:
         self._std_noise = _std_noise
         self._vh_mat = _vh_mat
         self._cumulative_variance = _cumulative_variance
-
-    def to_npz(self, rundir):
-        """Save instance to a .npz file."""
-        np.savez(self.get_filename(rundir), **self.__dict__)
-
-    @classmethod
-    def get_filename(cls, rundir):
-        """
-        Return path to a .npz file in rundir, defining a convention for
-        where to save instances of this class.
-        """
-        return Path(rundir)/f'{cls.__name__}.npz'
 
     def get_svd_coefficients(self, data, n_components=None):
         """

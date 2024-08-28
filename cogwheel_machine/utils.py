@@ -22,10 +22,15 @@ hand, all the rest are created by the various modules of the code.
     └── version.txt
 """
 
+import functools
 import logging
+import multiprocessing
 import os
+import pstats
 import shutil
+import tempfile
 from pathlib import Path
+from cProfile import Profile
 import numpy as np
 import pandas as pd
 
@@ -180,7 +185,7 @@ def get_summary(datadir, apply_mask=True):
     return summary
 
 
-def get_preprocessed_data(datadir, apply_mask=True):
+def get_preprocessed_data(datadir, apply_mask=True) -> dict:
     """
     Load ``preprocessed_data`` and apply the ``mask`` to it.
 
@@ -236,3 +241,69 @@ def write_version(rundir):
     rundir = Path(rundir)
     with open(rundir/VERSION_FILENAME, 'w', encoding='utf-8') as file:
         file.write(__version__)
+
+
+class NpzMixin:
+    """
+    Implement ``.from_npz``, ``.to_npz`` and ``get_filename`` for
+    classes that only contain numpy.array attributes.
+    """
+    @classmethod
+    def from_npz(cls, directory):
+        """Load instance from a .npz file."""
+        with np.load(cls.get_filename(directory)) as file:
+            return cls(**file)
+
+    def to_npz(self, directory):
+        """Save instance to a .npz file."""
+        np.savez(self.get_filename(directory), **self.__dict__)
+
+    @classmethod
+    def get_filename(cls, directory):
+        """
+        Return path to a .npz file in directory, defining a convention
+        for where to save instances of this class.
+        """
+        return Path(directory)/f'{cls.__name__}.npz'
+
+
+def multiprocessing_starmap_profiled(func, iterable, processes=None):
+    """
+    Similar to ``multiprocessing.Pool().starmap`` but it also returns
+    profiling statistics.
+
+    Return
+    ------
+    results: list
+        ``[func(*args) for args in iterable]``.
+
+    stats: pstats.Stats
+        Profiling statistics.
+    """
+    with tempfile.TemporaryDirectory() as profile_dir:
+        profiled_func = functools.partial(_aux_profiled_func,
+                                          func=func, profile_dir=profile_dir)
+
+        with multiprocessing.Pool(processes, _worker_initializer) as pool:
+            results = pool.map(profiled_func, iterable)
+
+        # Aggregate the stats
+        paths = (path.as_posix() for path in Path(profile_dir).glob('*.prof'))
+        stats = pstats.Stats(*paths)
+
+    return results, stats
+
+def _worker_initializer():
+    global profiler
+    profiler = Profile()
+
+def _aux_profiled_func(args, func, profile_dir):
+    # Defined in top level so that it is pickleable for multiprocessing
+    # global profiler
+    result = profiler.runcall(func, *args)
+
+    # Dump profile data after each call
+    process_id = multiprocessing.current_process().pid
+    profiler.dump_stats(Path(profile_dir)/f'{process_id}.prof')
+
+    return result
