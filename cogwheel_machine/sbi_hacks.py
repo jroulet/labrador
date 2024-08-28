@@ -1,5 +1,4 @@
 """Modifications to the behavior of ``sbi``."""
-from collections.abc import Iterable
 import numpy as np
 
 import torch.utils.data
@@ -8,9 +7,7 @@ import sbi.inference
 
 class SNPEFixedBatches(sbi.inference.SNPE):
     """
-    Like sbi.inference.SNPE except the batches are fixed, and we accept
-    a floating point ``stop_after_epochs`` parameter (meaning relative
-    to the current epoch).
+    Like sbi.inference.SNPE except the batches are fixed.
 
     The batches are made of consecutive simulations (no shuffling), the
     first batches are training and the last are validation.
@@ -70,30 +67,6 @@ class SNPEFixedBatches(sbi.inference.SNPE):
         train_ind_batches = batch_indices[:num_training_batches]
         val_ind_batches = batch_indices[num_training_batches:]
         return train_ind_batches, val_ind_batches
-
-    def _converged(self, epoch: int, stop_after_epochs) -> bool:
-        """Return whether the training converged yet and save best model state so far.
-
-        Checks for improvement in validation performance over previous epochs.
-
-        Args:
-            epoch: Current epoch in training.
-            stop_after_epochs: int or float or tuple
-                If an int, how many fruitless epochs to let pass before stopping.
-                If a float, it is interpreted as a fraction of the current epoch.
-                If a tuple, it must contain an (int, float) pair and the most
-                conservative one is used.
-
-        Returns:
-            Whether the training has stopped improving, i.e. has converged.
-        """
-        if isinstance(stop_after_epochs, Iterable):
-            absolute, relative = stop_after_epochs
-            stop_after_epochs = max(absolute, int(relative * epoch))
-        elif isinstance(stop_after_epochs, float):
-            stop_after_epochs = int(epoch * stop_after_epochs)
-
-        return super()._converged(epoch, stop_after_epochs)
 
 
 class FixedBatchesDataLoader:
