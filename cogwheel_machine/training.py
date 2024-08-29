@@ -89,8 +89,9 @@ def _instantiate_inference(modeldir):
     inference = sbi_hacks.NPEFixedBatches(
         density_estimator=neural_posterior,
         device=config.DEVICE,
-        summary_writer=SummaryWriter(modeldir)
+        summary_writer=SummaryWriter(modeldir),
         ).append_simulations(theta, x)
+
     return inference
 
 
@@ -124,7 +125,8 @@ def main(modeldir):
         density_estimator = inference.train(
             **config.TRAIN_KWARGS,
             resume_training=resume_training,
-            force_first_round_loss=resume_training)
+            force_first_round_loss=resume_training,
+            lr_scheduler_kwargs=config.LR_SCHEDULER_KWARGS)
 
     profiler.dump_stats(modeldir/'profiling')
 
