@@ -5,7 +5,7 @@ import torch.utils.data
 import sbi.inference
 
 
-class SNPEFixedBatches(sbi.inference.SNPE):
+class NPEFixedBatches(sbi.inference.NPE):
     """
     Like sbi.inference.SNPE except the batches are fixed.
 
