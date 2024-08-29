@@ -1,37 +1,51 @@
 """
 Integration test of the modules for generating training data, namely:
-	* generate_parameters
-	* simulation
-	* compression
+    * generate_parameters
+    * simulation
+    * compression
 """
 import os
 os.environ['OMP_NUM_THREADS'] = '1'
 
 import tempfile
+import textwrap
 from unittest import TestCase, main
 
 from cogwheel_machine import (compression,
-							  generate_parameters,
-							  simulation,
-							  utils)
+                              generate_parameters,
+                              simulation,
+                              training,
+                              utils)
 
 
 class TrainingDataTestCase(TestCase):
-	"""Class to test the generation of training data."""
-	def test_make_training_data(self):
-		"""
-		Generate a small amount of training data in a temporary
-		directory.
-		"""
-		with tempfile.TemporaryDirectory() as parentdir:
-			rundir = utils.setup_rundir(parentdir)
-			generate_parameters.main(rundir)
-			simulation.main(rundir)
-			compression.create_mask(rundir)
-			compression.svd_compression(rundir)
-			print('Created these training data:')
-			os.system(f'tree {parentdir}')
+    """Class to test simulations and training."""
+    def test_make_training_data(self):
+        """
+        Generate a small amount of training data in a temporary
+        directory, and train a model on the CPU for a few epochs.
+        """
+        with tempfile.TemporaryDirectory() as parentdir:
+            # Generate training data
+            rundir = utils.setup_rundir(parentdir)
+            generate_parameters.main(rundir)
+            simulation.main(rundir)
+            compression.create_mask(rundir)
+            compression.svd_compression(rundir)
+            print('Created these training data:')
+            os.system(f'tree {parentdir}')
+
+            # Train a model for a couple epochs on the CPU
+            modeldir = utils.setup_modeldir(rundir)
+            extra_lines = textwrap.dedent('''\
+                TRAIN_KWARGS.update(max_num_epochs=2,
+                                    training_batch_size=10)
+                DEVICE = 'cpu'
+                ''')
+            with open(modeldir/utils.MODEL_CONFIG_FILENAME, 'a') as file:
+                file.write(extra_lines)
+            training.main(modeldir)
 
 
 if __name__ == '__main__':
-	main()
+    main()
