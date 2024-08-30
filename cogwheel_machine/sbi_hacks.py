@@ -83,7 +83,9 @@ class NPEFixedBatches(sbi.inference.NPE):
         return train_ind_batches, val_ind_batches
 
     # Override ``train`` method to allow `lr_scheduler_kwargs`.
-    # The new lines w.r.t the sbi implementation have an asterisk "# *".
+    # The code below is copied from sbi.inference.trainers.npe.npe_base
+    # almost verbatim, the new lines w.r.t the sbi implementation have
+    # an asterisk "# *".
     # pylint: disable=line-too-long
     def train(
         self,
@@ -217,6 +219,7 @@ class NPEFixedBatches(sbi.inference.NPE):
         if not resume_training:
             self.optimizer = Adam(list(self._neural_net.parameters()), lr=learning_rate)
             self.epoch, self._val_loss = 0, float("Inf")
+
         if lr_scheduler_kwargs is not None:  # *
             self.lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(  # *
                 self.optimizer, **lr_scheduler_kwargs)  # *
