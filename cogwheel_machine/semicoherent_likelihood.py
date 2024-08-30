@@ -9,8 +9,6 @@ import numpy as np
 
 import lal
 
-from .rbsplines import RelativeBinningSplines
-
 
 def get_unwrapped_phase(frequencies, signal, mchirp):
     """
@@ -75,14 +73,20 @@ class SemicoherentLikelihood:
 
     @property
     def rb_splines(self):
+        """Splines for relative binning compression."""
         return self.waveform_model.phase_model.rb_splines
 
     @property
     def frequencies(self):
+        """RFFT frequencies, with highpass slice applied."""
         return self.event_data.frequencies[self.event_data.fslice]
 
     @property
     def wht_filter(self):
+        """
+        Whitening filter of shape (n_det, n_freq), defined on
+        ``.frequencies``.
+        """
         return self.event_data.wht_filter[:, self.event_data.fslice]
 
     def semicoherent_lnlike(self, shapecoef):
