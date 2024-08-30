@@ -16,12 +16,7 @@ from cogwheel_machine import embedding, sbi_hacks, utils
 
 
 def load_loss(modeldir):
-    """
-    Load the training and validation log probabilities of a trained
-    model.
-
-    The log probabilities are minus the loss.
-    """
+    """Load the training and validation losses of a trained model."""
     accumulator = event_accumulator.EventAccumulator(modeldir.as_posix())
     accumulator.Reload()
 
@@ -42,17 +37,14 @@ def load_runtime(modeldir):
 
 
 def plot_loss(modeldir, save=True):
-    """
-    Plot the training and validation log probabilities of a trained
-    model.
-    """
+    """Plot the training and validation losses of a trained model."""
     training_loss, validation_loss = load_loss(modeldir)
 
     plt.figure()
     plt.plot(training_loss, label='Training')
     plt.plot(validation_loss, label='Validation')
     plt.xlabel('Epoch')
-    plt.ylabel('Log Prob')
+    plt.ylabel('Loss')
     plt.legend()
     plt.grid(ls=':')
     plt.title(modeldir.name)
@@ -78,11 +70,14 @@ def _instantiate_inference(modeldir):
                         ).to(config.DEVICE)
     x = torch.tensor(simulation_data, dtype=torch.float32).to(config.DEVICE)
 
+    with np.load(datadir/utils.PREPROCESSED_DATA_FILENAME) as file:
+        n_processed_coef = file['processed_coef'].shape[1]
+
     if config.EMBEDDING_LAYER_SIZES:
         embedding_net = embedding.BlockMatrixEmbeddingNetwork(
             input_size=x.shape[1],
             layer_sizes=config.EMBEDDING_LAYER_SIZES,
-            unchanged_size=config.PARAMS_REFWF_SIZE)
+            unchanged_size=n_processed_coef)
         config.POSTERIOR_NN_KWARGS['embedding_net'] = embedding_net
 
     neural_posterior = sbi.utils.posterior_nn(**config.POSTERIOR_NN_KWARGS)

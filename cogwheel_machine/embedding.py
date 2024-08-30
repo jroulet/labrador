@@ -59,20 +59,20 @@ class BlockMatrixEmbeddingNetwork(nn.Module):
             Each element is the size of the corresponding hidden layer.
 
         unchanged_size: int
-            The size of the part of the input that should remain unaffected.
+            The size of the part of the input that should remain
+            unaffected.
         """
         super().__init__()
 
         self.unchanged_size = unchanged_size
-        
+
         # Create a list of fully connected layers for the processed part
         layers = []
         in_size = input_size
-        for i, size in enumerate(layer_sizes):
+        for size in layer_sizes:
             layers.append(nn.Linear(in_size, size))
-            in_size = size + unchanged_size  # Output size plus unchanged part for the next layer
+            in_size = size + unchanged_size
 
-        # Combine the layers into a sequential model
         self.fc_layers = nn.Sequential(*layers)
 
     def forward(self, x):
@@ -86,7 +86,8 @@ class BlockMatrixEmbeddingNetwork(nn.Module):
 
         Returns
         -------
-        torch.Tensor: Output of shape (batch_size, final_layer_size + unchanged_size).
+        torch.Tensor:
+            Of shape (batch_size, final_layer_size + unchanged_size).
         """
         # Split the input into two parts
         x_processed = x

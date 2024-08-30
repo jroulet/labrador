@@ -11,7 +11,6 @@ POSTERIOR_NN_KWARGS = {'model': 'nsf',
 
 # Embedding network
 EMBEDDING_LAYER_SIZES = None  # list of ints (optional)
-PARAMS_REFWF_SIZE = 13
 
 # kwargs to sbi.inference.SNPE.train
 TRAIN_KWARGS = {'training_batch_size': 65536,
