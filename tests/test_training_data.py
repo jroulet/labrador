@@ -35,24 +35,23 @@ class TrainingDataTestCase(TestCase):
             print('Created these training data:')
             os.system(f'tree {parentdir}')
 
-            # Train a few models with different settings
+            # Train a model for a couple epochs on the CPU
             # - Default:
-            self._train_model(rundir)
+            extra_lines = textwrap.dedent('''\
+                TRAIN_KWARGS.update(max_num_epochs=2,
+                                    training_batch_size=10)
+                DEVICE = 'cpu'
+                ''')
+            self._train_model(rundir, extra_lines)
 
             # - Embedding network:
-            extra_lines = textwrap.dedent('''\
+            extra_lines += textwrap.dedent('''\
                 EMBEDDING_LAYER_SIZES = [16, 8]
                 ''')
             self._train_model(rundir, extra_lines)
 
     @staticmethod
     def _train_model(rundir, extra_lines=''):
-        extra_lines += textwrap.dedent('''\
-            TRAIN_KWARGS.update(max_num_epochs=2,
-                                training_batch_size=10)
-            DEVICE = 'cpu'
-            ''')
-         # Train a model for a couple epochs on the CPU
         modeldir = utils.setup_modeldir(rundir)
         with open(modeldir/utils.MODEL_CONFIG_FILENAME, 'a') as file:
             file.write(extra_lines)
