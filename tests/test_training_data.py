@@ -42,6 +42,8 @@ class TrainingDataTestCase(TestCase):
             print('Created these training data:')
             os.system(f'tree {parentdir}')
 
+            self._assert_same_training_and_testing_files(rundir)
+
             # Train a model for a couple epochs on the CPU
             # - Default:
             extra_lines = textwrap.dedent('''\
@@ -63,6 +65,11 @@ class TrainingDataTestCase(TestCase):
         with open(modeldir/utils.MODEL_CONFIG_FILENAME, 'a') as file:
             file.write(extra_lines)
         training.main(modeldir)
+
+    def _assert_same_training_and_testing_files(self, rundir):
+        training_files = set(os.listdir(rundir/utils.TRAINING_DIR))
+        test_files = set(os.listdir(rundir/utils.TEST_DIR))
+        self.assertEqual(training_files, test_files)
 
 
 if __name__ == '__main__':
