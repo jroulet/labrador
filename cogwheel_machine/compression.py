@@ -233,10 +233,12 @@ class SVDCompressor(utils.NpzMixin):
         n_sim, n_det, n_freq = preprocessed_data['heterodyned_data'].shape
         shape = n_sim, n_det*n_freq
 
-        complex_data = preprocessed_data['heterodyned_data'].reshape(shape)
-        complex_signal = preprocessed_data['heterodyned_signal'].reshape(shape)
-
+        complex_data = preprocessed_data.pop('heterodyned_data').reshape(shape)
         data = np.concatenate([complex_data.real, complex_data.imag], axis=1)
+        del complex_data
+
+        complex_signal = preprocessed_data.pop('heterodyned_signal'
+                                              ).reshape(shape)
         signal = np.concatenate([complex_signal.real, complex_signal.imag],
                                 axis=1)
         return data, signal
