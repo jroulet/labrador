@@ -284,7 +284,8 @@ class JSONStandardScaler(sklearn.preprocessing.StandardScaler):
 
 
 def submit_condor(rundir,
-                  request_cpus,
+                  compression_algorithm='svd_compression',
+                  request_cpus=1,
                   request_memory='25G',
                   request_disk='1G',
                   **submit_kwargs):
@@ -318,7 +319,7 @@ def submit_condor(rundir,
         'output': scripts_dir/'compression.out',
         'error': scripts_dir/'compression.err',
         'log': scripts_dir/'compression.log',
-        'args': f'{rundir} --processes {request_cpus}',
+        'args': f'{rundir} {compression_algorithm}',
         'request_cpus': request_cpus,
         'request_memory': request_memory,
         'request_disk': request_disk,
