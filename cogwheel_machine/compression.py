@@ -2,8 +2,12 @@
 Algorithms for compressing the preprocessed data, and for defining a
 mask to select a subset of the simulations.
 """
+import json
 from pathlib import Path
 import numpy as np
+import sklearn.preprocessing
+
+import cogwheel.utils
 
 from . import utils
 
@@ -36,7 +40,22 @@ def create_mask(rundir):
         np.save(datadir/utils.MASK_FILENAME, mask)
 
 
-def _save_compressed_data(datadir, compressed_heterodyned_data):
+def _get_data(datadir, data_getter):
+    compressed_heterodyned_data = data_getter(datadir)
+
+    with np.load(datadir/utils.PREPROCESSED_DATA_FILENAME) as file:
+        processed_coef = file['processed_coef']
+
+    return np.concatenate([compressed_heterodyned_data, processed_coef],
+                          axis=1)
+
+
+def _save_compressed_data(unscaled_data, scaler, datadir):
+    compressed_data = scaler.transform(unscaled_data).astype(np.float32)
+    np.save(datadir/utils.COMPRESSED_DATA_FILENAME, compressed_data)
+
+
+def _scale_and_save_data(rundir, data_getter):
     """
     Create a file with compressed data.
 
@@ -44,16 +63,17 @@ def _save_compressed_data(datadir, compressed_heterodyned_data):
     processed_coef.
     It is a float32 array of shape (n_simulations, n_features).
     """
-    datadir = Path(datadir)
+    training_data = _get_data(rundir/utils.TRAINING_DIR, data_getter)
 
-    with np.load(datadir/utils.PREPROCESSED_DATA_FILENAME) as file:
-        processed_coef = file['processed_coef']
+    scaler = JSONStandardScaler()
+    scaler.fit(training_data)
+    scaler.to_json(rundir)
 
-    compressed_data = np.concatenate([compressed_heterodyned_data,
-                                      processed_coef],
-                                     axis=1, dtype=np.float32)
+    _save_compressed_data(training_data, scaler, rundir/utils.TRAINING_DIR)
+    del training_data
 
-    np.save(datadir/utils.COMPRESSED_DATA_FILENAME, compressed_data)
+    test_data = _get_data(rundir/utils.TEST_DIR, data_getter)
+    _save_compressed_data(test_data, scaler, rundir/utils.TEST_DIR)
 
 
 def simple_compression(rundir):
@@ -68,14 +88,14 @@ def simple_compression(rundir):
     rundir = Path(rundir)
     utils.check_version(rundir)
 
-    for datadir in rundir/utils.TRAINING_DIR, rundir/utils.TEST_DIR:
+    def data_getter(datadir):
         with np.load(datadir/utils.PREPROCESSED_DATA_FILENAME) as file:
             heterodyned_data = file['heterodyned_data']
 
         n_sim, n_det, n_freq = heterodyned_data.shape
-        reshaped = heterodyned_data.reshape(n_sim, n_det * n_freq)
+        return heterodyned_data.reshape(n_sim, n_det * n_freq)
 
-        _save_compressed_data(datadir, reshaped)
+    _scale_and_save_data(rundir, data_getter)
 
 
 def svd_compression(rundir, target_loss=1e-3):
@@ -96,15 +116,17 @@ def svd_compression(rundir, target_loss=1e-3):
         fractional variance of the Wiener-filtered signal. Smaller is
         more conservative, at the expense of less compression.
     """
+    rundir = Path(rundir)
     utils.check_version(rundir)
     compressor = SVDCompressor.from_training_data(rundir)
     n_components = compressor.n_components(target_loss)
 
-    for datadir in rundir/utils.TRAINING_DIR, rundir/utils.TEST_DIR:
+    def data_getter(datadir):
         data, _ = SVDCompressor.load_data_and_signal(datadir,
                                                      apply_mask=False)
-        svd_coefficients = compressor.get_svd_coefficients(data, n_components)
-        _save_compressed_data(datadir, svd_coefficients)
+        return compressor.get_svd_coefficients(data, n_components)
+
+    _scale_and_save_data(rundir, data_getter)
 
     compressor.to_npz(rundir)
 
@@ -211,10 +233,48 @@ class SVDCompressor(utils.NpzMixin):
         n_sim, n_det, n_freq = preprocessed_data['heterodyned_data'].shape
         shape = n_sim, n_det*n_freq
 
-        complex_data = preprocessed_data['heterodyned_data'].reshape(shape)
-        complex_signal = preprocessed_data['heterodyned_signal'].reshape(shape)
-
+        complex_data = preprocessed_data.pop('heterodyned_data').reshape(shape)
         data = np.concatenate([complex_data.real, complex_data.imag], axis=1)
+        del complex_data
+
+        complex_signal = preprocessed_data.pop('heterodyned_signal'
+                                              ).reshape(shape)
         signal = np.concatenate([complex_signal.real, complex_signal.imag],
                                 axis=1)
         return data, signal
+
+
+class JSONStandardScaler(sklearn.preprocessing.StandardScaler):
+    """
+    Like ``sklearn.preprocessing.StandardScaler`` but it can be saved to
+    JSON.
+    """
+    _KEYS = ('mean_',
+             'var_',
+             'scale_',
+             'n_samples_seen_')
+
+    @classmethod
+    def from_json(cls, directory):
+        """Load the ``StandardScaler`` parameters from a JSON file."""
+        filepath = cls._get_filepath(directory)
+
+        with open(filepath, encoding='utf-8') as file:
+            scaler_params = json.load(file)
+
+        scaler = cls()
+        scaler.__dict__.update(scaler_params)
+        return scaler
+
+    def to_json(self, directory):
+        """Save the ``StandardScaler`` parameters to a JSON file."""
+        filepath = self._get_filepath(directory)
+
+        scaler_params = {key: getattr(self, key) for key in self._KEYS}
+
+        with open(filepath, 'w', encoding='utf-8') as file:
+            json.dump(scaler_params, file, cls=cogwheel.utils.NumpyEncoder)
+
+    @classmethod
+    def _get_filepath(cls, directory):
+        return Path(directory) / f'{cls.__name__}.json'

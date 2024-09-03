@@ -168,7 +168,6 @@ def simulate_and_preprocess_samples(simulator,
             processes)
 
     preprocessed_data, folded_sampled_params, unfolding_labels = zip(*results)
-    del results
 
     # Turn list of dict into dict of arrays
     preprocessed_data = {key: np.array([dic[key] for dic in preprocessed_data])
