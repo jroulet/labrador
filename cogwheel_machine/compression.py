@@ -78,7 +78,7 @@ def _scale_and_save_data(rundir, data_getter):
     del training_data
 
     test_data = _get_data(rundir/utils.TEST_DIR, data_getter)
-    _save_compressed_data(test_data, scaler, rundir/utils.TRAINING_DIR)
+    _save_compressed_data(test_data, scaler, rundir/utils.TEST_DIR)
 
 
 def simple_compression(rundir):
