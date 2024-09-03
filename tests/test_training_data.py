@@ -9,6 +9,7 @@ os.environ['OMP_NUM_THREADS'] = '1'
 
 import tempfile
 import textwrap
+import tracemalloc
 from unittest import TestCase, main
 
 from cogwheel_machine import (compression,
@@ -25,11 +26,17 @@ class TrainingDataTestCase(TestCase):
         Generate a small amount of training data in a temporary
         directory, and train a model on the CPU for a few epochs.
         """
+        tracemalloc.start()
+
         with tempfile.TemporaryDirectory() as parentdir:
             # Generate training data
             rundir = utils.setup_rundir(parentdir)
             generate_parameters.main(rundir)
             simulation.main(rundir)
+
+            size, peak = tracemalloc.get_traced_memory()
+            print(f'{size=}, {peak=}')
+
             compression.create_mask(rundir)
             compression.svd_compression(rundir)
             print('Created these training data:')
