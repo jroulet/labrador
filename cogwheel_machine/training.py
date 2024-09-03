@@ -1,5 +1,6 @@
 """Functions for training neural posterior estimators."""
 import argparse
+import pickle
 from pathlib import Path
 from cProfile import Profile
 import numpy as np
@@ -9,28 +10,22 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 from tensorboard.backend.event_processing import event_accumulator
 
-from sbi.inference import SNPE
 import sbi.utils
 
-from cogwheel_machine import utils
+from cogwheel_machine import embedding, sbi_hacks, utils
 
 
-def load_logprob(modeldir):
-    """
-    Load the training and validation log probabilities of a trained
-    model.
-
-    The log probabilities are minus the loss.
-    """
+def load_loss(modeldir):
+    """Load the training and validation losses of a trained model."""
     accumulator = event_accumulator.EventAccumulator(modeldir.as_posix())
     accumulator.Reload()
 
-    training_logprob = [
-        logprob.value for logprob in accumulator.Scalars('training_log_probs')]
-    validation_logprob = [
-        logprob.value
-        for logprob in accumulator.Scalars('validation_log_probs')]
-    return training_logprob, validation_logprob
+    training_loss = [
+        loss.value for loss in accumulator.Scalars('training_loss')]
+    validation_loss = [
+        loss.value
+        for loss in accumulator.Scalars('validation_loss')]
+    return training_loss, validation_loss
 
 
 def load_runtime(modeldir):
@@ -41,35 +36,24 @@ def load_runtime(modeldir):
     return np.cumsum(durations) / 3600
 
 
-def plot_logprob(modeldir, save=True):
-    """
-    Plot the training and validation log probabilities of a trained
-    model.
-    """
-    training_logprob, validation_logprob = load_logprob(modeldir)
+def plot_loss(modeldir, save=True):
+    """Plot the training and validation losses of a trained model."""
+    training_loss, validation_loss = load_loss(modeldir)
 
     plt.figure()
-    plt.plot(training_logprob, label='Training')
-    plt.plot(validation_logprob, label='Validation')
+    plt.plot(training_loss, label='Training')
+    plt.plot(validation_loss, label='Validation')
     plt.xlabel('Epoch')
-    plt.ylabel('Log Prob')
+    plt.ylabel('Loss')
     plt.legend()
     plt.grid(ls=':')
     plt.title(modeldir.name)
 
     if save:
-        plt.savefig(modeldir/'logprob.pdf', bbox_inches='tight')
+        plt.savefig(modeldir/'loss.pdf', bbox_inches='tight')
 
 
-def main(modeldir):
-    """
-    Train neural posterior estimator.
-
-    See also
-    --------
-    utils.setup_modeldir
-    """
-    modeldir = Path(modeldir)
+def _instantiate_inference(modeldir):
     datadir = modeldir.resolve().parent/utils.TRAINING_DIR
     config = utils.load_model_config(modeldir)
 
@@ -86,21 +70,66 @@ def main(modeldir):
                         ).to(config.DEVICE)
     x = torch.tensor(simulation_data, dtype=torch.float32).to(config.DEVICE)
 
+    with np.load(datadir/utils.PREPROCESSED_DATA_FILENAME) as file:
+        n_processed_coef = file['processed_coef'].shape[1]
+
+    if config.EMBEDDING_LAYER_SIZES:
+        embedding_net = embedding.BlockMatrixEmbeddingNetwork(
+            input_size=x.shape[1],
+            layer_sizes=config.EMBEDDING_LAYER_SIZES,
+            unchanged_size=n_processed_coef)
+        config.POSTERIOR_NN_KWARGS['embedding_net'] = embedding_net
+
     neural_posterior = sbi.utils.posterior_nn(**config.POSTERIOR_NN_KWARGS)
 
-    inference = SNPE(density_estimator=neural_posterior,
-                     device=config.DEVICE,
-                     summary_writer=SummaryWriter(modeldir)
-                     ).append_simulations(theta, x)
+    inference = sbi_hacks.NPEFixedBatches(
+        density_estimator=neural_posterior,
+        device=config.DEVICE,
+        summary_writer=SummaryWriter(modeldir)
+        ).append_simulations(theta, x)
+    return inference
+
+
+def main(modeldir):
+    """
+    Train neural posterior estimator.
+
+    Parameters
+    ----------
+    modeldir: os.PathLike
+        Path to directory inside a ``rundir``, containing a file
+        "model_config.py". If `modeldir` also contains a previously
+        trained model, it will resume training.
+
+    See Also
+    --------
+    utils.setup_modeldir
+    """
+    modeldir = Path(modeldir)
+    config = utils.load_model_config(modeldir)
+
+    inference_filename = modeldir/utils.INFERENCE_FILENAME
+    resume_training = inference_filename.exists()
+    if resume_training:
+        with open(inference_filename, 'rb') as file:
+            inference = pickle.load(file)
+    else:
+        inference = _instantiate_inference(modeldir)
 
     with Profile() as profiler:
-        density_estimator = inference.train(**config.TRAIN_KWARGS)
+        density_estimator = inference.train(
+            **config.TRAIN_KWARGS,
+            resume_training=resume_training,
+            force_first_round_loss=resume_training)
 
     profiler.dump_stats(modeldir/'profiling')
 
+    with open(inference_filename, 'wb') as file:
+        pickle.dump(inference, file)
+
     posterior = inference.build_posterior(density_estimator)
     torch.save(posterior, modeldir/utils.POSTERIOR_FILENAME)
-    plot_logprob(modeldir)
+    plot_loss(modeldir)
 
 
 if __name__ == '__main__':

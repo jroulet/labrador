@@ -9,8 +9,6 @@ import numpy as np
 
 import lal
 
-from .rbsplines import RelativeBinningSplines
-
 
 def get_unwrapped_phase(frequencies, signal, mchirp):
     """
@@ -24,45 +22,9 @@ def get_unwrapped_phase(frequencies, signal, mchirp):
 
 class SemicoherentLikelihood:
     """Methods to fit a phenomenological waveform to the data."""
-    @classmethod
-    def from_event_data(cls,
-                        event_data,
-                        ref_waveform_phase,
-                        waveform_model,
-                        n_coherent_segments=8):
-        """
-        Parameters
-        ----------
-        event_data: cogwheel.data.EventData
 
-        ref_waveform_phase: float array of shape (n_det, n_freq)
-            Must be defined on ``event_data.frequencies[event_data.fslice]``.
-            The function ``get_unwrapped_phase`` may be helpful for this.
-
-        pn_phase_tol: float
-
-        n_coherent_segments: int
-            The frequency range is partitioned into segments, a constant
-            phase is optimized independently in each segment. This is
-            unphysical and intended to make the maximization more robust
-            to limitations in the phase model.
-            ``n_coherent_segments=1`` corresponds to fully coherent.
-        """
-        assert (ref_waveform_phase.shape
-                == event_data.strain[:, event_data.fslice].shape)
-
-        rb_splines = RelativeBinningSplines(
-            event_data.frequencies[event_data.fslice],
-            fbin=waveform_model.phase_model.fbin)
-        return cls(event_data=event_data,
-                   ref_waveform_phase=ref_waveform_phase,
-                   waveform_model=waveform_model,
-                   n_coherent_segments=n_coherent_segments,
-                   rb_splines=rb_splines,)
-
-    def __init__(self, event_data, ref_waveform_phase,
-                 waveform_model, n_coherent_segments,
-                 rb_splines):
+    def __init__(self, event_data, ref_waveform_phase, waveform_model,
+                 n_coherent_segments):
         """
         Parameters
         ----------
@@ -82,20 +44,13 @@ class SemicoherentLikelihood:
             unphysical and intended to make the maximization more robust
             to limitations in the phase model.
             ``n_coherent_segments=1`` corresponds to fully coherent.
-
-        rb_splines: rbsplines.RelativeBinningSplines
-            Determines the frequency resolution at which (d|h) and ⟨h|h⟩
-            are computed.
         """
-        np.testing.assert_allclose(rb_splines.fbin,
-                                   waveform_model.phase_model.fbin)
         assert (ref_waveform_phase.shape
                 == event_data.strain[:, event_data.fslice].shape)
 
         self.event_data = event_data
         self.ref_waveform_phase = ref_waveform_phase
         self.waveform_model = waveform_model
-        self.rb_splines = rb_splines
 
         self._coherent_segment_inds = None  # Set by n_coherent_segments.setter
         self.n_coherent_segments = n_coherent_segments
@@ -115,6 +70,24 @@ class SemicoherentLikelihood:
         self._coherent_segment_inds = np.array_split(
             np.arange(len(self.rb_splines.fbin)),
             self.n_coherent_segments)
+
+    @property
+    def rb_splines(self):
+        """Splines for relative binning compression."""
+        return self.waveform_model.phase_model.rb_splines
+
+    @property
+    def frequencies(self):
+        """RFFT frequencies, with highpass slice applied."""
+        return self.event_data.frequencies[self.event_data.fslice]
+
+    @property
+    def wht_filter(self):
+        """
+        Whitening filter of shape (n_det, n_freq), defined on
+        ``.frequencies``.
+        """
+        return self.event_data.wht_filter[:, self.event_data.fslice]
 
     def semicoherent_lnlike(self, shapecoef):
         """
@@ -155,50 +128,26 @@ class SemicoherentLikelihood:
         h_h: float array of shape (n_det,)
             ⟨h|h⟩ of the best fit waveform.
         """
-        shapecoef_guess = self._guess_shapecoef(
+        assert np.array_equal(frequencies, self.frequencies)
+
+        shapecoef_guess = self.waveform_model.guess_shapecoef(
             frequencies,
+            self.wht_filter,
             ref_waveform_phase=ref_waveform_phase,
             ref_waveform_amp=ref_waveform_amp)
+
+        shapeampcoef_bounds = self.waveform_model.amplitude_model \
+            .amplitude_tapering.shapeampcoef_bounds
 
         shapecoef = optimize.minimize(
             lambda shapecoef: -self.semicoherent_lnlike(shapecoef),
             x0=shapecoef_guess,
             tol=.1,
-            bounds=[(1., 3.5),
-                    *[(-np.inf, np.inf)] * (len(shapecoef_guess) - 1)]
+            bounds=[*shapeampcoef_bounds,
+                    *[(-np.inf, np.inf)] * (len(shapecoef_guess)
+                                            - len(shapeampcoef_bounds))]
             ).x
         return self._fit_amp_phase(shapecoef)
-
-    def _guess_shapecoef(self, frequencies, *, ref_waveform_phase,
-                        ref_waveform_amp):
-        """
-        Find amplitude and phase coefficients that best match a given
-        waveform amplitude and phase.
-
-        Return
-        ------
-        shapecoef: float array
-        """
-        # TODO generalize this to arbitrary frequencies
-        assert np.array_equal(
-            frequencies, self.event_data.frequencies[self.event_data.fslice])
-
-        ref_wf_phase_fbin = interpolate.make_interp_spline(
-            frequencies, ref_waveform_phase, axis=1, k=1)(self.rb_splines.fbin)
-
-        phasecoef_guess = self.waveform_model.phase_model.guess_phasecoef(
-            ref_wf_phase_fbin)
-
-        log10_fcut_guess \
-            = self.waveform_model.amplitude_model.guess_log10_fcut(
-                frequencies,
-                self.event_data.wht_filter[:, self.event_data.fslice],
-                ref_waveform_amp)
-
-        shapecoef_guess = np.concatenate(
-            [[log10_fcut_guess],
-             phasecoef_guess[self.waveform_model.phase_model.n_det:]])
-        return shapecoef_guess
 
     def _fit_amp_phase(self, shapecoef):
         """
@@ -264,7 +213,7 @@ class SemicoherentLikelihood:
             * h0_f.conj()) / h0_fbin.conj()
 
         self._h_h_weights = self.rb_splines.get_summary_weights(
-            self.event_data.wht_filter[:, self.event_data.fslice]**2)
+            self.wht_filter**2)
 
     def get_heterodyned_data_and_signal(self, coef, pn_phase_tol=None):
         """
@@ -296,15 +245,11 @@ class SemicoherentLikelihood:
         fbin: float array of shape (n_freq,)
             Frequencies at which the heterodyned data are evaluated.
         """
-        coef = coef.copy()
-        # Disable frequency cutoff
-        ampcoef, phasecoef = self.waveform_model.split_amp_phase_coef(coef)
-        ampcoef[-1] = np.inf
-        coef = np.concatenate([ampcoef, phasecoef])
         h_df = self.waveform_model(
-            self.event_data.frequencies[self.event_data.fslice], coef)
+            self.event_data.frequencies[self.event_data.fslice], coef,
+            apply_tapering=False)
 
-        amp_d = ampcoef[:self.waveform_model.n_det]
+        amp_d = coef[:self.waveform_model.n_det]
 
         # Define coarse frequency grid:
         if pn_phase_tol is None:

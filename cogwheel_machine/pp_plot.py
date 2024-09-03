@@ -109,7 +109,7 @@ def get_credible_intervals(modeldir, load=True, save=True, n_data=None,
     pd.DataFrame
         Columns contain parameters, rows contain floats between 0 and 1
         representing the credible interval at which the truth is
-        recovered in the posterior. 
+        recovered in the posterior.
 
     See Also
     --------

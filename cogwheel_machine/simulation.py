@@ -11,7 +11,6 @@ DataPreprocessor:
     Compress data by heterodyning against a reference waveform.
 """
 import argparse
-import multiprocessing
 import os
 from pathlib import Path
 import numpy as np
@@ -162,14 +161,13 @@ def simulate_and_preprocess_samples(simulator,
         belong to before applying folding. Takes values between
         [0, 2**n_folded_params).
     """
-    with multiprocessing.Pool(processes) as pool:
-        results = pool.starmap(
+    results, stats = utils.multiprocessing_starmap_profiled(
             simulate_and_preprocess_sample,
             ((simulator, data_preprocessor, parameters, transform_dic)
-             for _, parameters in simulation_parameters.iterrows()))
+             for _, parameters in simulation_parameters.iterrows()),
+            processes)
 
     preprocessed_data, folded_sampled_params, unfolding_labels = zip(*results)
-    del results
 
     # Turn list of dict into dict of arrays
     preprocessed_data = {key: np.array([dic[key] for dic in preprocessed_data])
@@ -182,7 +180,8 @@ def simulate_and_preprocess_samples(simulator,
 
     return (preprocessed_data,
             np.array(folded_sampled_params, np.float32),
-            np.array(unfolding_labels))
+            np.array(unfolding_labels),
+            stats)
 
 
 class Simulator:
@@ -256,7 +255,7 @@ class DataPreprocessor:
                  i_refdet,
                  f_ref,
                  n_coherent_segments=8,
-                 pn_phase_tol_compression=1.0):
+                 pn_phase_tol_compression=None):
         """
         Parameters
         ----------
@@ -345,7 +344,7 @@ class DataPreprocessor:
         assert np.array_equal(frequencies,
                               event_data.frequencies[event_data.fslice])
 
-        like = semicoherent_likelihood.SemicoherentLikelihood.from_event_data(
+        like = semicoherent_likelihood.SemicoherentLikelihood(
             event_data=event_data,
             ref_waveform_phase=ref_waveform_phase,
             waveform_model=self.waveform_model,
@@ -452,7 +451,7 @@ def submit_condor(rundir,
 def _populate_datadir(datadir, simulator, data_preprocessor,
                       transform_dic, processes):
     simulation_parameters = pd.read_feather(datadir/utils.PARAMETERS_FILENAME)
-    preprocessed_data, folded_sampled_params, unfolding_labels \
+    preprocessed_data, folded_sampled_params, unfolding_labels, stats \
         = simulate_and_preprocess_samples(
             simulator,
             data_preprocessor,
@@ -464,6 +463,7 @@ def _populate_datadir(datadir, simulator, data_preprocessor,
     np.save(datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME,
             folded_sampled_params)
     np.save(datadir/utils.UNFOLDING_LABELS_FILENAME, unfolding_labels)
+    stats.dump_stats(datadir/'simulation_profiling')
 
 
 
@@ -476,10 +476,7 @@ def main(rundir, processes=None):
 
     simulator = Simulator(config.EVENT_DATA_KWARGS, config.APPROXIMANT)
 
-    dummy_event_data = data.EventData.gaussian_noise(
-        **config.EVENT_DATA_KWARGS)
-    waveform_model = PhenomenologicalWaveformGenerator.from_event_data(
-        event_data=dummy_event_data, pn_phase_tol=0.1)
+    waveform_model = PhenomenologicalWaveformGenerator.from_rundir(rundir)
 
     data_preprocessor = DataPreprocessor(
         waveform_model,
