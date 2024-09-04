@@ -494,10 +494,9 @@ def main(rundir, processes=None):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='Simulate signals to generate training and test data.')
-    parser.add_argument(
-        'rundir',
-        help='''Simulation directory path, must contain files
-                `config.py`. and `simulation_parameters.feather`.''')
+    parser.add_argument('rundir',
+                        help='''Simulation directory path, on which
+                                `generate_parameters` has already been run.''')
 
     parser.add_argument('--processes', type=int, help='Number of processes')
     main(**vars(parser.parse_args()))

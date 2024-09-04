@@ -2,10 +2,15 @@
 Algorithms for compressing the preprocessed data, and for defining a
 mask to select a subset of the simulations.
 """
+import argparse
 import json
+import os
+import sys
 from pathlib import Path
 import numpy as np
 import sklearn.preprocessing
+
+import cogwheel.utils
 
 import cogwheel.utils
 
@@ -278,3 +283,65 @@ class JSONStandardScaler(sklearn.preprocessing.StandardScaler):
     @classmethod
     def _get_filepath(cls, directory):
         return Path(directory) / f'{cls.__name__}.json'
+
+
+def submit_condor(rundir,
+                  compression_algorithm='svd_compression',
+                  request_cpus=1,
+                  request_memory='25G',
+                  request_disk='1G',
+                  **submit_kwargs):
+    """
+    Submit an HTCondor job to compress data.
+
+    This will generate the following files:
+        {rundir}/submission_scripts/compression.{sub,sh,out,err,log}
+
+    Parameters
+    ----------
+    rundir: str, os.PathLike
+        Simulations directory, on which `simulation` has already
+        been run.
+
+    request_cpus, request_memory, request_disk: int or str
+        Specifications in the HTCondor submit file.
+
+    **submit_kwargs
+        Further options to include in the HTCondor submit file. Do
+        not pass `executable`, `output`, `error`, `log`, `args`,
+        `queue`, which will be dealt with automatically.
+    """
+    rundir = Path(rundir).resolve()
+    scripts_dir = rundir/'submission_scripts'
+    os.makedirs(scripts_dir, exist_ok=True)
+
+    submit_kwargs = {
+        'submit_path': scripts_dir/'compression.sub',
+        'executable': scripts_dir/'compression.sh',
+        'output': scripts_dir/'compression.out',
+        'error': scripts_dir/'compression.err',
+        'log': scripts_dir/'compression.log',
+        'args': f'{rundir} {compression_algorithm}',
+        'request_cpus': request_cpus,
+        'request_memory': request_memory,
+        'request_disk': request_disk,
+        } | submit_kwargs
+
+    cogwheel.utils.submit_condor(**submit_kwargs)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Compress data.')
+
+    parser.add_argument('rundir',
+                        help='''Simulation directory path, on which
+                                `simulation` has already been run.''')
+
+
+    parser.add_argument('compression_algorithm', type=str,
+                        help='"simple_compression" or "svd_compression".')
+
+    args = parser.parse_args()
+    # Get compression function by name
+    compress = getattr(sys.modules[__name__], args.compression_algorithm)
+    compress(args.rundir)
