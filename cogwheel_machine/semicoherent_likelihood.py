@@ -192,8 +192,8 @@ class SemicoherentLikelihood:
         dh_d = np.sum(dh_df, axis=1)
 
         dh_semicoherent_d = np.sum([np.abs(np.sum(dh_df[:, inds], axis=1))
-                                     for inds in self._coherent_segment_inds],
-                                    axis=0)
+                                    for inds in self._coherent_segment_inds],
+                                   axis=0)
         hh_d = np.sum(self._h_h_weights * (h_df.real**2 + h_df.imag**2),
                       axis=1)
         return dh_d, hh_d, dh_semicoherent_d

@@ -12,8 +12,6 @@ import sklearn.preprocessing
 
 import cogwheel.utils
 
-import cogwheel.utils
-
 from . import utils
 
 
