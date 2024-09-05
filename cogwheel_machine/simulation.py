@@ -22,13 +22,13 @@ from cogwheel import waveform
 import cogwheel.utils
 
 from . import semicoherent_likelihood
-from .transform import TargetSpaceTransform
 from .waveform_model import PhenomenologicalWaveformGenerator
 from . import utils
 
 
 def simulate_and_preprocess_sample(simulator, data_preprocessor,
-                                   parameters, transform_dic):
+                                   parameters, transform_class,
+                                   transform_dic):
     """
     Generate a signal based on parameters, add a noise realization,
     find a reference waveform and preprocess the data by heterodyning.
@@ -57,7 +57,7 @@ def simulate_and_preprocess_sample(simulator, data_preprocessor,
         **simulated_input)
 
     folded_sampled_params, unfolding_label = _get_folded_sampled_params(
-        parameters, transform_kwargs, transform_dic)
+        parameters, transform_class, transform_kwargs, transform_dic)
 
     return preprocessed_data, folded_sampled_params, unfolding_label
 
@@ -77,8 +77,8 @@ def get_i_refdet(config):
         config.PRIOR_KWARGS['ref_det_name'])
 
 
-def _get_folded_sampled_params(parameters, transform_kwargs,
-                               transform_dic):
+def _get_folded_sampled_params(parameters, transform_class,
+                               transform_kwargs, transform_dic):
     """
     Return
     ------
@@ -89,7 +89,7 @@ def _get_folded_sampled_params(parameters, transform_kwargs,
         Index of the region that the parameters belong to before
         applying folding. Takes a value between [0, 2**n_folded_params).
     """
-    transform = TargetSpaceTransform(**transform_dic, **transform_kwargs)
+    transform = transform_class(**transform_dic, **transform_kwargs)
     sampled_params = transform.inverse_transform(
         **parameters[transform.standard_params])
 
@@ -109,6 +109,7 @@ def _get_folded_sampled_params(parameters, transform_kwargs,
 def simulate_and_preprocess_samples(simulator,
                                     data_preprocessor,
                                     simulation_parameters,
+                                    transform_class,
                                     transform_dic,
                                     processes):
     """
@@ -161,11 +162,11 @@ def simulate_and_preprocess_samples(simulator,
         belong to before applying folding. Takes values between
         [0, 2**n_folded_params).
     """
+    args_generator = ((simulator, data_preprocessor, parameters,
+                       transform_class, transform_dic)
+                      for _, parameters in simulation_parameters.iterrows())
     results, stats = utils.multiprocessing_starmap_profiled(
-            simulate_and_preprocess_sample,
-            ((simulator, data_preprocessor, parameters, transform_dic)
-             for _, parameters in simulation_parameters.iterrows()),
-            processes)
+        simulate_and_preprocess_sample, args_generator, processes)
 
     preprocessed_data, folded_sampled_params, unfolding_labels = zip(*results)
 
@@ -324,8 +325,8 @@ class DataPreprocessor:
                 * processed_coef
 
         transform_kwargs: dict
-            Contains event-dependent keyword arguments to
-            ``transform.TargetSpaceTransform``.
+            Contains event-dependent keyword arguments to the target-
+            space coordinate transform.
         """
         preprocessed_data = self._fit_waveform_and_heterodyne_data(
             event_data, frequencies, ref_waveform_amp, ref_waveform_phase)
@@ -449,13 +450,14 @@ def submit_condor(rundir,
 
 
 def _populate_datadir(datadir, simulator, data_preprocessor,
-                      transform_dic, processes):
+                      transform_class, transform_dic, processes):
     simulation_parameters = pd.read_feather(datadir/utils.PARAMETERS_FILENAME)
     preprocessed_data, folded_sampled_params, unfolding_labels, stats \
         = simulate_and_preprocess_samples(
             simulator,
             data_preprocessor,
             simulation_parameters,
+            transform_class=transform_class,
             transform_dic=transform_dic,
             processes=processes)
 
@@ -484,11 +486,13 @@ def main(rundir, processes=None):
         f_ref=config.PRIOR_KWARGS['f_ref'],
         pn_phase_tol_compression=config.PN_PHASE_TOL_COMPRESSION,
         n_coherent_segments=config.N_COHERENT_SEGMENTS)
-    transform_dic=get_transform_dic(config)
+
+    transform_class = config.TRANSFORM_CLASS
+    transform_dic = get_transform_dic(config)
 
     for dirname in utils.TRAINING_DIR, utils.TEST_DIR:
         _populate_datadir(rundir/dirname, simulator, data_preprocessor,
-                          transform_dic, processes)
+                          transform_class, transform_dic, processes)
 
 
 if __name__ == '__main__':
