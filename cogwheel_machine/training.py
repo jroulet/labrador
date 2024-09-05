@@ -15,22 +15,17 @@ import sbi.utils
 from cogwheel_machine import embedding, sbi_hacks, utils
 
 
-def load_logprob(modeldir):
-    """
-    Load the training and validation log probabilities of a trained
-    model.
-
-    The log probabilities are minus the loss.
-    """
+def load_loss(modeldir):
+    """Load the training and validation losses of a trained model."""
     accumulator = event_accumulator.EventAccumulator(modeldir.as_posix())
     accumulator.Reload()
 
-    training_logprob = [
-        logprob.value for logprob in accumulator.Scalars('training_log_probs')]
-    validation_logprob = [
-        logprob.value
-        for logprob in accumulator.Scalars('validation_log_probs')]
-    return training_logprob, validation_logprob
+    training_loss = [
+        loss.value for loss in accumulator.Scalars('training_loss')]
+    validation_loss = [
+        loss.value
+        for loss in accumulator.Scalars('validation_loss')]
+    return training_loss, validation_loss
 
 
 def load_runtime(modeldir):
@@ -41,24 +36,21 @@ def load_runtime(modeldir):
     return np.cumsum(durations) / 3600
 
 
-def plot_logprob(modeldir, save=True):
-    """
-    Plot the training and validation log probabilities of a trained
-    model.
-    """
-    training_logprob, validation_logprob = load_logprob(modeldir)
+def plot_loss(modeldir, save=True):
+    """Plot the training and validation losses of a trained model."""
+    training_loss, validation_loss = load_loss(modeldir)
 
     plt.figure()
-    plt.plot(training_logprob, label='Training')
-    plt.plot(validation_logprob, label='Validation')
+    plt.plot(training_loss, label='Training')
+    plt.plot(validation_loss, label='Validation')
     plt.xlabel('Epoch')
-    plt.ylabel('Log Prob')
+    plt.ylabel('Loss')
     plt.legend()
     plt.grid(ls=':')
     plt.title(modeldir.name)
 
     if save:
-        plt.savefig(modeldir/'logprob.pdf', bbox_inches='tight')
+        plt.savefig(modeldir/'loss.pdf', bbox_inches='tight')
 
 
 def _instantiate_inference(modeldir):
@@ -78,15 +70,19 @@ def _instantiate_inference(modeldir):
                         ).to(config.DEVICE)
     x = torch.tensor(simulation_data, dtype=torch.float32).to(config.DEVICE)
 
+    with np.load(datadir/utils.PREPROCESSED_DATA_FILENAME) as file:
+        n_processed_coef = file['processed_coef'].shape[1]
+
     if config.EMBEDDING_LAYER_SIZES:
-        embedding_net = embedding.FullyConnectedEmbeddingNetwork(
+        embedding_net = embedding.BlockMatrixEmbeddingNetwork(
             input_size=x.shape[1],
-            layer_sizes=config.EMBEDDING_LAYER_SIZES)
+            layer_sizes=config.EMBEDDING_LAYER_SIZES,
+            unchanged_size=n_processed_coef)
         config.POSTERIOR_NN_KWARGS['embedding_net'] = embedding_net
 
     neural_posterior = sbi.utils.posterior_nn(**config.POSTERIOR_NN_KWARGS)
 
-    inference = sbi_hacks.SNPEFixedBatches(
+    inference = sbi_hacks.NPEFixedBatches(
         density_estimator=neural_posterior,
         device=config.DEVICE,
         summary_writer=SummaryWriter(modeldir)
@@ -133,7 +129,7 @@ def main(modeldir):
 
     posterior = inference.build_posterior(density_estimator)
     torch.save(posterior, modeldir/utils.POSTERIOR_FILENAME)
-    plot_logprob(modeldir)
+    plot_loss(modeldir)
 
 
 if __name__ == '__main__':

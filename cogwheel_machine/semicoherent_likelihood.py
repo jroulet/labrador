@@ -9,8 +9,6 @@ import numpy as np
 
 import lal
 
-from .rbsplines import RelativeBinningSplines
-
 
 def get_unwrapped_phase(frequencies, signal, mchirp):
     """
@@ -60,6 +58,7 @@ class SemicoherentLikelihood:
         self._d_h_weights = None  # Set by `._set_summary()`
         self._h_h_weights = None  # Set by `._set_summary()`
         self._set_summary()
+        self._kernels = self._get_kernels()
 
     @property
     def n_coherent_segments(self):
@@ -75,14 +74,20 @@ class SemicoherentLikelihood:
 
     @property
     def rb_splines(self):
+        """Splines for relative binning compression."""
         return self.waveform_model.phase_model.rb_splines
 
     @property
     def frequencies(self):
+        """RFFT frequencies, with highpass slice applied."""
         return self.event_data.frequencies[self.event_data.fslice]
 
     @property
     def wht_filter(self):
+        """
+        Whitening filter of shape (n_det, n_freq), defined on
+        ``.frequencies``.
+        """
         return self.event_data.wht_filter[:, self.event_data.fslice]
 
     def semicoherent_lnlike(self, shapecoef):
@@ -187,9 +192,7 @@ class SemicoherentLikelihood:
         dh_df = self._d_h_weights * h_df.conj()
         dh_d = np.sum(dh_df, axis=1)
 
-        dh_semicoherent_d = np.sum([np.abs(np.sum(dh_df[:, inds], axis=1))
-                                     for inds in self._coherent_segment_inds],
-                                    axis=0)
+        dh_semicoherent_d = np.abs(dh_df @ self._kernels).sum(axis=1)
         hh_d = np.sum(self._h_h_weights * (h_df.real**2 + h_df.imag**2),
                       axis=1)
         return dh_d, hh_d, dh_semicoherent_d
@@ -210,6 +213,16 @@ class SemicoherentLikelihood:
 
         self._h_h_weights = self.rb_splines.get_summary_weights(
             self.wht_filter**2)
+
+    def _get_kernels(self):
+        f_inds = np.arange(len(self.rb_splines.fbin))
+        f_ind_nodes = np.linspace(0, len(self.rb_splines.fbin) - 1,
+                                  self.n_coherent_segments, dtype=int)
+
+        spline_degree = min(3, self.n_coherent_segments - 1)
+        splines = interpolate.make_interp_spline(
+            f_ind_nodes, np.eye(self.n_coherent_segments), spline_degree)
+        return splines(f_inds)
 
     def get_heterodyned_data_and_signal(self, coef, pn_phase_tol=None):
         """

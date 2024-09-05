@@ -266,7 +266,7 @@ class DistanceTransform(TransformMixin, Prior):
                 'amp_ref_det': self.amp_ref_det}
 
 
-class TargetSpaceTransform(CombinedPrior):
+class TargetSpaceTransformNoSpins(CombinedPrior):
     """Full coordinate transformation for all waveform parameters."""
     prior_classes = [MassesTransform,
                      gw_prior.IsotropicInclinationPrior,
@@ -274,5 +274,12 @@ class TargetSpaceTransform(CombinedPrior):
                      gw_prior.IsotropicSkyLocationPrior,
                      TimeTransform,
                      PhaseTransform,
-                     DistanceTransform
+                     DistanceTransform,
+                     ]
+
+
+class TargetSpaceTransformAlignedSpins(CombinedPrior):
+    """Full coordinate transformation for all waveform parameters."""
+    prior_classes = [*TargetSpaceTransformNoSpins.prior_classes,
+                     gw_prior.UniformEffectiveSpinPrior,
                      ]

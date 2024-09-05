@@ -131,13 +131,12 @@ class RelativeBinningSplines(utils.JSONMixin):
         place; this spline is evaluated on the RFFT grid.
         """
         nbin = len(self.fbin)
-        coefficients = np.empty((nbin, nbin))
+        self._coefficients = np.empty((nbin, nbin))
         for i_bin, y_points in enumerate(np.eye(nbin)):
             # Note knots depend on fbin only, they're always the same
             knots, coeffs, _ = scipy.interpolate.splrep(
                 self.fbin, y_points, s=0, k=self.spline_degree)
-            coefficients[i_bin] = coeffs[:nbin]
-        self._coefficients = coefficients
+            self._coefficients[i_bin] = coeffs[:nbin]
 
         nrfft = len(self.frequencies)
         basis_splines = scipy.sparse.lil_matrix((nbin, nrfft))
