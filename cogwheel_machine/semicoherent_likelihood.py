@@ -58,6 +58,7 @@ class SemicoherentLikelihood:
         self._d_h_weights = None  # Set by `._set_summary()`
         self._h_h_weights = None  # Set by `._set_summary()`
         self._set_summary()
+        self._kernels = self._get_kernels()
 
     @property
     def n_coherent_segments(self):
@@ -191,9 +192,7 @@ class SemicoherentLikelihood:
         dh_df = self._d_h_weights * h_df.conj()
         dh_d = np.sum(dh_df, axis=1)
 
-        dh_semicoherent_d = np.sum([np.abs(np.sum(dh_df[:, inds], axis=1))
-                                    for inds in self._coherent_segment_inds],
-                                   axis=0)
+        dh_semicoherent_d = np.abs(dh_df @ self._kernels).sum(axis=1)
         hh_d = np.sum(self._h_h_weights * (h_df.real**2 + h_df.imag**2),
                       axis=1)
         return dh_d, hh_d, dh_semicoherent_d
@@ -214,6 +213,16 @@ class SemicoherentLikelihood:
 
         self._h_h_weights = self.rb_splines.get_summary_weights(
             self.wht_filter**2)
+
+    def _get_kernels(self):
+        f_inds = np.arange(len(self.rb_splines.fbin))
+        f_ind_nodes = np.linspace(0, len(self.rb_splines.fbin) - 1,
+                                  self.n_coherent_segments, dtype=int)
+
+        spline_degree = min(3, self.n_coherent_segments - 1)
+        splines = interpolate.make_interp_spline(
+            f_ind_nodes, np.eye(self.n_coherent_segments), spline_degree)
+        return splines(f_inds)
 
     def get_heterodyned_data_and_signal(self, coef, pn_phase_tol=None):
         """
