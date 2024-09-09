@@ -149,7 +149,7 @@ def get_summary(datadir, apply_mask=True):
     Parameters
     ----------
     datadir: os.PathLike
-        Path to the run directory in which training and test data have
+        Path to the run directory in which training or test data have
         been created.
 
     apply_mask: bool
@@ -192,7 +192,7 @@ def get_preprocessed_data(datadir, apply_mask=True) -> dict:
     Parameters
     ----------
     datadir: os.PathLike
-        Path to the run directory in which training and test data have
+        Path to the run directory in which training or test data have
         been created.
 
     apply_mask: bool
