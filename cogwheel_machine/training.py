@@ -20,11 +20,10 @@ def load_loss(modeldir):
     accumulator = event_accumulator.EventAccumulator(modeldir.as_posix())
     accumulator.Reload()
 
-    training_loss = [
-        loss.value for loss in accumulator.Scalars('training_loss')]
-    validation_loss = [
-        loss.value
-        for loss in accumulator.Scalars('validation_loss')]
+    training_loss = [loss.value
+                     for loss in accumulator.Scalars('training_loss')]
+    validation_loss = [loss.value
+                       for loss in accumulator.Scalars('validation_loss')]
     return training_loss, validation_loss
 
 

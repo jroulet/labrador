@@ -168,11 +168,16 @@ def simulate_and_preprocess_samples(simulator,
     results, stats = utils.multiprocessing_starmap_profiled(
         simulate_and_preprocess_sample, args_generator, processes)
 
-    preprocessed_data, folded_sampled_params, unfolding_labels = zip(*results)
+    preprocessed_rows, folded_sampled_params, unfolding_labels = zip(*results)
+    del results
 
     # Turn list of dict into dict of arrays
-    preprocessed_data = {key: np.array([dic[key] for dic in preprocessed_data])
-                         for key in preprocessed_data[0]}
+    preprocessed_data = {}
+    for key, arr in preprocessed_rows[0].copy().items():
+        preprocessed_data[key] = np.fromiter(
+            (row.pop(key) for row in preprocessed_rows),
+            dtype=(arr.dtype, arr.shape),
+            count=len(preprocessed_rows))
 
     # fbin should be identical across simulations, keep only one:
     fbin = preprocessed_data['fbin'][0]
