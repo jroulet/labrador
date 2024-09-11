@@ -28,12 +28,14 @@ import multiprocessing
 import os
 import pstats
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 from cProfile import Profile
 import numpy as np
 import pandas as pd
 
+import cogwheel.utils
 import cogwheel.validation
 
 from cogwheel_machine import __version__
@@ -58,13 +60,17 @@ POSTERIOR_FILENAME = 'posterior.pt'
 def load_data_config(rundir):
     """Return module `data_config` from a run directory."""
     rundir = Path(rundir)
-    return cogwheel.validation.load_config(rundir/DATA_CONFIG_FILENAME)
+    with cogwheel.utils.temporarily_change_attributes(
+            sys, dont_write_bytecode=True):  # TODO move to cogwheel
+        return cogwheel.validation.load_config(rundir/DATA_CONFIG_FILENAME)
 
 
 def load_model_config(modeldir):
-    """Return module `config` from a run directory."""
+    """Return module `model_config` from a model directory."""
     modeldir = Path(modeldir)
-    return cogwheel.validation.load_config(modeldir/MODEL_CONFIG_FILENAME)
+    with cogwheel.utils.temporarily_change_attributes(
+            sys, dont_write_bytecode=True):  # TODO move to cogwheel
+        return cogwheel.validation.load_config(modeldir/MODEL_CONFIG_FILENAME)
 
 
 def make_unique_dir(location, prefix):
