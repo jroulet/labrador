@@ -52,3 +52,5 @@ APPROXIMANT = 'IMRPhenomD'
 MASK_CONDITIONS = [('snr0', np.greater, 8),
                    ('snr0', np.less, 50),
                   ]
+
+XGBOOST_KWARGS = {}

@@ -59,8 +59,8 @@ def _instantiate_inference(modeldir):
     mask = np.load(datadir/utils.MASK_FILENAME)
 
     simulation_parameters = np.load(
-        datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME
-        )[mask][:config.MAX_TRAINING_EXAMPLES]
+        datadir/utils.RESCALED_PARAMETERS_FILENAME
+        )[:config.MAX_TRAINING_EXAMPLES]
 
     simulation_data = np.load(datadir/utils.COMPRESSED_DATA_FILENAME
                              )[mask][:config.MAX_TRAINING_EXAMPLES]

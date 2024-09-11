@@ -14,6 +14,7 @@ from unittest import TestCase, main
 
 from cogwheel_machine import (compression,
                               generate_parameters,
+                              rescaling,
                               simulation,
                               training,
                               utils)
@@ -39,6 +40,9 @@ class TrainingDataTestCase(TestCase):
 
             compression.create_mask(rundir)
             compression.svd_compression(rundir)
+
+            rescaling.rescale_parameters(rundir)
+
             print('Created these training data:')
             os.system(f'tree {parentdir}')
 
