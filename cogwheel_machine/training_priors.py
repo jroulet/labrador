@@ -15,9 +15,15 @@ from cogwheel.gw_prior.combined import (
     IsotropicSkyLocationPrior,
     UniformTimePrior,
     UniformPolarizationPrior,
+    UniformEffectiveSpinPrior,
     ZeroInplaneSpinsPrior,
     ZeroTidalDeformabilityPrior,
     FixedReferenceFrequencyPrior)
+
+import cogwheel.utils
+
+from . import transform
+
 
 # ----------------------------------------------------------------------
 # Modular priors:
@@ -107,3 +113,15 @@ class NoSpinTrainingPrior(RegisteredPriorMixin,
                      ZeroInplaneSpinsPrior,
                      ZeroTidalDeformabilityPrior,
                      FixedReferenceFrequencyPrior]
+
+    default_transform_class = transform.TargetSpaceTransformNoSpins
+
+
+class AlignedSpinTrainingPrior(RegisteredPriorMixin,
+                               CombinedPrior):
+    """Intended for generating training parameters."""
+    prior_classes = cogwheel.utils.replace(NoSpinTrainingPrior.prior_classes,
+                                           ZeroAlignedSpinsPrior,
+                                           UniformEffectiveSpinPrior)
+
+    default_transform_class = transform.TargetSpaceTransformAlignedSpins

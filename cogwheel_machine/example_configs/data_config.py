@@ -3,8 +3,7 @@ Settings for generating the training and testing sets, that need to be
 shared across modules.
 """
 import numpy as np
-from cogwheel_machine.training_priors import NoSpinTrainingPrior
-from cogwheel_machine.transform import TargetSpaceTransform
+from cogwheel_machine import training_priors
 
 
 # Fiducial reference time, not the time of any actual event.
@@ -44,12 +43,14 @@ N_TRAINING_SIMULATIONS = 10**2  # Increase for real-life usage!
 N_TEST_SIMULATIONS = 10**2
 QMC = True
 
-PRIOR_CLASS = NoSpinTrainingPrior
+PRIOR_CLASS = training_priors.AlignedSpinTrainingPrior
 
-TRANSFORM_CLASS = TargetSpaceTransform
+TRANSFORM_CLASS = PRIOR_CLASS.default_transform_class
 
 APPROXIMANT = 'IMRPhenomD'
 
 MASK_CONDITIONS = [('snr0', np.greater, 8),
                    ('snr0', np.less, 50),
                   ]
+
+XGBOOST_KWARGS = {}

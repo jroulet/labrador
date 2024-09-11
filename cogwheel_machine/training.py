@@ -20,11 +20,10 @@ def load_loss(modeldir):
     accumulator = event_accumulator.EventAccumulator(modeldir.as_posix())
     accumulator.Reload()
 
-    training_loss = [
-        loss.value for loss in accumulator.Scalars('training_loss')]
-    validation_loss = [
-        loss.value
-        for loss in accumulator.Scalars('validation_loss')]
+    training_loss = [loss.value
+                     for loss in accumulator.Scalars('training_loss')]
+    validation_loss = [loss.value
+                       for loss in accumulator.Scalars('validation_loss')]
     return training_loss, validation_loss
 
 
@@ -60,8 +59,8 @@ def _instantiate_inference(modeldir):
     mask = np.load(datadir/utils.MASK_FILENAME)
 
     simulation_parameters = np.load(
-        datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME
-        )[mask][:config.MAX_TRAINING_EXAMPLES]
+        datadir/utils.RESCALED_PARAMETERS_FILENAME
+        )[:config.MAX_TRAINING_EXAMPLES]
 
     simulation_data = np.load(datadir/utils.COMPRESSED_DATA_FILENAME
                              )[mask][:config.MAX_TRAINING_EXAMPLES]

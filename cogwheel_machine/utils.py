@@ -28,12 +28,14 @@ import multiprocessing
 import os
 import pstats
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 from cProfile import Profile
 import numpy as np
 import pandas as pd
 
+import cogwheel.utils
 import cogwheel.validation
 
 from cogwheel_machine import __version__
@@ -51,6 +53,7 @@ UNFOLDING_LABELS_FILENAME = 'unfolding_labels.npy'
 MASK_FILENAME = 'mask.npy'
 COMPRESSED_DATA_FILENAME = 'compressed_data.npy'
 VERSION_FILENAME = 'version.txt'
+RESCALED_PARAMETERS_FILENAME = 'rescaled_parameters.npy'
 INFERENCE_FILENAME = 'inference.pickle'
 POSTERIOR_FILENAME = 'posterior.pt'
 
@@ -58,13 +61,17 @@ POSTERIOR_FILENAME = 'posterior.pt'
 def load_data_config(rundir):
     """Return module `data_config` from a run directory."""
     rundir = Path(rundir)
-    return cogwheel.validation.load_config(rundir/DATA_CONFIG_FILENAME)
+    with cogwheel.utils.temporarily_change_attributes(
+            sys, dont_write_bytecode=True):  # TODO move to cogwheel
+        return cogwheel.validation.load_config(rundir/DATA_CONFIG_FILENAME)
 
 
 def load_model_config(modeldir):
-    """Return module `config` from a run directory."""
+    """Return module `model_config` from a model directory."""
     modeldir = Path(modeldir)
-    return cogwheel.validation.load_config(modeldir/MODEL_CONFIG_FILENAME)
+    with cogwheel.utils.temporarily_change_attributes(
+            sys, dont_write_bytecode=True):  # TODO move to cogwheel
+        return cogwheel.validation.load_config(modeldir/MODEL_CONFIG_FILENAME)
 
 
 def make_unique_dir(location, prefix):
@@ -149,7 +156,7 @@ def get_summary(datadir, apply_mask=True):
     Parameters
     ----------
     datadir: os.PathLike
-        Path to the run directory in which training and test data have
+        Path to the run directory in which training or test data have
         been created.
 
     apply_mask: bool
@@ -192,7 +199,7 @@ def get_preprocessed_data(datadir, apply_mask=True) -> dict:
     Parameters
     ----------
     datadir: os.PathLike
-        Path to the run directory in which training and test data have
+        Path to the run directory in which training or test data have
         been created.
 
     apply_mask: bool
