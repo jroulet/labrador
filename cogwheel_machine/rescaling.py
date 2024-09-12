@@ -240,6 +240,21 @@ class ParameterRescaler:
         return pd.DataFrame(factor * np.exp(mean_log_squared_err / 2),
                             columns=list(self.folded_range_dic))
 
+    def _load_models(self):
+        """
+        Load XGBoost models for the mean and mean-log-squared-error.
+        If any of the files does not exist, raise
+        ``xgboost.core.XGBoostError``.
+        """
+        model_mean = xgboost.XGBRegressor()
+        model_mean.load_model(self.rundir/MEAN_MODEL_FILENAME)
+
+        model_mean_log_squared_err = xgboost.XGBRegressor()
+        model_mean_log_squared_err.load_model(self.rundir/SCALE_MODEL_FILENAME)
+
+        self.model_mean = model_mean
+        self.model_mean_log_squared_err = model_mean_log_squared_err
+
     def _fit_models(self):
         """
         Set attributes ``.model_mean`` and
@@ -315,21 +330,6 @@ class ParameterRescaler:
         """Return list of parameters that have a finite range."""
         return [par for par, (low, high) in self.folded_range_dic.items()
                 if np.isfinite(high - low)]
-
-    def _load_models(self):
-        """
-        Load XGBoost models for the mean and mean-log-squared-error.
-        If any of the files does not exist, raise
-        ``xgboost.core.XGBoostError``.
-        """
-        model_mean = xgboost.XGBRegressor()
-        model_mean.load_model(self.rundir/MEAN_MODEL_FILENAME)
-
-        model_mean_log_squared_err = xgboost.XGBRegressor()
-        model_mean_log_squared_err.load_model(self.rundir/SCALE_MODEL_FILENAME)
-
-        self.model_mean = model_mean
-        self.model_mean_log_squared_err = model_mean_log_squared_err
 
     @property
     def _model_mean_params(self):
