@@ -43,10 +43,10 @@ class MassesTransform(TransformMixin, Prior):
     centered at 0.
     """
     range_dic = {'diff_regularized0pn': (-np.inf, np.inf),
-                 'lnq': (-np.inf, 0.0)}
+                 'lnq': None}
     standard_params = ['m1', 'm2']
 
-    def __init__(self, coef0pn, mchirp_break=60.0, **kwargs):
+    def __init__(self, coef0pn, q_min, mchirp_break=60.0, **kwargs):
         """
         Parameters
         ----------
@@ -64,6 +64,7 @@ class MassesTransform(TransformMixin, Prior):
         waveform_model.PhenomenologicalWaveformGenerator.get_transform_kwargs
         waveform_model.PhaseModel.get_coef0pn
         """
+        self.range_dic = self.range_dic | {'lnq': (np.log(q_min), 0.0)}
         super().__init__(**kwargs)
         self.mchirp_break = mchirp_break
         self.coef0pn = coef0pn
@@ -166,7 +167,7 @@ class TimeTransform(TransformMixin, Prior):
     a fiducial arrival time at the reference detector.
     """
     standard_params = ['t_geocenter']
-    range_dic = {'dt_refdet': (np.nan, np.nan)}
+    range_dic = {'dt_refdet': (-np.inf, np.inf)}
     conditioned_on = ['ra', 'dec']
 
     def __init__(self, *, tgps, ref_det_name, t0_refdet, **kwargs):

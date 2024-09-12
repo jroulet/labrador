@@ -14,12 +14,13 @@ TGPS = 0.0
 
 PRIOR_KWARGS = {
     'mchirp_range': (1., 50.),
+    'q_min': 1/20,
     'detector_pair': 'HL',
     'tgps': TGPS,
     'ref_det_name': 'L',
     'f_avg': 100.,
     'f_ref': 100.,
-    'd_hat_max': 400
+    'd_hat_max': 400.,
 }
 
 EVENT_DATA_KWARGS = {

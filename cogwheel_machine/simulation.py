@@ -68,7 +68,8 @@ def get_transform_dic(config):
     simulations.
     """
     return {key: config.PRIOR_KWARGS[key]
-            for key in ('detector_pair', 'tgps', 'ref_det_name', 'f_avg')}
+            for key in ('detector_pair', 'tgps', 'ref_det_name', 'f_avg',
+                        'q_min')}
 
 
 def get_i_refdet(config):
