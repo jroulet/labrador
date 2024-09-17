@@ -184,11 +184,11 @@ def _load_data(rundir, n_data):
     mask = np.load(datadir/utils.MASK_FILENAME)
     data = np.load(datadir/utils.COMPRESSED_DATA_FILENAME)[mask][:n_data]
 
-    folded_sampled_params = pd.DataFrame(
-        np.load(datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME)[mask][:n_data],
+    rescaled_params = pd.DataFrame(
+        np.load(datadir/utils.RESCALED_PARAMETERS_FILENAME)[:n_data],
         columns=_get_folded_params(rundir))
 
-    return folded_sampled_params, data
+    return rescaled_params, data
 
 
 def _get_folded_params(rundir):

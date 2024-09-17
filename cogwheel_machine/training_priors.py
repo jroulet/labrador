@@ -15,9 +15,15 @@ from cogwheel.gw_prior.combined import (
     IsotropicSkyLocationPrior,
     UniformTimePrior,
     UniformPolarizationPrior,
+    UniformEffectiveSpinPrior,
     ZeroInplaneSpinsPrior,
     ZeroTidalDeformabilityPrior,
     FixedReferenceFrequencyPrior)
+
+import cogwheel.utils
+
+from . import transform
+
 
 # ----------------------------------------------------------------------
 # Modular priors:
@@ -41,7 +47,7 @@ class LogMassPrior(UniformPriorMixin, Prior):
     range_dic = {'lnmchirp': None,
                  'lnq': None}
 
-    def __init__(self, *, mchirp_range, q_min=.05, **kwargs):
+    def __init__(self, *, mchirp_range, q_min, **kwargs):
         lnq_min = np.log(q_min)
         self.range_dic = {'lnmchirp': np.log(mchirp_range),
                           'lnq': (lnq_min, 0)}
@@ -107,3 +113,15 @@ class NoSpinTrainingPrior(RegisteredPriorMixin,
                      ZeroInplaneSpinsPrior,
                      ZeroTidalDeformabilityPrior,
                      FixedReferenceFrequencyPrior]
+
+    default_transform_class = transform.TargetSpaceTransformNoSpins
+
+
+class AlignedSpinTrainingPrior(RegisteredPriorMixin,
+                               CombinedPrior):
+    """Intended for generating training parameters."""
+    prior_classes = cogwheel.utils.replace(NoSpinTrainingPrior.prior_classes,
+                                           ZeroAlignedSpinsPrior,
+                                           UniformEffectiveSpinPrior)
+
+    default_transform_class = transform.TargetSpaceTransformAlignedSpins
