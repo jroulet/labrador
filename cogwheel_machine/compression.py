@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 import numpy as np
 import sklearn.preprocessing
+from sklearn.utils.extmath import randomized_svd
 
 import cogwheel.utils
 
@@ -161,7 +162,7 @@ class SVDCompressor(utils.NpzMixin):
         wht_noise = noise / std_noise
 
         # Construct SVD bases using the (whitened) signals:
-        vh_mat = np.linalg.svd(wht_signal, full_matrices=False).Vh
+        _, _, vh_mat = randomized_svd(wht_signal, n_components=100)
 
         # Construct Wiener filter
         signal_svd_coef = wht_signal @ vh_mat.conjugate().transpose()
