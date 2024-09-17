@@ -301,10 +301,8 @@ class ParameterRescaler:
         of data with XGBoost and set the ``.model_mean_log_squared_err``
         attribute.
         """
-        mean = self._get_mean(compressed_data)
-
-        # Prevent log(0) if the model gets it perfect:
-        log_squared_err = np.log((parameters - mean)**2 + 1e-10)
+        # Prevent log(0) if the ``model_mean`` got it perfect:
+        log_squared_err = np.log(parameters**2 + 1e-10)
 
         model_mean_log_squared_err = xgboost.XGBRegressor(
             **self.config.XGBOOST_KWARGS)
