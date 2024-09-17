@@ -172,18 +172,18 @@ def simulate_and_preprocess_samples(simulator,
     preprocessed_rows, folded_sampled_params, unfolding_labels = zip(*results)
     del results
 
-    # Turn list of dict into dict of arrays
-    preprocessed_data = {}
+    # Turn tuple of dict into dict of arrays
+
+    # fbin should be identical across simulations, keep only one:
+    preprocessed_data = {'fbin': preprocessed_rows[0]['fbin']}
+    for row in preprocessed_rows:
+        del row['fbin']
+
     for key, arr in preprocessed_rows[0].copy().items():
         preprocessed_data[key] = np.fromiter(
             (row.pop(key) for row in preprocessed_rows),
             dtype=(arr.dtype, arr.shape),
             count=len(preprocessed_rows))
-
-    # fbin should be identical across simulations, keep only one:
-    fbin = preprocessed_data['fbin'][0]
-    assert np.equal(fbin, preprocessed_data['fbin']).all()
-    preprocessed_data['fbin'] = fbin
 
     return (preprocessed_data,
             np.array(folded_sampled_params, np.float32),
