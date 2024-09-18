@@ -79,6 +79,9 @@ class ParameterRescaler:
             self._load_models()
         except xgboost.core.XGBoostError:  # Models have not been trained yet
             self._fit_models()
+            self.model_mean.save_model(self.rundir/MEAN_MODEL_FILENAME)
+            self.model_mean_log_squared_err.save_model(
+                self.rundir/SCALE_MODEL_FILENAME)
 
     @property
     def periodic_params(self):
@@ -289,6 +292,7 @@ class ParameterRescaler:
 
         assert list(model_mean_parameters) == self._model_mean_params
         model_mean = xgboost.XGBRegressor(**self.config.XGBOOST_KWARGS)
+        print('Training XGBoost model for the posterior mean...')
         model_mean.fit(compressed_data, model_mean_parameters)
         self.model_mean = model_mean
 
@@ -298,13 +302,12 @@ class ParameterRescaler:
         of data with XGBoost and set the ``.model_mean_log_squared_err``
         attribute.
         """
-        mean = self._get_mean(compressed_data)
-
-        # Prevent log(0) if the model gets it perfect:
-        log_squared_err = np.log((parameters - mean)**2 + 1e-10)
+        # Prevent log(0) if the ``model_mean`` got it perfect:
+        log_squared_err = np.log(parameters**2 + 1e-10)
 
         model_mean_log_squared_err = xgboost.XGBRegressor(
             **self.config.XGBOOST_KWARGS)
+        print('Training XGBoost model for the posterior scale...')
         model_mean_log_squared_err.fit(compressed_data, log_squared_err)
 
         self.model_mean_log_squared_err = model_mean_log_squared_err
