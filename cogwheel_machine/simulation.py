@@ -135,7 +135,7 @@ def simulate_and_preprocess_samples(simulator,
     simulation_parameters: pandas.DataFrame
         Columns represent different parameters, each row is a
         simulation. The columns must contain all
-        ``._waveform_generator.params``.
+        ``simulator._waveform_generator.params``.
 
     transform_dic: dict
         Transform kwargs that are the same across simulations. See
