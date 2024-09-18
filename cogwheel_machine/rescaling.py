@@ -118,14 +118,14 @@ class ParameterRescaler:
         """
         parameters = pd.DataFrame(rescaled_params,
                                   columns=self.folded_range_dic.keys())
-        self._add_scale(compressed_data, parameters)
-        self._compactify_periodic(parameters)
+        log_det_jac = self._add_scale(compressed_data, parameters)
+        log_det_jac += self._compactify_periodic(parameters)
         self._add_mean(compressed_data, parameters)
-        self._angle_to_periodic(parameters)
-        self._compactify_bounded_nonperiodic(parameters)
+        log_det_jac += self._angle_to_periodic(parameters)
+        log_det_jac += self._compactify_bounded_nonperiodic(parameters)
 
         # Ensure parameters are returned in the correct order
-        return parameters[list(self.folded_range_dic)]
+        return parameters[list(self.folded_range_dic)], log_det_jac
 
     def _decompactify_bounded_nonperiodic(self,
                                           parameters: pd.DataFrame):
@@ -139,12 +139,17 @@ class ParameterRescaler:
 
     def _compactify_bounded_nonperiodic(self, parameters: pd.DataFrame):
         """
-        Compactify columns for ``.bounded_nonperiodic_params``
-        inplace.
+        Compactify columns for ``.bounded_nonperiodic_params`` inplace
+        and return the Jacobian determinant of this transformation.
         """
+        log_det_jac = 0.0
         for par in self.bounded_nonperiodic_params:
             parameters[par] = _compactify(parameters[par],
                                           *self.folded_range_dic[par])
+            log_det_jac += _compactify_log_jacobian_determinant(
+                parameters[par], *self.folded_range_dic[par])
+
+        return log_det_jac
 
     def _periodic_to_angle(self, parameters: pd.DataFrame):
         """Map the periodic parameters to (-pi, pi) inplace."""
@@ -159,10 +164,15 @@ class ParameterRescaler:
         range inplace.
         Inverse of ``._periodic_to_angle``.
         """
+        log_det_jac = 0.0
         for par in self.periodic_params:
             parameters[par] = np.interp(parameters[par],
                                         (-np.pi, np.pi),
                                         self.folded_range_dic[par])
+            log_det_jac += np.log(
+                2*np.pi / -np.subtract(*self.folded_range_dic[par]))
+
+        return log_det_jac
 
     def _remove_mean(self, compressed_data, parameters: pd.DataFrame):
         """
@@ -193,8 +203,9 @@ class ParameterRescaler:
         Predict mean of the parameters, using circular mean for the
         periodic ones.
         """
-        mean = self._series_or_dataframe(self.model_mean.predict(compressed_data),
-                                         labels=self._model_mean_params)
+        mean = self._series_or_dataframe(
+            self.model_mean.predict(compressed_data),
+            labels=self._model_mean_params)
 
         # Compute circular mean of periodic parameters
         for par in self.periodic_params:
@@ -215,19 +226,30 @@ class ParameterRescaler:
 
     def _compactify_periodic(self, parameters: pd.DataFrame):
         """
-        Compactify columns for ``.periodic_params`` inplace.
+        Compactify columns for ``.periodic_params`` inplace and return
+        the Jacobian determinant of this transformation.
         Inverse of ``._decompactify_periodic``.
         """
+        log_det_jac = 0.0
         for par in self.periodic_params:
             parameters[par] = _compactify(parameters[par], -np.pi, np.pi)
+            log_det_jac += _compactify_log_jacobian_determinant(
+                parameters[par], -np.pi, np.pi)
+
+        return log_det_jac
 
     def _remove_scale(self, compressed_data, parameters: pd.DataFrame):
         """Divide parameters by their predicted scale inplace."""
         parameters /= self._get_scale(compressed_data)
 
     def _add_scale(self, compressed_data, parameters: pd.DataFrame):
-        """Multiply parameters by their predicted scale inplace."""
-        parameters *= self._get_scale(compressed_data)
+        """
+        Multiply parameters by their predicted scale inplace.
+        Return the determinant of the Jacobian of this transformation.
+        """
+        scale = self._get_scale(compressed_data)
+        parameters *= scale
+        return np.prod(scale.to_numpy(), axis=-1)
 
     def _get_scale(self, compressed_data) -> pd.DataFrame:
         """
@@ -241,8 +263,9 @@ class ParameterRescaler:
         mean_log_squared_err = self.model_mean_log_squared_err.predict(
             compressed_data)
 
-        return self._series_or_dataframe(factor * np.exp(mean_log_squared_err / 2),
-                                         labels=list(self.folded_range_dic))
+        return self._series_or_dataframe(
+            factor * np.exp(mean_log_squared_err / 2),
+            labels=list(self.folded_range_dic))
 
     def _load_models(self):
         """
@@ -322,8 +345,8 @@ class ParameterRescaler:
 
     def _get_folded_range_dic(self):
         """
-        Return the range_dic of the transform class, setting the value for
-        ``'lnq'`` from the config.
+        Return the range_dic of the transform class, setting the value
+        for ``'lnq'`` from the config.
         """
         # Somewhat fragile, but these methods could be overriden if needed
         folded_range_dic = self.config.TRANSFORM_CLASS.range_dic.copy()
@@ -403,3 +426,31 @@ def _decompactify(compact_value, a, b):
     float: The decompactified value within the infinite interval.
     """
     return np.arctanh(2 * (compact_value - (b + a) / 2) / (b - a))
+
+
+def _compactify_log_jacobian_determinant(value, a, b):
+    """
+    Log of the Jacobian determinant of the ``_compactify`` function.
+
+    Parameters
+    ----------
+    value: float
+        The value at which to compute the log Jacobian determinant.
+
+    a: float
+        The lower bound of the finite interval.
+
+    b: float
+        The upper bound of the finite interval.
+
+    Returns
+    -------
+    float: The log of the Jacobian determinant.
+    """
+    return np.log((b - a) / 2) - 2 * _log_cosh(value)
+
+
+def _log_cosh(x):
+    """Numerically stable log(cosh(x))."""
+    abs_x = np.abs(x)
+    return abs_x + np.log1p(np.exp(-2 * abs_x)) - np.log(2)
