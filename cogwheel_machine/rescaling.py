@@ -95,6 +95,7 @@ class ParameterRescaler:
         """
         Apply rescaling to physical parameters to make them ~N(0, 1).
         """
+        # TODO: change other code so folded_sampled_params is a DataFrame
         parameters = pd.DataFrame(folded_sampled_params,
                                   columns=self.folded_range_dic.keys())
         self._decompactify_bounded_nonperiodic(parameters)
@@ -121,7 +122,7 @@ class ParameterRescaler:
         self._compactify_bounded_nonperiodic(parameters)
 
         # Ensure parameters are returned in the correct order
-        return parameters[list(self.folded_range_dic)].to_numpy()
+        return parameters[list(self.folded_range_dic)]
 
     def _decompactify_bounded_nonperiodic(self,
                                           parameters: pd.DataFrame):
@@ -189,8 +190,8 @@ class ParameterRescaler:
         Predict mean of the parameters, using circular mean for the
         periodic ones.
         """
-        mean = pd.DataFrame(self.model_mean.predict(compressed_data),
-                            columns=self._model_mean_params)
+        mean = self._series_or_dataframe(self.model_mean.predict(compressed_data),
+                                         labels=self._model_mean_params)
 
         # Compute circular mean of periodic parameters
         for par in self.periodic_params:
@@ -237,8 +238,8 @@ class ParameterRescaler:
         mean_log_squared_err = self.model_mean_log_squared_err.predict(
             compressed_data)
 
-        return pd.DataFrame(factor * np.exp(mean_log_squared_err / 2),
-                            columns=list(self.folded_range_dic))
+        return self._series_or_dataframe(factor * np.exp(mean_log_squared_err / 2),
+                                         labels=list(self.folded_range_dic))
 
     def _load_models(self):
         """
@@ -307,6 +308,14 @@ class ParameterRescaler:
         model_mean_log_squared_err.fit(compressed_data, log_squared_err)
 
         self.model_mean_log_squared_err = model_mean_log_squared_err
+
+    @staticmethod
+    def _series_or_dataframe(arr, labels):
+        # If `arr` has a single row, return a Series so it broadcasts
+        n_rows, _ = arr.shape
+        if n_rows == 1:
+            return pd.Series(arr[0], labels)
+        return pd.DataFrame(arr, columns=labels)
 
     def _get_folded_range_dic(self):
         """
