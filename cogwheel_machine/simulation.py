@@ -11,6 +11,7 @@ DataPreprocessor:
     Compress data by heterodyning against a reference waveform.
 """
 import argparse
+import functools
 import os
 from pathlib import Path
 import numpy as np
@@ -27,8 +28,7 @@ from . import utils
 
 
 def simulate_and_preprocess_sample(simulator, data_preprocessor,
-                                   parameters, transform_class,
-                                   transform_dic):
+                                   parameters, transform_class):
     """
     Generate a signal based on parameters, add a noise realization,
     find a reference waveform and preprocess the data by heterodyning.
@@ -57,19 +57,17 @@ def simulate_and_preprocess_sample(simulator, data_preprocessor,
         **simulated_input)
 
     folded_sampled_params, unfolding_label = _get_folded_sampled_params(
-        parameters, transform_class, transform_kwargs, transform_dic)
+        parameters, transform_class, transform_kwargs)
 
     return preprocessed_data, folded_sampled_params, unfolding_label
 
 
-def get_transform_dic(config):
+def get_transform_class(config):
     """
-    Return a dictionary with transform kwargs that are the same across
-    simulations.
+    Return a transform class partially instatiatied with kwargs that are
+    the same across simulations.
     """
-    return {key: config.PRIOR_KWARGS[key]
-            for key in ('detector_pair', 'tgps', 'ref_det_name', 'f_avg',
-                        'q_min')}
+    return functools.partial(config.TRANSFORM_CLASS, **config.PRIOR_KWARGS)
 
 
 def get_i_refdet(config):
@@ -79,7 +77,7 @@ def get_i_refdet(config):
 
 
 def _get_folded_sampled_params(parameters, transform_class,
-                               transform_kwargs, transform_dic):
+                               transform_kwargs):
     """
     Return
     ------
@@ -90,7 +88,7 @@ def _get_folded_sampled_params(parameters, transform_class,
         Index of the region that the parameters belong to before
         applying folding. Takes a value between [0, 2**n_folded_params).
     """
-    transform = transform_class(**transform_dic, **transform_kwargs)
+    transform = transform_class(**transform_kwargs)
     sampled_params = transform.inverse_transform(
         **parameters[transform.standard_params])
 
@@ -111,7 +109,6 @@ def simulate_and_preprocess_samples(simulator,
                                     data_preprocessor,
                                     simulation_parameters,
                                     transform_class,
-                                    transform_dic,
                                     processes):
     """
     Run ``simulate_and_preprocess_sample()`` on a set of simulation
@@ -137,10 +134,6 @@ def simulate_and_preprocess_samples(simulator,
         simulation. The columns must contain all
         ``simulator._waveform_generator.params``.
 
-    transform_dic: dict
-        Transform kwargs that are the same across simulations. See
-        ``get_transform_dic``.
-
     processes: int or None
         The number of worker processes to use. If `processes` is
         `None` then the number returned by `os.cpu_count()` is used.
@@ -164,7 +157,7 @@ def simulate_and_preprocess_samples(simulator,
         [0, 2**n_folded_params).
     """
     args_generator = ((simulator, data_preprocessor, parameters,
-                       transform_class, transform_dic)
+                       transform_class)
                       for _, parameters in simulation_parameters.iterrows())
     results, stats = utils.multiprocessing_starmap_profiled(
         simulate_and_preprocess_sample, args_generator, processes)
@@ -456,7 +449,7 @@ def submit_condor(rundir,
 
 
 def _populate_datadir(datadir, simulator, data_preprocessor,
-                      transform_class, transform_dic, processes):
+                      transform_class, processes):
     simulation_parameters = pd.read_feather(datadir/utils.PARAMETERS_FILENAME)
     preprocessed_data, folded_sampled_params, unfolding_labels, stats \
         = simulate_and_preprocess_samples(
@@ -464,7 +457,6 @@ def _populate_datadir(datadir, simulator, data_preprocessor,
             data_preprocessor,
             simulation_parameters,
             transform_class=transform_class,
-            transform_dic=transform_dic,
             processes=processes)
 
     np.savez(datadir/utils.PREPROCESSED_DATA_FILENAME, **preprocessed_data)
@@ -489,19 +481,13 @@ def setup_simulator(rundir):
 
     transform_class: type
         Read from {rundir}/config.py
-
-    transform_dic: dict
-        Event-independent kwargs to ``transform_class``.
     """
     rundir = Path(rundir)
-    _check_rundir(rundir)
-
     config = utils.load_data_config(rundir)
 
     simulator = Simulator(config.EVENT_DATA_KWARGS, config.APPROXIMANT)
 
     waveform_model = PhenomenologicalWaveformGenerator.from_rundir(rundir)
-
     data_preprocessor = DataPreprocessor(
         waveform_model,
         i_refdet=get_i_refdet(config),
@@ -509,19 +495,21 @@ def setup_simulator(rundir):
         pn_phase_tol_compression=config.PN_PHASE_TOL_COMPRESSION,
         n_coherent_segments=config.N_COHERENT_SEGMENTS)
 
-    transform_class = config.TRANSFORM_CLASS
-    transform_dic = get_transform_dic(config)
-    return simulator, data_preprocessor, transform_class, transform_dic
+    transform_class = get_transform_class(config)
+
+    return simulator, data_preprocessor, transform_class
 
 
 def main(rundir, processes=None):
     """Generate and preprocess training and test data."""
-    simulator, data_preprocessor, transform_class, transform_dic \
-        = setup_simulator(rundir)
+    rundir = Path(rundir)
+    _check_rundir(rundir)
+
+    simulator, data_preprocessor, transform_class = setup_simulator(rundir)
 
     for dirname in utils.TRAINING_DIR, utils.TEST_DIR:
         _populate_datadir(rundir/dirname, simulator, data_preprocessor,
-                          transform_class, transform_dic, processes)
+                          transform_class, processes)
 
 
 if __name__ == '__main__':
