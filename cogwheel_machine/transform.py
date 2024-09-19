@@ -133,7 +133,7 @@ class MassesTransform(TransformMixin, Prior):
         I.e.
             ln(|∂{diff_regularized0pn} / ∂{lnmchirp}|)
         """
-        regularized0pn = self.coef0pn + diff_regularized0pn
+        regularized0pn = self.coef0pn + np.asarray(diff_regularized0pn)
         boundary = self._regularized0pn(self.mchirp_break)
         mchirp = self._mchirp(regularized0pn)
 
