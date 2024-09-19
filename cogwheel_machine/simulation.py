@@ -424,8 +424,8 @@ def submit_condor(rundir,
     Parameters
     ----------
     rundir: str, os.PathLike
-        Simulations directory, should contain files `config.py` and
-        `simulation_parameters.feather`.
+        Run directory, should contain a file `data_config.py` and
+        training and test directories with simulation parameters.
 
     request_cpus, request_memory, request_disk: int or str
         Specifications in the HTCondor submit file.
@@ -474,9 +474,25 @@ def _populate_datadir(datadir, simulator, data_preprocessor,
     stats.dump_stats(datadir/'simulation_profiling')
 
 
+def setup_simulator(rundir):
+    """
+    Parameters
+    ----------
+    rundir: str, os.PathLike
+        Run directory, should contain a file `data_config.py`.
 
-def main(rundir, processes=None):
-    """Generate and preprocess training and test data."""
+    Returns
+    -------
+    simulator: Simulator
+
+    data_preprocessor: DataPreprocessor
+
+    transform_class: type
+        Read from {rundir}/config.py
+
+    transform_dic: dict
+        Event-independent kwargs to ``transform_class``.
+    """
     rundir = Path(rundir)
     _check_rundir(rundir)
 
@@ -495,6 +511,13 @@ def main(rundir, processes=None):
 
     transform_class = config.TRANSFORM_CLASS
     transform_dic = get_transform_dic(config)
+    return simulator, data_preprocessor, transform_class, transform_dic
+
+
+def main(rundir, processes=None):
+    """Generate and preprocess training and test data."""
+    simulator, data_preprocessor, transform_class, transform_dic \
+        = setup_simulator(rundir)
 
     for dirname in utils.TRAINING_DIR, utils.TEST_DIR:
         _populate_datadir(rundir/dirname, simulator, data_preprocessor,
