@@ -92,9 +92,9 @@ class TrainingDataTestCase(TestCase):
             datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME)[mask]
         rescaled_parameters = np.load(
             datadir/utils.RESCALED_PARAMETERS_FILENAME)
-        unrescaled = rescaler.unrescale(compressed_data, rescaled_parameters)
+        unrescaled, _ = rescaler.unrescale(compressed_data,
+                                           rescaled_parameters)
         np.testing.assert_almost_equal(folded_sampled_params, unrescaled)
-
 
 
 if __name__ == '__main__':
