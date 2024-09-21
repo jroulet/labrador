@@ -30,8 +30,8 @@ from . import utils
 def simulate_and_preprocess_sample(simulator, data_preprocessor,
                                    parameters, transform_class):
     """
-    Generate a signal based on parameters, add a noise realization,
-    find a reference waveform and preprocess the data by heterodyning.
+    Generate a signal based on parameters, add a noise realization, find
+    a reference waveform and preprocess the data by heterodyning.
 
     Return
     ------
@@ -56,15 +56,16 @@ def simulate_and_preprocess_sample(simulator, data_preprocessor,
     preprocessed_data, transform_kwargs = data_preprocessor.preprocess_data(
         **simulated_input)
 
-    folded_sampled_params, unfolding_label = _get_folded_sampled_params(
-        parameters, transform_class, transform_kwargs)
+    transform = transform_class(**transform_kwargs)
+    folded_sampled_params, unfolding_label = get_folded_sampled_params(
+        parameters, transform)
 
     return preprocessed_data, folded_sampled_params, unfolding_label
 
 
 def get_transform_class(config):
     """
-    Return a transform class partially instatiatied with kwargs that are
+    Return a transform class partially instantiatied with kwargs that are
     the same across simulations.
     """
     return functools.partial(config.TRANSFORM_CLASS, **config.PRIOR_KWARGS)
@@ -76,8 +77,7 @@ def get_i_refdet(config):
         config.PRIOR_KWARGS['ref_det_name'])
 
 
-def _get_folded_sampled_params(parameters, transform_class,
-                               transform_kwargs):
+def get_folded_sampled_params(parameters, transform):
     """
     Return
     ------
@@ -88,7 +88,6 @@ def _get_folded_sampled_params(parameters, transform_class,
         Index of the region that the parameters belong to before
         applying folding. Takes a value between [0, 2**n_folded_params).
     """
-    transform = transform_class(**transform_kwargs)
     sampled_params = transform.inverse_transform(
         **parameters[transform.standard_params])
 
@@ -114,8 +113,8 @@ def simulate_and_preprocess_samples(simulator,
     Run ``simulate_and_preprocess_sample()`` on a set of simulation
     parameter samples in parallel using ``multiprocessing``.
 
-    Note: For best results you may want to ensure that each process
-    runs a single thread, by running
+    Note: For best results you may want to ensure that each process runs
+    a single thread, by running
     ```
     import os
     os.environ["OMP_NUM_THREADS"] = "1"
@@ -149,7 +148,7 @@ def simulate_and_preprocess_samples(simulator,
             * processed_coef: (n_sim, n_processed_coef) float array
 
     folded_sampled_params: (n_sim, n_params) float32 array
-            Signal parameters expressed in the folded target space.
+        Signal parameters expressed in the folded target space.
 
     unfolding_labels: (n_sim,) int array
         Index of the region that the parameters of each simulation
@@ -249,6 +248,18 @@ class DataPreprocessor:
     Methods for compressing the data by heterodyning against a
     phenomenological reference waveform.
     """
+
+    @classmethod
+    def from_rundir(cls, rundir):
+        rundir = Path(rundir)
+        config = utils.load_data_config(rundir)
+
+        waveform_model = PhenomenologicalWaveformGenerator.from_rundir(rundir)
+        return cls(waveform_model,
+                   i_refdet=get_i_refdet(config),
+                   f_ref=config.PRIOR_KWARGS['f_ref'],
+                   n_coherent_segments=config.N_COHERENT_SEGMENTS,
+                   pn_phase_tol_compression=config.PN_PHASE_TOL_COMPRESSION)
 
     def __init__(self,
                  waveform_model,
@@ -424,9 +435,9 @@ def submit_condor(rundir,
         Specifications in the HTCondor submit file.
 
     **submit_kwargs
-        Further options to include in the HTCondor submit file. Do
-        not pass `executable`, `output`, `error`, `log`, `args`,
-        `queue`, which will be dealt with automatically.
+        Further options to include in the HTCondor submit file. Do not
+        pass `executable`, `output`, `error`, `log`, `args`, `queue`,
+        which will be dealt with automatically.
     """
     rundir = Path(rundir).resolve()
     _check_rundir(rundir)
@@ -486,17 +497,8 @@ def setup_simulator(rundir):
     config = utils.load_data_config(rundir)
 
     simulator = Simulator(config.EVENT_DATA_KWARGS, config.APPROXIMANT)
-
-    waveform_model = PhenomenologicalWaveformGenerator.from_rundir(rundir)
-    data_preprocessor = DataPreprocessor(
-        waveform_model,
-        i_refdet=get_i_refdet(config),
-        f_ref=config.PRIOR_KWARGS['f_ref'],
-        pn_phase_tol_compression=config.PN_PHASE_TOL_COMPRESSION,
-        n_coherent_segments=config.N_COHERENT_SEGMENTS)
-
+    data_preprocessor = DataPreprocessor.from_rundir(rundir)
     transform_class = get_transform_class(config)
-
     return simulator, data_preprocessor, transform_class
 
 
