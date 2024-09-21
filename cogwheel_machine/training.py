@@ -26,19 +26,27 @@ def load_posterior(modeldir, device='cpu'):
 
 def load_loss(modeldir):
     """Load the training and validation losses of a trained model."""
-    accumulator = event_accumulator.EventAccumulator(modeldir.as_posix())
+    accumulator = event_accumulator.EventAccumulator(
+        modeldir.as_posix(),
+        size_guidance=event_accumulator.STORE_EVERYTHING_SIZE_GUIDANCE
+    )
     accumulator.Reload()
 
-    training_loss = [loss.value
-                     for loss in accumulator.Scalars('training_loss')]
-    validation_loss = [loss.value
-                       for loss in accumulator.Scalars('validation_loss')]
-    return training_loss, validation_loss
+    training_scalars = accumulator.Scalars('training_loss')
+    validation_scalars = accumulator.Scalars('validation_loss')
+
+    training_loss = [scalar.value for scalar in training_scalars]
+    validation_loss = [scalar.value for scalar in validation_scalars]
+    epochs = [scalar.step for scalar in training_scalars]
+
+    return epochs, training_loss, validation_loss
 
 
 def load_runtime(modeldir):
     """Array of length n_epochs with cumulative training time (h)."""
-    accumulator = event_accumulator.EventAccumulator(modeldir.as_posix())
+    accumulator = event_accumulator.EventAccumulator(
+        modeldir.as_posix(),
+        size_guidance=event_accumulator.STORE_EVERYTHING_SIZE_GUIDANCE)
     accumulator.Reload()
     durations = [x.value for x in accumulator.Scalars('epoch_durations_sec')]
     return np.cumsum(durations) / 3600
@@ -46,11 +54,11 @@ def load_runtime(modeldir):
 
 def plot_loss(modeldir, save=True):
     """Plot the training and validation losses of a trained model."""
-    training_loss, validation_loss = load_loss(modeldir)
+    epochs, training_loss, validation_loss = load_loss(modeldir)
 
     plt.figure()
-    plt.plot(training_loss, label='Training')
-    plt.plot(validation_loss, label='Validation')
+    plt.plot(epochs, training_loss, label='Training')
+    plt.plot(epochs, validation_loss, label='Validation')
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
     plt.legend()
