@@ -15,6 +15,15 @@ import sbi.utils
 from cogwheel_machine import embedding, sbi_hacks, utils
 
 
+def load_posterior(modeldir, device='cpu'):
+    """Load a neural posterior once it has been trained."""
+    posterior = torch.load(modeldir/utils.POSTERIOR_FILENAME,
+                           map_location=torch.device(device),
+                           weights_only=False)
+    posterior._device = device
+    return posterior
+
+
 def load_loss(modeldir):
     """Load the training and validation losses of a trained model."""
     accumulator = event_accumulator.EventAccumulator(modeldir.as_posix())
