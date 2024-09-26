@@ -266,7 +266,7 @@ class ParameterRescaler:
         ``_moments_model`` by loading from disk.
         """
         model_config = torch.load(self.rundir/PARAMETER_RESCALER_FILENAME,
-                                  weights_only=True)
+                                  weights_only=True, map_location=self.device)
 
         self._nonperiodic_mean = model_config['nonperiodic_mean']
         self._nonperiodic_scale = model_config['nonperiodic_scale']
@@ -276,7 +276,7 @@ class ParameterRescaler:
 
         self._training_info = torch.load(
             self.rundir/PARAMETER_RESCALER_TRAINING_FILENAME,
-            weights_only=True)
+            weights_only=True, map_location=self.device)
 
     def _save_current_model(self):
         model_config = {'_MultiLayerPerceptron': self._moments_model.to_dict(),
