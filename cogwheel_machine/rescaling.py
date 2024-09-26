@@ -507,7 +507,7 @@ def _compactify(value, a, b):
     return (b - a) / 2 * torch.tanh(value) + (b + a) / 2
 
 
-def _decompactify(compact_value, a, b):
+def _decompactify(compact_value, a, b, eps=1e-7):
     """
     Decompactify a value from a finite interval [a, b] to an infinite
     interval using arctanh.
@@ -520,11 +520,16 @@ def _decompactify(compact_value, a, b):
     a, b: float
         Bounds of the finite interval.
 
+    eps: float
+        Prevents overflow if ``compact_value`` is close to the edge.
+
     Returns
     -------
     float: Decompactified value within the infinite interval.
     """
-    return torch.arctanh(2 * (compact_value - (b + a) / 2) / (b - a))
+    arg = torch.clamp(2 * (compact_value - (b + a) / 2) / (b - a),
+                      -1 + eps, 1 - eps)
+    return torch.arctanh(arg)
 
 
 class _MultiLayerPerceptron(nn.Module):
