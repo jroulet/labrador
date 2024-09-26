@@ -46,7 +46,7 @@ class TrainingDataTestCase(TestCase):
             compression.create_mask(rundir)
             compression.svd_compression(rundir)
 
-            rescaling.rescale_parameters(rundir)
+            rescaling.main(rundir)
             self._assert_unrescale_undoes_rescale(rundir)
 
             print('Created these training data:')
@@ -92,7 +92,8 @@ class TrainingDataTestCase(TestCase):
             datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME)[mask]
         rescaled_parameters = np.load(
             datadir/utils.RESCALED_PARAMETERS_FILENAME)
-        unrescaled = rescaler.unrescale(compressed_data, rescaled_parameters)
+        unrescaled = rescaler.unrescale(compressed_data,
+                                        rescaled_parameters).detach()
         np.testing.assert_almost_equal(folded_sampled_params, unrescaled)
 
 

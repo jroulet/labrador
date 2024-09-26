@@ -21,7 +21,7 @@ PRIOR_KWARGS = {
     'f_avg': 100.,
     'f_ref': 100.,
     'd_hat_max': 400.,
-}
+    }
 
 EVENT_DATA_KWARGS = {
     'eventname': None,
@@ -54,4 +54,18 @@ MASK_CONDITIONS = [('snr0', np.greater, 8),
                    ('snr0', np.less, 50),
                   ]
 
-XGBOOST_KWARGS = {}
+# kwargs for the multilayer perceptron that learns mean and covariance
+# of the posterior, to rescale the parameters before passing them to sbi
+RESCALER_NN_KWARGS = {'n_layers': 5,
+                      'layer_size': 100,
+                      'activation_fn': 'SiLU'}
+
+RESCALER_TRAIN_KWARGS = {
+    'training_batch_size': min(65536, N_TRAINING_SIMULATIONS // 10),
+    'validation_fraction': 0.1,
+    'stop_after_epochs': 32,
+    'max_num_epochs': 1000,
+    'optimizer_kwargs': {},  # kwargs to torch.optim.Adam
+    }
+
+DEVICE = None  # ``None`` will try to use 'cuda' or fall back to 'cpu'.
