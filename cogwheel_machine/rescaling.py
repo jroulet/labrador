@@ -5,6 +5,7 @@ covariance of the posterior.
 import argparse
 from pathlib import Path
 import numpy as np
+import matplotlib.pyplot as plt
 
 import torch
 from torch import nn
@@ -16,6 +17,20 @@ from cogwheel_machine import utils, sbi_hacks
 
 PARAMETER_RESCALER_TRAINING_FILENAME = 'parameter_rescaler_training.pth'
 PARAMETER_RESCALER_FILENAME = 'parameter_rescaler.pth'
+
+
+def plot_loss(rundir):
+    rundir = Path(rundir)
+    training_info = torch.load(rundir/PARAMETER_RESCALER_TRAINING_FILENAME,
+                               weights_only=True)
+
+    plt.figure()
+    plt.plot(training_info['train_losses'], label='Training')
+    plt.plot(training_info['val_losses'], label='Validation')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(linestyle=':')
 
 
 class ParameterRescaler:
