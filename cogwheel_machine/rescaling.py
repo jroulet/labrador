@@ -1,6 +1,6 @@
 """
-Rescale physical parameters with XGBoost models for the mean and scale
-of the posterior.
+Rescale physical parameters with a neural network model for the mean and
+covariance of the posterior.
 """
 import argparse
 from pathlib import Path
@@ -28,8 +28,8 @@ class ParameterRescaler:
     mean from the data (so as to avoid spurious multimodality when the
     posterior straddles the branch cut) and then mapped to (-inf, inf).
 
-    The top-level function ``rescale_parameters`` provides an interface
-    for this class that is suitable for simple use cases.
+    The top-level function ``main`` provides an interface for this class
+    that is suitable for simple use cases.
 
     Methods
     -------
@@ -73,6 +73,7 @@ class ParameterRescaler:
 
     @property
     def n_parameters(self):
+        """Number of parameters."""
         return len(self.folded_range_dic)
 
     @property
@@ -96,7 +97,9 @@ class ParameterRescaler:
         if double_precision:
             parameters = parameters.double()
 
-        mean, chol_inv = self._predict_moments(compressed_data)
+        model_outputs = self._get_model_outputs(compressed_data)
+        mean, chol_inv = self._get_mean_and_chol_inv(model_outputs)
+
         return self._rescale(parameters, mean, chol_inv)
 
     def _rescale(self, parameters, mean, chol_inv):
@@ -121,7 +124,9 @@ class ParameterRescaler:
         if double_precision:
             parameters = parameters.double()
 
-        mean, chol_inv = self._predict_moments(compressed_data)
+        model_outputs = self._get_model_outputs(compressed_data)
+        mean, chol_inv = self._get_mean_and_chol_inv(model_outputs)
+
         return self._unrescale(parameters, mean, chol_inv)
 
     def _unrescale(self, parameters, mean, chol_inv):
@@ -155,10 +160,18 @@ class ParameterRescaler:
                                              *self.folded_range_dic[par])
 
     def _standardize_nonperiodic(self, parameters):
+        """
+        Remove a global (data-independent) mean and scale inplace from the
+        nonperiodic parameters to make them O(1).
+        """
         parameters[..., self._nonperiodic_inds] -= self._nonperiodic_mean
         parameters[..., self._nonperiodic_inds] /= self._nonperiodic_scale
 
     def _unstandardize_nonperiodic(self, parameters):
+        """
+        Apply a global (data-independent) mean and scale inplace to the
+        nonperiodic parameters.
+        """
         parameters[..., self._nonperiodic_inds] *= self._nonperiodic_scale
         parameters[..., self._nonperiodic_inds] += self._nonperiodic_mean
 
@@ -189,8 +202,8 @@ class ParameterRescaler:
 
     def _remove_mean(self, mean, parameters):
         """
-        Remove mean of the parameters, using circular mean for
-        the periodic ones.
+        Remove mean of the parameters, using circular mean for the
+        periodic ones.
 
         Note: by now bounded parameters should have been decompactified,
         and periodic parameters have been mapped to angles.
@@ -278,7 +291,7 @@ class ParameterRescaler:
         by measuring them from the dataset, and ``_moments_model`` by
         training a neural network.
         """
-        compressed_data, parameters, _, _ = self._load_data()
+        compressed_data, parameters = self._load_data()
 
         n_inputs = compressed_data.shape[1]
 
@@ -299,13 +312,20 @@ class ParameterRescaler:
                                'best_val_loss': np.inf}
 
     def train(self):
+        """
+        Train multilayer perceptron model for the mean and covariance.
+
+        This will update the ``._moments_model`` and ``._training_info``
+        attributes, and create files with the best model and training
+        history in ``.rundir``.
+        """
         kwargs = self.config.RESCALER_TRAIN_KWARGS
         optimizer = torch.optim.Adam(self._moments_model.parameters(),
                                      **kwargs['optimizer_kwargs'])
 
         train_loader, val_loader = self._get_dataloaders()
 
-        for _ in range(kwargs['max_num_epochs']):
+        for epoch in range(kwargs['max_num_epochs']):
             self._moments_model.train()
 
             train_loss = 0
@@ -338,6 +358,9 @@ class ParameterRescaler:
                 if patience_counter >= kwargs['stop_after_epochs']:
                     break
 
+            print(f'Epoch {epoch} | Validation Loss: {val_loss:.4f}', end='\r')
+        print()
+
         self._save_training_info()
         self._load_model()
 
@@ -348,13 +371,15 @@ class ParameterRescaler:
     def _get_dataloaders(self):
         kwargs = self.config.RESCALER_TRAIN_KWARGS
 
-        dataset = torch.utils.data.TensorDataset(*self._load_data())
+        compressed_data, parameters = self._load_data()
+        sin, cos = self._get_sin_cos_periodic_parameters(parameters)
+        dataset = torch.utils.data.TensorDataset(
+            compressed_data, parameters, sin, cos)
 
         train_ind_batches, val_ind_batches \
-            = sbi_hacks.get_train_val_batch_inds(
-                len(dataset),
-                kwargs['training_batch_size'],
-                kwargs['validation_fraction'])
+            = sbi_hacks.get_train_val_batch_inds(len(dataset),
+                                                 kwargs['training_batch_size'],
+                                                 kwargs['validation_fraction'])
 
         train_batches = [dataset[inds] for inds in train_ind_batches]
         val_batches = [dataset[inds] for inds in val_ind_batches]
@@ -375,7 +400,7 @@ class ParameterRescaler:
             np.load(datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME)[mask]
             ).to(self.device)
 
-        return compressed_data, parameters, sin, cos
+        return compressed_data, parameters
 
     def _get_sin_cos_periodic_parameters(self, parameters):
         parameters = parameters.clone().detach()
@@ -390,72 +415,77 @@ class ParameterRescaler:
         self._nonperiodic_mean = torch.mean(nonperiodic, dim=0)
         self._nonperiodic_scale = torch.std(nonperiodic, dim=0)
 
-    def _predict_moments(self, compressed_data, ret_mean_sin_cos=False):
+    def _get_model_outputs(self, compressed_data):
+        """
+        Returns
+        -------
+        torch tensors:
+        * mean_nonperiodic (n_samples, n_nonperiodic)
+        * mean_sin_periodic (n_samples, n_periodic)
+        * mean_cos_periodic (n_samples, n_periodic)
+        * log_diag_chol_inv (n_samples, n_parameters)
+        * offdiagonal_chol_inv (n_samples,
+                                n_parameters*(n_parameters-1)//2)
+        """
         output = self._moments_model(compressed_data)
 
         split_sizes = (len(self._nonperiodic_inds),
                        len(self._periodic_inds),
                        len(self._periodic_inds),
-                       self.n_parameters * (self.n_parameters + 1) // 2)
-        *means, chol_inv_values = torch.split(output, split_sizes, dim=-1)
+                       self.n_parameters,
+                       self.n_parameters * (self.n_parameters - 1) // 2)
 
-        mean = self._get_mean(*means)
-        chol_inv = self._get_cholesky(chol_inv_values)
+        return torch.split(output, split_sizes, dim=1)
 
-        if ret_mean_sin_cos:
-            return mean, chol_inv, *means[1:]
-        return mean, chol_inv
-
-    def _get_mean(self, mean_nonperiodic, mean_sin_periodic,
-                  mean_cos_periodic):
+    def _get_mean_and_chol_inv(self, model_outputs):
         """
         Predict mean of the parameters, using circular mean for the
         periodic ones.
         """
-        *pre_shape, _ = mean_nonperiodic.shape
-        mean = torch.empty(*pre_shape, self.n_parameters)
+        (mean_nonperiodic, mean_sin_periodic, mean_cos_periodic,
+         log_diag_chol_inv, offdiagonal_chol_inv) = model_outputs
+
+        n_samples, _ = mean_nonperiodic.shape
+
+        # Mean
+        mean = torch.empty((n_samples, self.n_parameters), device=self.device)
         mean[..., self._nonperiodic_inds] = mean_nonperiodic
         mean[..., self._periodic_inds] = torch.arctan2(mean_sin_periodic,
                                                        mean_cos_periodic)
-        return mean
 
-    def _get_cholesky(self, values):
-        """
-        Convert a set of ``n_par * (n_par+1) // 2`` values into a lower
-        triangular matrix with positive diagonal.
-        """
-        chol = torch.zeros(
-            (values.shape[0], self.n_parameters, self.n_parameters),
-            device=values.device)
-
-        # Diagonal, ensuring it's positive:
+        # Cholesky decomposition of the inverse covariance
+        chol_inv = torch.zeros(
+            (n_samples, self.n_parameters, self.n_parameters),
+            device=self.device)
+        # - Diagonal, ensuring it's positive:
         inds = np.arange(self.n_parameters)
-        chol[:, inds, inds] = torch.exp(values[:, :self.n_parameters])
-
-        # Lower triangle:
+        chol_inv[:, inds, inds] = torch.exp(log_diag_chol_inv)
+        # - Lower triangle:
         i, j = np.tril_indices(self.n_parameters, -1)
-        chol[:, i, j] = values[:, self.n_parameters:]
+        chol_inv[:, i, j] = offdiagonal_chol_inv
 
-        return chol
+        return mean, chol_inv
 
     def _loss_function(self, compressed_data, parameters, sin, cos):
-        mean, chol_inv, mean_sin, mean_cos = self._predict_moments(
-            compressed_data, ret_mean_sin_cos=True)
+        model_outputs = self._get_model_outputs(compressed_data)
+        _, mean_sin_periodic, mean_cos_periodic, log_diag_chol_inv, _ \
+            = model_outputs
 
+        mean, chol_inv = self._get_mean_and_chol_inv(model_outputs)
         rescaled = self._rescale(parameters, mean, chol_inv)
-
         chi_squared = (rescaled**2).sum(dim=1)
 
-        eigvals = torch.diagonal(chol_inv, dim1=-2, dim2=-1)
-        log_det_chol_inv = torch.log(eigvals).sum(dim=1)
+        log_det_chol_inv = log_diag_chol_inv.sum(dim=1)
 
         # This term regularizes the mean_sin and mean_cos of periodic
         # parameters (otherwise, these would enter only through their
         # ratio and have arbitrary norm). It's not derived from a KL
         # divergence, but it should have a similar optimum.
-        circular_chisq = ((sin-mean_sin)**2 + (cos-mean_cos)**2).sum(dim=1)
+        circular_term = ((sin - mean_sin_periodic) ** 2
+                          + (cos - mean_cos_periodic) ** 2
+                         ).sum(dim=1)
 
-        return torch.mean(chi_squared/2 - log_det_chol_inv + circular_chisq)
+        return torch.mean(chi_squared/2 - log_det_chol_inv + circular_term)
 
     def _get_folded_range_dic(self):
         """
@@ -521,7 +551,7 @@ def _decompactify(compact_value, a, b, eps=1e-7):
         Bounds of the finite interval.
 
     eps: float
-        Prevents overflow if ``compact_value`` is close to the edge.
+        Prevents overflow if `compact_value` is close to the edge.
 
     Returns
     -------
@@ -533,7 +563,6 @@ def _decompactify(compact_value, a, b, eps=1e-7):
 
 
 class _MultiLayerPerceptron(nn.Module):
-    """Can be saved and loaded without pickle."""
     @classmethod
     def from_dict(cls, dic):
         """
@@ -593,6 +622,7 @@ class _MultiLayerPerceptron(nn.Module):
         self._model = nn.Sequential(*layers)
 
     def forward(self, x):
+        """Output of the neural network."""
         return self._model(x)
 
     def to_dict(self):
@@ -615,11 +645,12 @@ class _MultiLayerPerceptron(nn.Module):
 
 def main(rundir):
     """
-    Fit mean and scale using XGBoost, and save rescaled parameters.
+    Fit mean and scale using a multilayer perceptron, and save rescaled
+    parameters.
 
-    This will create files for the XGBoost model of mean and
-    mean-log-squared-error in `rundir` (if not already present), and for
-    the rescaled parameters in both the training and test directories.
+    This will create files for the model in `rundir` (if not already
+    present), and for the rescaled parameters in both the training and
+    test directories.
     """
     rundir = Path(rundir)
 
