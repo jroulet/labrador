@@ -91,8 +91,8 @@ class ParameterRescaler:
         """
         Apply rescaling to physical parameters to make them ~N(0, 1).
         """
-        compressed_data = torch.as_tensor(compressed_data)
-        parameters = torch.as_tensor(folded_sampled_params)
+        compressed_data = torch.as_tensor(compressed_data).to(self.device)
+        parameters = torch.as_tensor(folded_sampled_params).to(self.device)
         if double_precision:
             parameters = parameters.double()
 
@@ -116,8 +116,8 @@ class ParameterRescaler:
 
         Inverse of ``.rescale``.
         """
-        compressed_data = torch.as_tensor(compressed_data)
-        parameters = torch.as_tensor(rescaled_params)
+        compressed_data = torch.as_tensor(compressed_data).to(self.device)
+        parameters = torch.as_tensor(rescaled_params).to(self.device)
         if double_precision:
             parameters = parameters.double()
 
@@ -259,7 +259,7 @@ class ParameterRescaler:
         self._nonperiodic_scale = model_config['nonperiodic_scale']
 
         self._moments_model = _MultiLayerPerceptron.from_dict(
-            model_config['_MultiLayerPerceptron'])
+            model_config['_MultiLayerPerceptron']).to(self.device)
 
         self._training_info = torch.load(
             self.rundir/PARAMETER_RESCALER_TRAINING_FILENAME,
@@ -288,7 +288,8 @@ class ParameterRescaler:
         n_outputs = (self.n_parameters + len(self._periodic_inds)
                      + self.n_parameters * (self.n_parameters + 1) // 2)
         self._moments_model = _MultiLayerPerceptron(
-            n_inputs, n_outputs, **self.config.RESCALER_NN_KWARGS)
+            n_inputs, n_outputs, **self.config.RESCALER_NN_KWARGS
+            ).to(self.device)
 
         self._fit_global_moments(parameters)
 
@@ -368,11 +369,11 @@ class ParameterRescaler:
 
         mask = np.load(datadir/utils.MASK_FILENAME)
         compressed_data = torch.from_numpy(
-            np.load(datadir/utils.COMPRESSED_DATA_FILENAME)[mask])
+            np.load(datadir/utils.COMPRESSED_DATA_FILENAME)[mask]
+            ).to(self.device)
         parameters = torch.from_numpy(
-            np.load(datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME)[mask])
-
-        sin, cos = self._get_sin_cos_periodic_parameters(parameters)
+            np.load(datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME)[mask]
+            ).to(self.device)
 
         return compressed_data, parameters, sin, cos
 
@@ -630,7 +631,7 @@ def main(rundir):
                                                          folded_sampled_params)
 
         np.save(datadir/utils.RESCALED_PARAMETERS_FILENAME,
-                rescaled_parameters.detach().numpy())
+                rescaled_parameters.detach().cpu().numpy())
 
 
 if __name__ == '__main__':

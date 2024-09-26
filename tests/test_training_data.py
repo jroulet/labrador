@@ -93,7 +93,7 @@ class TrainingDataTestCase(TestCase):
         rescaled_parameters = np.load(
             datadir/utils.RESCALED_PARAMETERS_FILENAME)
         unrescaled = rescaler.unrescale(compressed_data,
-                                        rescaled_parameters).detach()
+                                        rescaled_parameters).detach().cpu()
         np.testing.assert_almost_equal(folded_sampled_params, unrescaled)
 
 
