@@ -1,6 +1,15 @@
 """
 Rescale physical parameters with a neural network model for the mean and
 covariance of the posterior.
+
+To train a model from scratch, use ``main(rundir)``.
+To fine-tune an already trained model, you can optionally edit the
+relevant data_config parameters and then do:
+```
+rescaler = ParameterRescaler(rundir)
+rescaler.train()
+main(rundir)  # Will create the files in the training and test directory
+```
 """
 import argparse
 from pathlib import Path
@@ -334,50 +343,86 @@ class ParameterRescaler:
         attributes, and create files with the best model and training
         history in ``.rundir``.
         """
+        self._check_no_rescaled_parameter_files()
+
         kwargs = self.config.RESCALER_TRAIN_KWARGS
         optimizer = torch.optim.Adam(self._moments_model.parameters(),
                                      **kwargs['optimizer_kwargs'])
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, **kwargs['scheduler_kwargs'])
 
         train_loader, val_loader = self._get_dataloaders()
 
-        for epoch in range(kwargs['max_num_epochs']):
-            self._moments_model.train()
+        patience_counter = 0
 
-            train_loss = 0
-            for training_batch in train_loader:
-                optimizer.zero_grad()
-                loss = self._loss_function(*training_batch)
-                loss.backward()
-                optimizer.step()
-                train_loss += loss.item()
+        try:
+            for epoch in range(kwargs['max_num_epochs']):
+                # Training
+                self._moments_model.train()
+                train_loss = 0.0
+                for training_batch in train_loader:
+                    optimizer.zero_grad()
+                    loss = self._loss_function(*training_batch)
+                    loss.backward()
+                    optimizer.step()
+                    train_loss += loss.item()
 
-            train_loss /= len(train_loader)
-            self._training_info['train_losses'].append(train_loss)
+                train_loss /= len(train_loader)
+                self._training_info['train_losses'].append(train_loss)
+
+                # Validation
+                self._moments_model.eval()
+                val_loss = 0.0
+                with torch.no_grad():
+                    for val_batch in val_loader:
+                        loss = self._loss_function(*val_batch)
+                        val_loss += loss.item()
+
+                val_loss /= len(val_loader)
+                self._training_info['val_losses'].append(val_loss)
+
+                scheduler.step(val_loss)
+
+                # Early stopping
+                if val_loss < self._training_info['best_val_loss']:
+                    self._training_info['best_val_loss'] = val_loss
+                    patience_counter = 0
+                    self._save_current_model()
+                else:
+                    patience_counter += 1
+                    if patience_counter >= kwargs['stop_after_epochs']:
+                        break
+
+                print(f'Epoch {epoch} | Validation Loss: {val_loss:.3f}', end='\r')
+            print()
+        except KeyboardInterrupt:
+            print('\nTraining interrupted.')
+
+            if (len(self._training_info['train_losses'])
+                    == len(self._training_info['val_losses']) + 1):
+                del self._training_info['train_losses'][-1]
 
             self._moments_model.eval()
-            val_loss = 0
-            with torch.no_grad():
-                for val_batch in val_loader:
-                    loss = self._loss_function(*val_batch)
-                    val_loss += loss.item()
-
-            val_loss /= len(val_loader)
-            self._training_info['val_losses'].append(val_loss)
-
-            if val_loss < self._training_info['best_val_loss']:
-                self._training_info['best_val_loss'] = val_loss
-                patience_counter = 0
-                self._save_current_model()
-            else:  # Early stopping
-                patience_counter += 1
-                if patience_counter >= kwargs['stop_after_epochs']:
-                    break
-
-            print(f'Epoch {epoch} | Validation Loss: {val_loss:.4f}', end='\r')
-        print()
 
         self._save_training_info()
         self._load_model()
+
+    def _check_no_rescaled_parameter_files(self):
+        """
+        Refuse to retrain the model if there are rescaled parameters
+        saved to disk and/or sbi models already trained.
+        Otherwise the rescaler would be incorrect and it would be
+        impossible to transform back to physical parameters.
+        """
+        offending_paths = [
+            *self.rundir.glob(f'*/{utils.RESCALED_PARAMETERS_FILENAME}'),
+            *self.rundir.glob('model_*/')]
+
+        if offending_paths:
+            raise RuntimeError(
+                'Retraining would make the following files obsolete, '
+                'delete them (if you want) and try again.\n'
+                + '\n'.join(map(str, offending_paths)))
 
     def _save_training_info(self):
         torch.save(self._training_info,
