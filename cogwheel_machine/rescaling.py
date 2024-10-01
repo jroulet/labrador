@@ -127,7 +127,7 @@ class ParameterRescaler:
         return self._rescale(parameters, mean, chol_inv)
 
     def _rescale(self, parameters, mean, chol_inv):
-        parameters = parameters.clone().detach()
+        parameters = parameters.clone()
         self._decompactify_bounded_nonperiodic(parameters)
         self._standardize_nonperiodic(parameters)
         self._periodic_to_angle(parameters)
@@ -154,7 +154,7 @@ class ParameterRescaler:
         return self._unrescale(parameters, mean, chol_inv)
 
     def _unrescale(self, parameters, mean, chol_inv):
-        parameters = parameters.clone().detach()
+        parameters = parameters.clone()
         parameters = self._add_scale(chol_inv, parameters)
         self._compactify_periodic(parameters)
         self._add_mean(mean, parameters)
