@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 import numpy as np
 import sklearn.preprocessing
+from sklearn.utils.extmath import randomized_svd
 
 import cogwheel.utils
 
@@ -161,7 +162,7 @@ class SVDCompressor(utils.NpzMixin):
         wht_noise = noise / std_noise
 
         # Construct SVD bases using the (whitened) signals:
-        vh_mat = np.linalg.svd(wht_signal, full_matrices=False).Vh
+        _, _, vh_mat = randomized_svd(wht_signal, n_components=100)
 
         # Construct Wiener filter
         signal_svd_coef = wht_signal @ vh_mat.conjugate().transpose()
@@ -228,23 +229,39 @@ class SVDCompressor(utils.NpzMixin):
         """
         return np.searchsorted(self._cumulative_variance, 1-target_loss) + 1
 
-    @staticmethod
-    def load_data_and_signal(datadir, apply_mask=True):
+    @classmethod
+    def load_data_and_signal(cls, datadir, apply_mask=True):
         """Return heterodyned data and signal, reshaped for this class."""
         preprocessed_data = utils.get_preprocessed_data(datadir, apply_mask)
 
-        n_sim, n_det, n_freq = preprocessed_data['heterodyned_data'].shape
-        shape = n_sim, n_det*n_freq
+        data = cls.reshape_heterodyned_data(
+            preprocessed_data.pop('heterodyned_data'))
 
-        complex_data = preprocessed_data.pop('heterodyned_data').reshape(shape)
-        data = np.concatenate([complex_data.real, complex_data.imag], axis=1)
-        del complex_data
+        signal = cls.reshape_heterodyned_data(
+            preprocessed_data.pop('heterodyned_signal'))
 
-        complex_signal = preprocessed_data.pop('heterodyned_signal'
-                                              ).reshape(shape)
-        signal = np.concatenate([complex_signal.real, complex_signal.imag],
-                                axis=1)
         return data, signal
+
+    @staticmethod
+    def reshape_heterodyned_data(heterodyned_data):
+        """
+        Reshape heterodyned data or signal for this class.
+
+        Parameters
+        ----------
+        heterodyned_data: (n_sim?, n_det, n_freq) complex array
+            Could be one of ``preprocessed_data['heterodyned_data']`` or
+            ``preprocessed_data['heterodyned_signal']``.
+
+        Returns
+        -------
+        (n_sim?, 2 * n_det * n_freq) float array
+        """
+        *n_sim, n_det, n_freq = heterodyned_data.shape
+        shape = *n_sim, n_det * n_freq
+
+        complex_data = heterodyned_data.reshape(shape)
+        return np.concatenate([complex_data.real, complex_data.imag], axis=-1)
 
 
 class JSONStandardScaler(sklearn.preprocessing.StandardScaler):

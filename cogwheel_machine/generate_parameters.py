@@ -166,6 +166,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='Generate injection parameters from a "training" prior.')
     parser.add_argument(
-        'rundir', help='path to a directory containing a file `config.py`.')
+        'rundir', help='path to a directory with a file `data_config.py`.')
 
     main(**vars(parser.parse_args()))

@@ -47,7 +47,7 @@ class LogMassPrior(UniformPriorMixin, Prior):
     range_dic = {'lnmchirp': None,
                  'lnq': None}
 
-    def __init__(self, *, mchirp_range, q_min=.05, **kwargs):
+    def __init__(self, *, mchirp_range, q_min, **kwargs):
         lnq_min = np.log(q_min)
         self.range_dic = {'lnmchirp': np.log(mchirp_range),
                           'lnq': (lnq_min, 0)}
