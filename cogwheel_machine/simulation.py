@@ -460,72 +460,51 @@ def submit_condor(rundir,
     cogwheel.utils.submit_condor(**submit_kwargs)
 
 
+def append_to_hdf5(filename, **arrays):
+    """
+    Append arrays to an hdf5 file.
+
+    Parameters
+    ----------
+    filename: os.PathLike
+        Path to an hdf5 file. If it doesn't exist, it will be created.
+
+    **arrays:
+        Data to append. Keys are the groups in the hdf5.
+    """
+    with h5py.File(filename, "a") as h5file:
+        for key, array in arrays.items():
+            if key in h5file:
+                # Resize along first axis and append new data:
+                dataset = h5file[key]
+                dataset.resize(dataset.shape[0] + array.shape[0], axis=0)
+                dataset[-array.shape[0]:] = array
+            else:
+                h5file.create_dataset(key, data=array,
+                                      maxshape=(None, *array.shape[1:]))
+
+
 def _populate_datadir(datadir, simulator, data_preprocessor,
                       transform_class, processes, chunk_size=10_000):
     simulation_parameters = pd.read_feather(datadir/utils.PARAMETERS_FILENAME)
 
     stats = pstats.Stats()
 
-    for i in range((len(simulation_parameters) // chunk_size) + 1):
+    for chunk_start in range(0, len(simulation_parameters), chunk_size):
         (preprocessed_data, folded_sampled_params, unfolding_labels,
          chunk_stats) = simulate_and_preprocess_samples(
             simulator,
             data_preprocessor,
-            simulation_parameters[i*chunk_size : (i+1)*chunk_size],
+            simulation_parameters[chunk_start : chunk_start + chunk_size],
             transform_class=transform_class,
             processes=processes)
 
-        with h5py.File(datadir/utils.PREPROCESSED_DATA_FILENAME, "a"
-                      ) as h5file:
-            for key, array in preprocessed_data.items():
-                if key in h5file:
-                    # Dataset exists: Resize and append new data
-                    dataset = h5file[key]
-                    dataset.resize(dataset.shape[0] + array.shape[0],
-                                   axis=0)  # Resize along the first axis
-                    dataset[-array.shape[0]:] = array  # Append new data
-                else:
-                    # Dataset doesn't exist: Create it with the initial array
-                    h5file.create_dataset(
-                        key,
-                        data=array,
-                        maxshape=(None,) + array.shape[1:]
-                    )
-
-        with h5py.File(datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME, "a"
-                      ) as h5file:
-            if "dataset" in h5file:
-                # Dataset exists: Resize and append new data
-                dataset = h5file["dataset"]
-                dataset.resize(
-                    dataset.shape[0] + folded_sampled_params.shape[0],
-                    axis=0)  # Resize along the first axis
-                dataset[-folded_sampled_params.shape[0]:] \
-                    = folded_sampled_params
-            else:
-                # Dataset doesn't exist: Create it with initial data
-                h5file.create_dataset(
-                    "dataset",
-                    data=folded_sampled_params,
-                    maxshape=(None,) + folded_sampled_params.shape[1:]
-                )
-
-        with h5py.File(datadir/utils.UNFOLDING_LABELS_FILENAME, "a"
-                      ) as h5file:
-            if "dataset" in h5file:
-                # Dataset exists: Resize and append new data
-                dataset = h5file["dataset"]
-                dataset.resize(
-                    dataset.shape[0] + unfolding_labels.shape[0],
-                    axis=0)  # Resize along the first axis
-                dataset[-unfolding_labels.shape[0]:] = unfolding_labels
-            else:
-                # Dataset doesn't exist: Create it with initial data
-                h5file.create_dataset(
-                    "dataset",
-                    data=unfolding_labels,
-                    maxshape=(None,) + unfolding_labels.shape[1:]
-                )
+        append_to_hdf5(datadir/utils.PREPROCESSED_DATA_FILENAME,
+                       **preprocessed_data)
+        append_to_hdf5(datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME,
+                       dataset=folded_sampled_params)
+        append_to_hdf5(datadir/utils.UNFOLDING_LABELS_FILENAME,
+                       dataset=unfolding_labels)
 
         stats.add(chunk_stats)
 
