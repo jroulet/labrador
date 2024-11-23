@@ -15,6 +15,7 @@ import argparse
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
+import h5py
 
 import torch
 from torch import nn
@@ -393,7 +394,8 @@ class ParameterRescaler:
                     if patience_counter >= kwargs['stop_after_epochs']:
                         break
 
-                print(f'Epoch {epoch} | Validation Loss: {val_loss:.3f}', end='\r')
+                print(f'Epoch {epoch} | Validation Loss: {val_loss:.3f}',
+                      end='\r')
             print()
         except KeyboardInterrupt:
             print('\nTraining interrupted.')
@@ -456,9 +458,11 @@ class ParameterRescaler:
         compressed_data = torch.from_numpy(
             np.load(datadir/utils.COMPRESSED_DATA_FILENAME)[mask]
             ).to(self.device)
-        parameters = torch.from_numpy(
-            np.load(datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME)[mask]
-            ).to(self.device)
+        with h5py.File(datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME, "r"
+                      ) as h5file:
+            parameters = torch.tensor(
+                h5file["dataset"][mask]
+                ).to(self.device)
 
         return compressed_data, parameters
 
@@ -720,8 +724,9 @@ def main(rundir):
         mask = np.load(datadir/utils.MASK_FILENAME)
         compressed_data = np.load(datadir/utils.COMPRESSED_DATA_FILENAME)[mask]
 
-        folded_sampled_params = np.load(
-            datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME)[mask]
+        with h5py.File(datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME, "r"
+                      ) as h5file:
+            folded_sampled_params = h5file["dataset"][mask]
 
         rescaled_parameters = parameter_rescaler.rescale(compressed_data,
                                                          folded_sampled_params)

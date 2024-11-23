@@ -5,6 +5,7 @@ from pathlib import Path
 from cProfile import Profile
 import numpy as np
 import matplotlib.pyplot as plt
+import h5py
 
 import torch
 from torch.utils.tensorboard import SummaryWriter
@@ -86,8 +87,8 @@ def _instantiate_inference(modeldir):
                         ).to(config.DEVICE)
     x = torch.tensor(simulation_data, dtype=torch.float32).to(config.DEVICE)
 
-    with np.load(datadir/utils.PREPROCESSED_DATA_FILENAME) as file:
-        n_processed_coef = file['processed_coef'].shape[1]
+    with h5py.File(datadir/utils.PREPROCESSED_DATA_FILENAME, "r") as h5file:
+        n_processed_coef = h5file["processed_coef"].shape[1]
 
     if config.EMBEDDING_LAYER_SIZES:
         embedding_net = embedding.BlockMatrixEmbeddingNetwork(

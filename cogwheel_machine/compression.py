@@ -8,6 +8,7 @@ import os
 import sys
 from pathlib import Path
 import numpy as np
+import h5py
 import sklearn.preprocessing
 from sklearn.utils.extmath import randomized_svd
 
@@ -47,11 +48,12 @@ def create_mask(rundir):
 def _get_data(datadir, data_getter):
     compressed_heterodyned_data = data_getter(datadir)
 
-    with np.load(datadir/utils.PREPROCESSED_DATA_FILENAME) as file:
-        processed_coef = file['processed_coef']
+    with h5py.File(datadir/utils.PREPROCESSED_DATA_FILENAME, "r") as file:
+        compressed_data = np.concatenate(
+            [compressed_heterodyned_data, file['processed_coef']],
+            axis=1)
 
-    return np.concatenate([compressed_heterodyned_data, processed_coef],
-                          axis=1)
+    return compressed_data
 
 
 def _save_compressed_data(unscaled_data, scaler, datadir):
@@ -80,29 +82,8 @@ def _scale_and_save_data(rundir, data_getter):
     _save_compressed_data(test_data, scaler, rundir/utils.TEST_DIR)
 
 
-def simple_compression(rundir):
-    """
-    No compression other than the heterodyning itself.
-
-    Create files with compressed data for the training and test sets.
-    The compressed data contains flattened heterodyned data (real and
-    imaginary parts) and processed_coef.
-    It is a float32 array of shape (n_simulations, n_features).
-    """
-    rundir = Path(rundir)
-    utils.check_version(rundir)
-
-    def data_getter(datadir):
-        with np.load(datadir/utils.PREPROCESSED_DATA_FILENAME) as file:
-            heterodyned_data = file['heterodyned_data']
-
-        n_sim, n_det, n_freq = heterodyned_data.shape
-        return heterodyned_data.reshape(n_sim, n_det * n_freq)
-
-    _scale_and_save_data(rundir, data_getter)
-
-
-def svd_compression(rundir, target_loss=1e-3):
+def svd_compression(rundir, target_loss=1e-3, max_svd_size=100_000,
+                    chunk_size=10_000):
     """
     Compress the heterodyned data using SVD.
 
@@ -122,13 +103,23 @@ def svd_compression(rundir, target_loss=1e-3):
     """
     rundir = Path(rundir)
     utils.check_version(rundir)
-    compressor = SVDCompressor.from_training_data(rundir)
+
+    # Define the SVD basis
+    compressor = SVDCompressor.from_training_data(rundir, max_svd_size)
     n_components = compressor.n_components(target_loss)
 
+    # Project the data on the SVD basis
     def data_getter(datadir):
-        data, _ = SVDCompressor.load_data_and_signal(datadir,
-                                                     apply_mask=False)
-        return compressor.get_svd_coefficients(data, n_components)
+        n_data = len(np.load(datadir/utils.MASK_FILENAME))
+        chunks = [] 
+        for i_chunk in range((n_data//chunk_size) + 1):
+            data_chunk, _ = SVDCompressor.load_data_and_signal(
+                datadir,
+                apply_mask=False,
+                slice_=slice(i_chunk*chunk_size, (i_chunk+1)*chunk_size))
+            chunks.append(compressor.get_svd_coefficients(data_chunk,
+                                                          n_components))
+        return np.concatenate(chunks, axis=0)
 
     _scale_and_save_data(rundir, data_getter)
 
@@ -138,7 +129,7 @@ def svd_compression(rundir, target_loss=1e-3):
 class SVDCompressor(utils.NpzMixin):
     """Class to compress data using SVD."""
     @classmethod
-    def from_training_data(cls, rundir):
+    def from_training_data(cls, rundir, max_svd_size=None):
         """
         Load heterodyned data and signal, apply mask and construct SVD.
 
@@ -151,7 +142,8 @@ class SVDCompressor(utils.NpzMixin):
         datadir = Path(rundir)/utils.TRAINING_DIR
 
         # Load heterodyned data (noisy) and signal (noiseless):
-        data, signal = cls.load_data_and_signal(datadir)
+        data, signal = cls.load_data_and_signal(
+            datadir, slice_=slice(max_svd_size))
         noise = data - signal
 
         mean_signal = np.mean(signal, axis=0)
@@ -230,9 +222,11 @@ class SVDCompressor(utils.NpzMixin):
         return np.searchsorted(self._cumulative_variance, 1-target_loss) + 1
 
     @classmethod
-    def load_data_and_signal(cls, datadir, apply_mask=True):
+    def load_data_and_signal(cls, datadir, apply_mask=True,
+                             slice_=slice(None)):
         """Return heterodyned data and signal, reshaped for this class."""
-        preprocessed_data = utils.get_preprocessed_data(datadir, apply_mask)
+        preprocessed_data = utils.get_preprocessed_data(datadir,
+                                                        apply_mask, slice_)
 
         data = cls.reshape_heterodyned_data(
             preprocessed_data.pop('heterodyned_data'))
@@ -354,7 +348,7 @@ if __name__ == '__main__':
 
 
     parser.add_argument('compression_algorithm', type=str,
-                        help='"simple_compression" or "svd_compression".')
+                        help='"svd_compression".')
 
     args = parser.parse_args()
     # Get compression function by name
