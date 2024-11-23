@@ -111,7 +111,7 @@ def svd_compression(rundir, target_loss=1e-3, max_svd_size=100_000,
     # Project the data on the SVD basis
     def data_getter(datadir):
         n_data = len(np.load(datadir/utils.MASK_FILENAME))
-        chunks = [] 
+        chunks = []
         for i_chunk in range((n_data//chunk_size) + 1):
             data_chunk, _ = SVDCompressor.load_data_and_signal(
                 datadir,

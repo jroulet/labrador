@@ -13,11 +13,11 @@ DataPreprocessor:
 import argparse
 import functools
 import os
+import pstats
 from pathlib import Path
 import numpy as np
 import pandas as pd
 import h5py
-import pstats
 
 from cogwheel import data
 from cogwheel import gw_utils
@@ -166,13 +166,12 @@ def simulate_and_preprocess_samples(simulator,
     preprocessed_rows, folded_sampled_params, unfolding_labels = zip(*results)
     del results
 
-    # Turn tuple of dict into dict of arrays
-
     # fbin should be identical across simulations, keep only one:
     preprocessed_data = {'fbin': preprocessed_rows[0]['fbin']}
     for row in preprocessed_rows:
         del row['fbin']
 
+    # Turn tuple of dict into dict of arrays
     for key, arr in preprocessed_rows[0].copy().items():
         preprocessed_data[key] = np.fromiter(
             (row.pop(key) for row in preprocessed_rows),
@@ -488,8 +487,8 @@ def _populate_datadir(datadir, simulator, data_preprocessor,
                 else:
                     # Dataset doesn't exist: Create it with the initial array
                     h5file.create_dataset(
-                        key, 
-                        data=array, 
+                        key,
+                        data=array,
                         maxshape=(None,) + array.shape[1:]
                     )
 
@@ -499,14 +498,15 @@ def _populate_datadir(datadir, simulator, data_preprocessor,
                 # Dataset exists: Resize and append new data
                 dataset = h5file["dataset"]
                 dataset.resize(
-                    dataset.shape[0] + folded_sampled_params.shape[0], 
+                    dataset.shape[0] + folded_sampled_params.shape[0],
                     axis=0)  # Resize along the first axis
-                dataset[-folded_sampled_params.shape[0]:] = folded_sampled_params
+                dataset[-folded_sampled_params.shape[0]:] \
+                    = folded_sampled_params
             else:
                 # Dataset doesn't exist: Create it with initial data
                 h5file.create_dataset(
-                    "dataset", 
-                    data=folded_sampled_params, 
+                    "dataset",
+                    data=folded_sampled_params,
                     maxshape=(None,) + folded_sampled_params.shape[1:]
                 )
 
@@ -522,13 +522,13 @@ def _populate_datadir(datadir, simulator, data_preprocessor,
             else:
                 # Dataset doesn't exist: Create it with initial data
                 h5file.create_dataset(
-                    "dataset", 
-                    data=unfolding_labels, 
+                    "dataset",
+                    data=unfolding_labels,
                     maxshape=(None,) + unfolding_labels.shape[1:]
                 )
 
         stats.add(chunk_stats)
-    
+
     stats.dump_stats(datadir/'simulation_profiling')
 
 
