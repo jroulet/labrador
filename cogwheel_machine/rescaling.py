@@ -461,7 +461,7 @@ class ParameterRescaler:
         with h5py.File(datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME, "r"
                       ) as h5file:
             parameters = torch.tensor(
-                h5file["dataset"][mask]
+                np.array(h5file["dataset"])[mask]
                 ).to(self.device)
 
         return compressed_data, parameters
@@ -726,7 +726,7 @@ def main(rundir):
 
         with h5py.File(datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME, "r"
                       ) as h5file:
-            folded_sampled_params = h5file["dataset"][mask]
+            folded_sampled_params = np.array(h5file["dataset"])[mask]
 
         rescaled_parameters = parameter_rescaler.rescale(compressed_data,
                                                          folded_sampled_params)
