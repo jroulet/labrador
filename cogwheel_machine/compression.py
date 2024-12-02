@@ -225,8 +225,8 @@ class SVDCompressor(utils.NpzMixin):
     def load_data_and_signal(cls, datadir, apply_mask=True,
                              slice_=slice(None)):
         """Return heterodyned data and signal, reshaped for this class."""
-        preprocessed_data = utils.get_preprocessed_data(datadir,
-                                                        apply_mask, slice_)
+        preprocessed_data = utils.get_preprocessed_data(datadir, apply_mask,
+                                                        slice_)
 
         data = cls.reshape_heterodyned_data(
             preprocessed_data.pop('heterodyned_data'))

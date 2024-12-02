@@ -228,7 +228,7 @@ def get_preprocessed_data(datadir, apply_mask=True,
     with h5py.File(datadir/PREPROCESSED_DATA_FILENAME) as file:
         for key, arr in file.items():
             if key == 'fbin':
-                preprocessed_data[key] = arr
+                preprocessed_data[key] = arr[:]
             elif not apply_mask:
                 preprocessed_data[key] = arr[slice_]
             else:
