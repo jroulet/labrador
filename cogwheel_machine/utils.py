@@ -34,6 +34,7 @@ from pathlib import Path
 from cProfile import Profile
 import numpy as np
 import pandas as pd
+import h5py
 
 import cogwheel.utils
 import cogwheel.validation
@@ -47,9 +48,9 @@ TEST_DIR = 'test_data'
 DATA_CONFIG_FILENAME = 'data_config.py'
 MODEL_CONFIG_FILENAME = 'model_config.py'
 PARAMETERS_FILENAME = 'simulation_parameters.feather'
-PREPROCESSED_DATA_FILENAME = 'preprocessed_data.npz'
-FOLDED_SAMPLED_PARAMS_FILENAME = 'folded_sampled_params.npy'
-UNFOLDING_LABELS_FILENAME = 'unfolding_labels.npy'
+PREPROCESSED_DATA_FILENAME = 'preprocessed_data.h5'
+FOLDED_SAMPLED_PARAMS_FILENAME = 'folded_sampled_params.h5'
+UNFOLDING_LABELS_FILENAME = 'unfolding_labels.h5'
 MASK_FILENAME = 'mask.npy'
 COMPRESSED_DATA_FILENAME = 'compressed_data.npy'
 VERSION_FILENAME = 'version.txt'
@@ -169,9 +170,10 @@ def get_summary(datadir, apply_mask=True):
     summary = pd.read_feather(datadir/PARAMETERS_FILENAME)
 
     # Add SNR
-    with np.load(datadir/PREPROCESSED_DATA_FILENAME) as preprocessed_data:
+    with h5py.File(datadir/PREPROCESSED_DATA_FILENAME, "r"
+                  ) as preprocessed_data:
         for key in 'd_h', 'h_h', 'd_h0_semicoherent', 'h0_h0':
-            summary[key] = preprocessed_data[key].sum(axis=1)
+            summary[key] = np.sum(preprocessed_data[key], axis=1)
 
     summary['snr'] = summary['d_h'] / np.sqrt(summary['h_h'])
     summary['snr0'] = summary['d_h0_semicoherent'] / np.sqrt(summary['h0_h0'])
@@ -180,8 +182,11 @@ def get_summary(datadir, apply_mask=True):
     columns = list(config.TRANSFORM_CLASS.sampled_params)
     for par in config.TRANSFORM_CLASS.folded_params:
         columns[columns.index(par)] = f'folded_{par}'
-    folded_sampled_params = pd.DataFrame(
-        np.load(datadir/FOLDED_SAMPLED_PARAMS_FILENAME), columns=columns)
+
+    with h5py.File(datadir/FOLDED_SAMPLED_PARAMS_FILENAME, "r") as h5file:
+        folded_sampled_params = pd.DataFrame(
+            h5file["dataset"], columns=columns)
+
     cogwheel.utils.update_dataframe(summary, folded_sampled_params)
 
     # Apply mask
@@ -192,7 +197,8 @@ def get_summary(datadir, apply_mask=True):
     return summary
 
 
-def get_preprocessed_data(datadir, apply_mask=True) -> dict:
+def get_preprocessed_data(datadir, apply_mask=True,
+                          slice_=slice(None)) -> dict:
     """
     Load ``preprocessed_data`` and apply the ``mask`` to it.
 
@@ -206,21 +212,27 @@ def get_preprocessed_data(datadir, apply_mask=True) -> dict:
         Whether to apply the mask in {datadir}/{MASK_FILENAME} to the
         loaded arrays.
 
+    slice_: slice
+        Only load a slice of the data to preserve memory. The slice is
+        applied before the mask.
+
     Returns
     -------
     dict: keys match those of ``preprocessed_data``.
     """
     mask = None
     if apply_mask:
-        mask = np.load(datadir/MASK_FILENAME)
+        mask = np.load(datadir/MASK_FILENAME)[slice_]
 
     preprocessed_data = {}
-    with np.load(datadir/PREPROCESSED_DATA_FILENAME) as file:
+    with h5py.File(datadir/PREPROCESSED_DATA_FILENAME) as file:
         for key, arr in file.items():
-            if key == 'fbin' or not apply_mask:
-                preprocessed_data[key] = arr
+            if key == 'fbin':
+                preprocessed_data[key] = arr[:]
+            elif not apply_mask:
+                preprocessed_data[key] = arr[slice_]
             else:
-                preprocessed_data[key] = arr[mask]
+                preprocessed_data[key] = arr[slice_][mask]
 
     return preprocessed_data
 

@@ -13,9 +13,11 @@ DataPreprocessor:
 import argparse
 import functools
 import os
+import pstats
 from pathlib import Path
 import numpy as np
 import pandas as pd
+import h5py
 
 from cogwheel import data
 from cogwheel import gw_utils
@@ -164,13 +166,12 @@ def simulate_and_preprocess_samples(simulator,
     preprocessed_rows, folded_sampled_params, unfolding_labels = zip(*results)
     del results
 
-    # Turn tuple of dict into dict of arrays
-
     # fbin should be identical across simulations, keep only one:
     preprocessed_data = {'fbin': preprocessed_rows[0]['fbin']}
     for row in preprocessed_rows:
         del row['fbin']
 
+    # Turn tuple of dict into dict of arrays
     for key, arr in preprocessed_rows[0].copy().items():
         preprocessed_data[key] = np.fromiter(
             (row.pop(key) for row in preprocessed_rows),
@@ -459,21 +460,54 @@ def submit_condor(rundir,
     cogwheel.utils.submit_condor(**submit_kwargs)
 
 
+def append_to_hdf5(filename, **arrays):
+    """
+    Append arrays to an hdf5 file.
+
+    Parameters
+    ----------
+    filename: os.PathLike
+        Path to an hdf5 file. If it doesn't exist, it will be created.
+
+    **arrays:
+        Data to append. Keys are the groups in the hdf5.
+    """
+    with h5py.File(filename, "a") as h5file:
+        for key, array in arrays.items():
+            if key in h5file:
+                # Resize along first axis and append new data:
+                dataset = h5file[key]
+                dataset.resize(dataset.shape[0] + array.shape[0], axis=0)
+                dataset[-array.shape[0]:] = array
+            else:
+                h5file.create_dataset(key, data=array,
+                                      maxshape=(None, *array.shape[1:]))
+
+
 def _populate_datadir(datadir, simulator, data_preprocessor,
-                      transform_class, processes):
+                      transform_class, processes, chunk_size=10_000):
     simulation_parameters = pd.read_feather(datadir/utils.PARAMETERS_FILENAME)
-    preprocessed_data, folded_sampled_params, unfolding_labels, stats \
-        = simulate_and_preprocess_samples(
+
+    stats = pstats.Stats()
+
+    for chunk_start in range(0, len(simulation_parameters), chunk_size):
+        (preprocessed_data, folded_sampled_params, unfolding_labels,
+         chunk_stats) = simulate_and_preprocess_samples(
             simulator,
             data_preprocessor,
-            simulation_parameters,
+            simulation_parameters[chunk_start : chunk_start + chunk_size],
             transform_class=transform_class,
             processes=processes)
 
-    np.savez(datadir/utils.PREPROCESSED_DATA_FILENAME, **preprocessed_data)
-    np.save(datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME,
-            folded_sampled_params)
-    np.save(datadir/utils.UNFOLDING_LABELS_FILENAME, unfolding_labels)
+        append_to_hdf5(datadir/utils.PREPROCESSED_DATA_FILENAME,
+                       **preprocessed_data)
+        append_to_hdf5(datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME,
+                       dataset=folded_sampled_params)
+        append_to_hdf5(datadir/utils.UNFOLDING_LABELS_FILENAME,
+                       dataset=unfolding_labels)
+
+        stats.add(chunk_stats)
+
     stats.dump_stats(datadir/'simulation_profiling')
 
 
