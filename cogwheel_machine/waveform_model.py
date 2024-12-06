@@ -793,7 +793,15 @@ class PhaseModel:
         return self._dphase_to_phasecoef_mat.shape[0]
 
     def get_detector_phases_and_times(self, phasecoef):
-        """Return array of `t2-t1` for each pair of detectors."""
+        """
+        Return
+        ------
+        phases: (n_det,) float array
+            Waveform phase at each detector (rad).
+
+        times: (n_det,) float array
+            Arrival time at rach detector (s).
+        """
         pncoef = self._phasecoef_to_pncoef(phasecoef)
         phases = pncoef[: self.n_det] % (2*np.pi)
         times = -pncoef[self.n_det : 2*self.n_det] / (2*np.pi)

@@ -15,6 +15,7 @@ import textwrap
 import tracemalloc
 from unittest import TestCase, main
 import numpy as np
+import h5py
 
 from cogwheel_machine import (compression,
                               generate_parameters,
@@ -46,7 +47,7 @@ class TrainingDataTestCase(TestCase):
             compression.create_mask(rundir)
             compression.svd_compression(rundir)
 
-            rescaling.rescale_parameters(rundir)
+            rescaling.main(rundir)
             self._assert_unrescale_undoes_rescale(rundir)
 
             print('Created these training data:')
@@ -88,11 +89,12 @@ class TrainingDataTestCase(TestCase):
         datadir = rundir/utils.TRAINING_DIR
         mask = np.load(datadir/utils.MASK_FILENAME)
         compressed_data = np.load(datadir/utils.COMPRESSED_DATA_FILENAME)[mask]
-        folded_sampled_params = np.load(
-            datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME)[mask]
+        with h5py.File(datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME, "r") as h5file:
+            folded_sampled_params = h5file["dataset"][mask]
         rescaled_parameters = np.load(
             datadir/utils.RESCALED_PARAMETERS_FILENAME)
-        unrescaled = rescaler.unrescale(compressed_data, rescaled_parameters)
+        unrescaled = rescaler.unrescale(compressed_data,
+                                        rescaled_parameters).detach().cpu()
         np.testing.assert_almost_equal(folded_sampled_params, unrescaled)
 
 

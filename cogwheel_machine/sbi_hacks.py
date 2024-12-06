@@ -48,8 +48,8 @@ class NPEFixedBatches(sbi.inference.NPE):
             # These allow to preserve the exact partition into batches
             # as well as training/validation over multiple trainings.
             self._train_ind_batches, self._val_ind_batches \
-                = self._get_train_val_batch_inds(
-                    len(dataset), training_batch_size, validation_fraction)
+                = get_train_val_batch_inds(len(dataset), training_batch_size,
+                                           validation_fraction)
 
             # Other methods assume this attribute exists
             self.train_indices = np.concatenate(self._train_ind_batches)
@@ -62,25 +62,25 @@ class NPEFixedBatches(sbi.inference.NPE):
 
         return train_loader, val_loader
 
-    @staticmethod
-    def _get_train_val_batch_inds(num_simulations, training_batch_size,
-                                  validation_fraction):
-        """
-        Returns
-        -------
-        train_ind_batches, val_ind_batches: list of int arrays
-            Indices of the training and validation simulations, arranged in
-            batches.
-        """
-        num_batches = num_simulations // training_batch_size
-        batch_indices = np.split(np.arange(num_batches * training_batch_size),
-                                 num_batches)
 
-        num_training_batches = int(
-            len(batch_indices) * (1-validation_fraction))
-        train_ind_batches = batch_indices[:num_training_batches]
-        val_ind_batches = batch_indices[num_training_batches:]
-        return train_ind_batches, val_ind_batches
+def get_train_val_batch_inds(num_simulations, training_batch_size,
+                             validation_fraction):
+    """
+    Returns
+    -------
+    train_ind_batches, val_ind_batches: list of int arrays
+        Indices of the training and validation simulations, arranged in
+        batches.
+    """
+    num_batches = num_simulations // training_batch_size
+    batch_indices = np.split(np.arange(num_batches * training_batch_size),
+                             num_batches)
+
+    num_training_batches = int(
+        len(batch_indices) * (1-validation_fraction))
+    train_ind_batches = batch_indices[:num_training_batches]
+    val_ind_batches = batch_indices[num_training_batches:]
+    return train_ind_batches, val_ind_batches
 
     # Override ``train`` method to allow `lr_scheduler_kwargs`.
     # The code below is copied from sbi.inference.trainers.npe.npe_base

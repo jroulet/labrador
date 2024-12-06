@@ -9,7 +9,6 @@ dynamic = ["version"]
 dependencies = [
   "cogwheel-pe",
   "sbi>=0.23.1",
-  "xgboost",
 ]
 
 maintainers = [
