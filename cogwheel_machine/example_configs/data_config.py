@@ -14,13 +14,14 @@ TGPS = 0.0
 
 PRIOR_KWARGS = {
     'mchirp_range': (1., 50.),
+    'q_min': 1/20,
     'detector_pair': 'HL',
     'tgps': TGPS,
     'ref_det_name': 'L',
     'f_avg': 100.,
     'f_ref': 100.,
-    'd_hat_max': 400
-}
+    'd_hat_max': 400.,
+    }
 
 EVENT_DATA_KWARGS = {
     'eventname': None,
@@ -52,3 +53,24 @@ APPROXIMANT = 'IMRPhenomD'
 MASK_CONDITIONS = [('snr0', np.greater, 8),
                    ('snr0', np.less, 50),
                   ]
+
+# kwargs for the multilayer perceptron that learns mean and covariance
+# of the posterior, to rescale the parameters before passing them to sbi
+RESCALER_NN_KWARGS = {'n_layers': 5,
+                      'layer_size': 100,
+                      'activation_fn': 'SiLU'}
+
+RESCALER_TRAIN_KWARGS = {
+    'training_batch_size': min(16384, N_TRAINING_SIMULATIONS // 10),
+    'validation_fraction': 0.1,
+    'stop_after_epochs': 200,
+    'max_num_epochs': 10000,
+    'optimizer_kwargs': {'lr': 1e-4},  # kwargs to torch.optim.Adam
+    'scheduler_kwargs': {
+        'factor': 0.5,
+        'patience': 64,
+        'min_lr': 5e-6,
+         },  # kwargs to torch.optim.lr_scheduler.ReduceLROnPlateau
+    }
+
+DEVICE = None  # ``None`` will try to use 'cuda' or fall back to 'cpu'.

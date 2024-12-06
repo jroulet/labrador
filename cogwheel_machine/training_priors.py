@@ -7,6 +7,7 @@ from cogwheel.prior import (
     IdentityTransformMixin,
     FixedPrior)
 
+import cogwheel.utils
 from cogwheel.gw_prior.combined import (
     UniformLuminosityVolumePrior,
     RegisteredPriorMixin,
@@ -14,13 +15,12 @@ from cogwheel.gw_prior.combined import (
     IsotropicInclinationPrior,
     IsotropicSkyLocationPrior,
     UniformTimePrior,
+    UniformPhasePrior,
     UniformPolarizationPrior,
     UniformEffectiveSpinPrior,
     ZeroInplaneSpinsPrior,
     ZeroTidalDeformabilityPrior,
     FixedReferenceFrequencyPrior)
-
-import cogwheel.utils
 
 from . import transform
 
@@ -47,7 +47,7 @@ class LogMassPrior(UniformPriorMixin, Prior):
     range_dic = {'lnmchirp': None,
                  'lnq': None}
 
-    def __init__(self, *, mchirp_range, q_min=.05, **kwargs):
+    def __init__(self, *, mchirp_range, q_min, **kwargs):
         lnq_min = np.log(q_min)
         self.range_dic = {'lnmchirp': np.log(mchirp_range),
                           'lnq': (lnq_min, 0)}
@@ -125,3 +125,11 @@ class AlignedSpinTrainingPrior(RegisteredPriorMixin,
                                            UniformEffectiveSpinPrior)
 
     default_transform_class = transform.TargetSpaceTransformAlignedSpins
+
+
+class AlignedSpinSamplingPrior(RegisteredPriorMixin, CombinedPrior):
+    """Intended for sampling, to test the amortized inference."""
+    prior_classes = cogwheel.utils.replace(
+        AlignedSpinTrainingPrior.prior_classes,
+        PhasePrior,
+        UniformPhasePrior)

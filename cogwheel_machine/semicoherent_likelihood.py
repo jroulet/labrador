@@ -131,6 +131,17 @@ class SemicoherentLikelihood:
         """
         assert np.array_equal(frequencies, self.frequencies)
 
+        # TODO promote to kwargs, put in config
+        boxsize = 3.0
+        optimizer = 'differential_evolution'
+        optimizer_kwargs = {'init': 'halton',}
+
+        if optimizer_kwargs is None:
+            optimizer_kwargs = {}
+
+        if isinstance(optimizer, str):
+            optimizer = getattr(optimize, optimizer)
+
         shapecoef_guess = self.waveform_model.guess_shapecoef(
             frequencies,
             self.wht_filter,
@@ -139,15 +150,17 @@ class SemicoherentLikelihood:
 
         shapeampcoef_bounds = self.waveform_model.amplitude_model \
             .amplitude_tapering.shapeampcoef_bounds
+        shapephasecoef_bounds = (
+            shapecoef_guess[len(shapeampcoef_bounds):, np.newaxis]
+            + (-boxsize, boxsize))
+        shapecoef_bounds = np.concatenate(
+            [shapeampcoef_bounds, shapephasecoef_bounds], axis=0)
 
-        shapecoef = optimize.minimize(
+        shapecoef = optimizer(
             lambda shapecoef: -self.semicoherent_lnlike(shapecoef),
-            x0=shapecoef_guess,
-            tol=.1,
-            bounds=[*shapeampcoef_bounds,
-                    *[(-np.inf, np.inf)] * (len(shapecoef_guess)
-                                            - len(shapeampcoef_bounds))]
+            bounds=list(shapecoef_bounds), **optimizer_kwargs
             ).x
+
         return self._fit_amp_phase(shapecoef)
 
     def _fit_amp_phase(self, shapecoef):

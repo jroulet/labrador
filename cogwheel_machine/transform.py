@@ -10,6 +10,8 @@ import lal
 from cogwheel.prior import Prior, CombinedPrior
 from cogwheel import gw_prior
 
+from . import training_priors
+
 
 class TransformMixin:
     """
@@ -43,10 +45,10 @@ class MassesTransform(TransformMixin, Prior):
     centered at 0.
     """
     range_dic = {'diff_regularized0pn': (-np.inf, np.inf),
-                 'lnq': (-np.inf, 0.0)}
+                 'lnq': None}
     standard_params = ['m1', 'm2']
 
-    def __init__(self, coef0pn, mchirp_break=60.0, **kwargs):
+    def __init__(self, coef0pn, q_min, mchirp_break=60.0, **kwargs):
         """
         Parameters
         ----------
@@ -64,6 +66,7 @@ class MassesTransform(TransformMixin, Prior):
         waveform_model.PhenomenologicalWaveformGenerator.get_transform_kwargs
         waveform_model.PhaseModel.get_coef0pn
         """
+        self.range_dic = self.range_dic | {'lnq': (np.log(q_min), 0.0)}
         super().__init__(**kwargs)
         self.mchirp_break = mchirp_break
         self.coef0pn = coef0pn
@@ -122,6 +125,29 @@ class MassesTransform(TransformMixin, Prior):
             128*(np.pi*lal.MTSUN_SI*self.mchirp_break)**(5/3) * regularized0pn
             + 8)
 
+    def lnmchirp_log_jacobian_determinant(self, diff_regularized0pn):
+        """
+        Return log of the Jacobian determinant between
+        `diff_regularized0pn` and `lnmchirp`.
+
+        I.e.
+            ln(|∂{diff_regularized0pn} / ∂{lnmchirp}|)
+        """
+        regularized0pn = self.coef0pn + np.asarray(diff_regularized0pn)
+        boundary = self._regularized0pn(self.mchirp_break)
+        mchirp = self._mchirp(regularized0pn)
+
+        # mchirp ∝ regularized0pn ^ exponent
+        exponent_low = -3/5
+        exponent_high = 1
+        exponent = np.piecewise(regularized0pn,
+                                [regularized0pn < boundary],
+                                [exponent_low, exponent_high])
+
+        jacobian_regularized0pn_mchirp = exponent * mchirp / regularized0pn
+
+        return np.log(np.abs(jacobian_regularized0pn_mchirp)) - np.log(mchirp)
+
 
 class PhaseTransform(TransformMixin, gw_prior.UniformPhasePrior):
     """
@@ -166,7 +192,7 @@ class TimeTransform(TransformMixin, Prior):
     a fiducial arrival time at the reference detector.
     """
     standard_params = ['t_geocenter']
-    range_dic = {'dt_refdet': (np.nan, np.nan)}
+    range_dic = {'dt_refdet': (-np.inf, np.inf)}
     conditioned_on = ['ra', 'dec']
 
     def __init__(self, *, tgps, ref_det_name, t0_refdet, **kwargs):
@@ -265,6 +291,16 @@ class DistanceTransform(TransformMixin, Prior):
                 'ref_det_name': init_dict['ref_det_name'],
                 'amp_ref_det': self.amp_ref_det}
 
+    def dhat_log_jacobian_determinant(self):
+        """
+        Log of the Jacobian determinant between ``relative_dhat`` and
+        ``d_hat``.
+
+        I.e.
+            ln(|∂{relative_dhat} / ∂{d_hat}|)
+        """
+        return -np.log(self.amp_ref_det)
+
 
 class TargetSpaceTransformNoSpins(CombinedPrior):
     """Full coordinate transformation for all waveform parameters."""
@@ -283,3 +319,36 @@ class TargetSpaceTransformAlignedSpins(CombinedPrior):
     prior_classes = [*TargetSpaceTransformNoSpins.prior_classes,
                      gw_prior.UniformEffectiveSpinPrior,
                      ]
+
+
+def log_det_jacobian(transform, training_prior, diff_regularized0pn):
+    """
+    log Jacobian determinant between
+    ``TargetSpaceTransformNoSpins.sampled_params`` and
+    ``training_priors.NoSpinTrainingPrior.sampled_params``;
+    or between ``TargetSpaceTransformAlignedSpins.sampled_params`` and
+    ``training_priors.AlignedSpinTrainingPrior.sampled_params``
+    (these Jacobians are the same).
+
+    This function may change in the future to make this choice flexible.
+    """
+    assert ((isinstance(transform, TargetSpaceTransformNoSpins)
+             and isinstance(training_prior,
+                            training_priors.NoSpinTrainingPrior))
+            or (isinstance(transform, TargetSpaceTransformAlignedSpins)
+                and isinstance(training_prior,
+                               training_priors.AlignedSpinTrainingPrior)))
+
+    # Mass
+    mass_transform = transform.subpriors[
+        transform.prior_classes.index(MassesTransform)]
+
+    log_det_jac_mass = mass_transform.lnmchirp_log_jacobian_determinant(
+        diff_regularized0pn)
+
+    # Distance
+    distance_transform = transform.subpriors[
+        transform.prior_classes.index(DistanceTransform)]
+    log_det_jac_distance = distance_transform.dhat_log_jacobian_determinant()
+
+    return log_det_jac_mass + log_det_jac_distance

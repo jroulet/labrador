@@ -1,22 +1,29 @@
 """
-Integration test of the modules for generating training data, namely:
+Integration test of the modules for generating data and training, namely:
     * generate_parameters
     * simulation
     * compression
+    * rescaling
+    * training
 """
 import os
 os.environ['OMP_NUM_THREADS'] = '1'
 
+# pylint: disable=wrong-import-position
 import tempfile
 import textwrap
 import tracemalloc
 from unittest import TestCase, main
+import numpy as np
+import h5py
 
 from cogwheel_machine import (compression,
                               generate_parameters,
+                              rescaling,
                               simulation,
                               training,
                               utils)
+# pylint: enable=wrong-import-position
 
 
 class TrainingDataTestCase(TestCase):
@@ -39,6 +46,10 @@ class TrainingDataTestCase(TestCase):
 
             compression.create_mask(rundir)
             compression.svd_compression(rundir)
+
+            rescaling.main(rundir)
+            self._assert_unrescale_undoes_rescale(rundir)
+
             print('Created these training data:')
             os.system(f'tree {parentdir}')
 
@@ -62,7 +73,8 @@ class TrainingDataTestCase(TestCase):
     @staticmethod
     def _train_model(rundir, extra_lines=''):
         modeldir = utils.setup_modeldir(rundir)
-        with open(modeldir/utils.MODEL_CONFIG_FILENAME, 'a') as file:
+        with open(modeldir/utils.MODEL_CONFIG_FILENAME, 'a',
+                  encoding='utf-8') as file:
             file.write(extra_lines)
         training.main(modeldir)
 
@@ -70,6 +82,21 @@ class TrainingDataTestCase(TestCase):
         training_files = set(os.listdir(rundir/utils.TRAINING_DIR))
         test_files = set(os.listdir(rundir/utils.TEST_DIR))
         self.assertEqual(training_files, test_files)
+
+    @staticmethod
+    def _assert_unrescale_undoes_rescale(rundir):
+        rescaler = rescaling.ParameterRescaler(rundir)
+        datadir = rundir/utils.TRAINING_DIR
+        mask = np.load(datadir/utils.MASK_FILENAME)
+        compressed_data = np.load(datadir/utils.COMPRESSED_DATA_FILENAME)[mask]
+        with h5py.File(datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME, "r") as h5file:
+            folded_sampled_params = h5file["dataset"][mask]
+        rescaled_parameters = np.load(
+            datadir/utils.RESCALED_PARAMETERS_FILENAME)
+        unrescaled = rescaler.unrescale(compressed_data,
+                                        rescaled_parameters).detach().cpu()
+        np.testing.assert_almost_equal(folded_sampled_params, unrescaled)
+
 
 
 if __name__ == '__main__':
