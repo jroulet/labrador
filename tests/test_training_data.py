@@ -1,10 +1,12 @@
 """
-Integration test of the modules for generating data and training, namely:
+Integration test of the modules for generating data and training, i.e.:
+
     * generate_parameters
     * simulation
     * compression
     * rescaling
     * training
+
 """
 import os
 os.environ['OMP_NUM_THREADS'] = '1'
@@ -89,8 +91,10 @@ class TrainingDataTestCase(TestCase):
         datadir = rundir/utils.TRAINING_DIR
         mask = np.load(datadir/utils.MASK_FILENAME)
         compressed_data = np.load(datadir/utils.COMPRESSED_DATA_FILENAME)[mask]
-        with h5py.File(datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME, "r") as h5file:
+        with h5py.File(datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME, "r"
+                      ) as h5file:
             folded_sampled_params = h5file["dataset"][mask]
+
         rescaled_parameters = np.load(
             datadir/utils.RESCALED_PARAMETERS_FILENAME)
         unrescaled = rescaler.unrescale(compressed_data,
