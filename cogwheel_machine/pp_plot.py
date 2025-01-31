@@ -1,4 +1,5 @@
 """P-P plots."""
+import argparse
 import multiprocessing
 from pathlib import Path
 from scipy import stats
@@ -206,3 +207,36 @@ def _pp_error(sigmas: float, n_sim: int):
     cdfs = stats.norm.cdf((-sigmas, sigmas))
     y_values = stats.binom.ppf(cdfs[:, np.newaxis], n_sim, x_values) / n_sim
     return x_values, *y_values
+
+
+def main(modeldir, n_data=2000, n_processes=20):
+    """Make a P-P plot and save it in `modeldir`."""
+    modeldir = Path(modeldir)
+    credible_intervals = get_credible_intervals(modeldir, n_data, n_processes)
+
+    pp_plot(credible_intervals)
+    plt.title(modeldir.name)
+    plt.savefig(modeldir/'pp_plot.pdf', bbox_inches='tight')
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Make a P-P plot.')
+    parser.add_argument(
+        'modeldir',
+        type=str,
+        help='Path to the model directory.'
+    )
+    parser.add_argument(
+        '--n_data',
+        type=int,
+        default=2000,
+        help='Number of simulations to use (default: 2000).'
+    )
+    parser.add_argument(
+        '--n_processes',
+        type=int,
+        default=20,
+        help='Number of processes to use (default: 20).'
+    )
+
+    main(**vars(parser.parse_args()))

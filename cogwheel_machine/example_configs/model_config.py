@@ -2,7 +2,7 @@
 Example configuration file with parameters for the neural posterior
 estimation.
 
-This file may be copied into `run_dir` and edited before training the
+This file may be copied into ``rundir`` and edited before training the
 network.
 """
 # kwargs to sbi.utils.posterior_nn
