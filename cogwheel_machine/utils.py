@@ -28,7 +28,6 @@ import multiprocessing
 import os
 import pstats
 import shutil
-import sys
 import tempfile
 from pathlib import Path
 from cProfile import Profile
@@ -62,17 +61,13 @@ POSTERIOR_FILENAME = 'posterior.pt'
 def load_data_config(rundir):
     """Return module `data_config` from a run directory."""
     rundir = Path(rundir)
-    with cogwheel.utils.temporarily_change_attributes(
-            sys, dont_write_bytecode=True):  # TODO move to cogwheel
-        return cogwheel.validation.load_config(rundir/DATA_CONFIG_FILENAME)
+    return cogwheel.validation.load_config(rundir/DATA_CONFIG_FILENAME)
 
 
 def load_model_config(modeldir):
     """Return module `model_config` from a model directory."""
     modeldir = Path(modeldir)
-    with cogwheel.utils.temporarily_change_attributes(
-            sys, dont_write_bytecode=True):  # TODO move to cogwheel
-        return cogwheel.validation.load_config(modeldir/MODEL_CONFIG_FILENAME)
+    return cogwheel.validation.load_config(modeldir/MODEL_CONFIG_FILENAME)
 
 
 def make_unique_dir(location, prefix):
@@ -96,16 +91,16 @@ def setup_rundir(parentdir, prefix='run_'):
 
     Parameters
     ----------
-    parentdir: os.PathLike
+    parentdir : os.PathLike
         Path in which to create the run directory ``rundir``.
 
-    prefix: str
+    prefix : str
         ``rundir`` will be named as the prefix follwed by a number, to
         make it unique.
 
     Returns
     -------
-    rundir: os.PathLike
+    rundir : os.PathLike
         Path to the newly created run directory.
     """
     rundir = make_unique_dir(parentdir, prefix)
@@ -126,16 +121,16 @@ def setup_modeldir(rundir, prefix='model_'):
 
     Parameters
     ----------
-    rundir: os.PathLike
+    rundir : os.PathLike
         Path in which to create the model directory ``modeldir``.
 
-    prefix: str
+    prefix : str
         ``modeldir`` will be named as the prefix followed by a number, to
         make it unique.
 
     Returns
     -------
-    modeldir: os.PathLike
+    modeldir : os.PathLike
         Path to the newly created model directory.
     """
     modeldir = make_unique_dir(rundir, prefix)
@@ -156,11 +151,11 @@ def get_summary(datadir, apply_mask=True):
 
     Parameters
     ----------
-    datadir: os.PathLike
+    datadir : os.PathLike
         Path to the run directory in which training or test data have
         been created.
 
-    apply_mask: bool
+    apply_mask : bool
         Whether to apply the boolean mask to the data.
     """
     datadir = Path(datadir)
@@ -204,21 +199,21 @@ def get_preprocessed_data(datadir, apply_mask=True,
 
     Parameters
     ----------
-    datadir: os.PathLike
+    datadir : os.PathLike
         Path to the run directory in which training or test data have
         been created.
 
-    apply_mask: bool
+    apply_mask : bool
         Whether to apply the mask in {datadir}/{MASK_FILENAME} to the
         loaded arrays.
 
-    slice_: slice
+    slice_ : slice
         Only load a slice of the data to preserve memory. The slice is
         applied before the mask.
 
     Returns
     -------
-    dict: keys match those of ``preprocessed_data``.
+    dict : keys match those of ``preprocessed_data``.
     """
     mask = None
     if apply_mask:
@@ -291,12 +286,12 @@ def multiprocessing_starmap_profiled(func, iterable, processes=None):
     Similar to ``multiprocessing.Pool().starmap`` but it also returns
     profiling statistics.
 
-    Return
-    ------
-    results: list
+    Returns
+    -------
+    results : list
         ``[func(*args) for args in iterable]``.
 
-    stats: pstats.Stats
+    stats : pstats.Stats
         Profiling statistics.
     """
     with tempfile.TemporaryDirectory() as profile_dir:

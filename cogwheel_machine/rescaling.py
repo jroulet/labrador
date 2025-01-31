@@ -55,11 +55,6 @@ class ParameterRescaler:
 
     The top-level function ``main`` provides an interface for this class
     that is suitable for simple use cases.
-
-    Methods
-    -------
-    .rescale
-    .unrescale
     """
 
     def __init__(self, rundir):
@@ -588,15 +583,15 @@ def _compactify(value, a, b):
 
     Parameters
     ----------
-    value: float
+    value : float
         Value to be compactified.
 
-    a, b: float
+    a, b : float
         Bounds of the finite interval.
 
     Returns
     -------
-    float: Compactified value within the interval [a, b].
+    float : Compactified value within the interval [a, b].
     """
     return (b - a) / 2 * torch.tanh(value) + (b + a) / 2
 
