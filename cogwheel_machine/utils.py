@@ -57,6 +57,7 @@ VERSION_FILENAME = 'version.txt'
 RESCALED_PARAMETERS_FILENAME = 'rescaled_parameters.npy'
 INFERENCE_FILENAME = 'inference.pickle'
 POSTERIOR_FILENAME = 'posterior.pt'
+UNFOLDER_FILENAME = 'unfolding_classifier.ubj'
 
 
 def load_data_config(rundir):
@@ -312,9 +313,11 @@ def multiprocessing_starmap_profiled(func, iterable, processes=None):
 
     return results, stats
 
+
 def _worker_initializer():
     global profiler
     profiler = Profile()
+
 
 def _aux_profiled_func(args, func, profile_dir):
     # Defined in top level so that it is pickleable for multiprocessing
