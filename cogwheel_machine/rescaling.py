@@ -30,6 +30,7 @@ PARAMETER_RESCALER_FILENAME = 'parameter_rescaler.pth'
 
 
 def plot_loss(rundir):
+    """Plot loss function of the rescaling model vs. training epoch."""
     rundir = Path(rundir)
     training_info = torch.load(rundir/PARAMETER_RESCALER_TRAINING_FILENAME,
                                weights_only=True)
@@ -81,8 +82,8 @@ class ParameterRescaler:
         self._nonperiodic_inds = [ind for ind in range(self.n_parameters)
                                   if ind not in self._periodic_inds]
 
-        self._nonperiodic_mean = None  # Set by ._{load|fit}_model
-        self._nonperiodic_scale = None  # Set by ._{load|fit}_model
+        self._coefs = None  # Set by ._{load|fit}_model
+        self._nonperiodic_residuals_scale = None  # Set by ._{load|fit}_model
         self._moments_model = None  # Set by ._{load|fit}_model
         self._training_info = None  # Set by ._{load|fit}_model
         try:
@@ -141,12 +142,12 @@ class ParameterRescaler:
         model_outputs = self._get_model_outputs(compressed_data)
         mean, chol_inv = self._get_mean_and_chol_inv(model_outputs)
 
-        return self._rescale(parameters, mean, chol_inv)
+        return self._rescale(compressed_data, parameters, mean, chol_inv)
 
-    def _rescale(self, parameters, mean, chol_inv):
+    def _rescale(self, compressed_data, parameters, mean, chol_inv):
         parameters = parameters.clone()
         self._decompactify_bounded_nonperiodic(parameters)
-        self._standardize_nonperiodic(parameters)
+        self._standardize_nonperiodic(compressed_data, parameters)
         self._periodic_to_angle(parameters)
         self._remove_mean(mean, parameters)
         self._decompactify_periodic(parameters)
@@ -168,15 +169,15 @@ class ParameterRescaler:
         model_outputs = self._get_model_outputs(compressed_data)
         mean, chol_inv = self._get_mean_and_chol_inv(model_outputs)
 
-        return self._unrescale(parameters, mean, chol_inv)
+        return self._unrescale(compressed_data, parameters, mean, chol_inv)
 
-    def _unrescale(self, parameters, mean, chol_inv):
+    def _unrescale(self, compressed_data, parameters, mean, chol_inv):
         parameters = parameters.clone()
         parameters = self._add_scale(chol_inv, parameters)
         self._compactify_periodic(parameters)
         self._add_mean(mean, parameters)
         self._angle_to_periodic(parameters)
-        self._unstandardize_nonperiodic(parameters)
+        self._unstandardize_nonperiodic(compressed_data, parameters)
         self._compactify_bounded_nonperiodic(parameters)
 
         return parameters
@@ -200,21 +201,57 @@ class ParameterRescaler:
             parameters[..., i] = _compactify(parameters[..., i],
                                              *self.folded_range_dic[par])
 
-    def _standardize_nonperiodic(self, parameters):
+    def _standardize_nonperiodic(self, compressed_data, parameters):
         """
-        Remove a global (data-independent) mean and scale inplace from the
-        nonperiodic parameters to make them O(1).
+        Remove a fit and scale inplace from the nonperiodic parameters
+        to make them O(1).
         """
-        parameters[..., self._nonperiodic_inds] -= self._nonperiodic_mean
-        parameters[..., self._nonperiodic_inds] /= self._nonperiodic_scale
+        parameters[..., self._nonperiodic_inds] \
+            -= self._nonperiodic_fit(compressed_data)
 
-    def _unstandardize_nonperiodic(self, parameters):
+        parameters[..., self._nonperiodic_inds] \
+            /= self._nonperiodic_residuals_scale
+
+    def _unstandardize_nonperiodic(self, compressed_data, parameters):
         """
-        Apply a global (data-independent) mean and scale inplace to the
-        nonperiodic parameters.
+        Add a fit and scale inplace to the nonperiodic parameters.
         """
-        parameters[..., self._nonperiodic_inds] *= self._nonperiodic_scale
-        parameters[..., self._nonperiodic_inds] += self._nonperiodic_mean
+        parameters[..., self._nonperiodic_inds] \
+            *= self._nonperiodic_residuals_scale
+
+        parameters[..., self._nonperiodic_inds] \
+            += self._nonperiodic_fit(compressed_data)
+
+    def _fit_standardization(self, compressed_data, parameters):
+        """
+        Fit affine transformation and scale to parameters.
+
+        We standardize the parameters by subtracting a least-squares fit
+        and rescaling the residuals by their standard deviation. The fit
+        is an affine transformation to the data, of the form
+
+            parameters ≈ (compressed_data|1) @ coefs
+
+        where ``coefs`` is of shape (n_data + 1, n_parameters)
+        """
+        assert len(parameters) == len(compressed_data)
+        assert parameters.ndim == 2
+        assert compressed_data.ndim == 2
+
+        parameters = parameters.clone().detach()
+        self._decompactify_bounded_nonperiodic(parameters)
+        nonperiodic = parameters[:, self._nonperiodic_inds]
+
+        # Add a column of 1 to compressed_data for the affine transformation
+        ones = torch.ones((compressed_data.shape[0], 1),
+                          device=compressed_data.device)
+        data_augmented = torch.hstack([compressed_data, ones])
+        self._coefs = torch.linalg.lstsq(data_augmented, nonperiodic).solution
+        fit = self._nonperiodic_fit(compressed_data)
+        self._nonperiodic_residuals_scale = torch.std(nonperiodic - fit, dim=0)
+
+    def _nonperiodic_fit(self, compressed_data):
+        return compressed_data @ self._coefs[:-1] + self._coefs[-1]
 
     def _periodic_to_angle(self, parameters):
         """Map the periodic parameters to (-pi, pi) inplace."""
@@ -303,14 +340,16 @@ class ParameterRescaler:
 
     def _load_model(self):
         """
-        Set attributes ``_nonperiodic_mean``, ``_nonperiodic_scale`` and
+        Set attributes ``_coefs``, ``_nonperiodic_residuals_scale`` and
         ``_moments_model`` by loading from disk.
         """
         model_config = torch.load(self.rundir/PARAMETER_RESCALER_FILENAME,
                                   weights_only=True, map_location=self.device)
 
-        self._nonperiodic_mean = model_config['nonperiodic_mean']
-        self._nonperiodic_scale = model_config['nonperiodic_scale']
+        self._coefs = model_config['coefs']
+
+        self._nonperiodic_residuals_scale \
+            = model_config['nonperiodic_residuals_scale']
 
         self._moments_model = _MultiLayerPerceptron.from_dict(
             model_config['_MultiLayerPerceptron']).to(self.device)
@@ -320,9 +359,10 @@ class ParameterRescaler:
             weights_only=True, map_location=self.device)
 
     def _save_current_model(self):
-        model_config = {'_MultiLayerPerceptron': self._moments_model.to_dict(),
-                        'nonperiodic_mean': self._nonperiodic_mean,
-                        'nonperiodic_scale': self._nonperiodic_scale}
+        model_config = {
+            '_MultiLayerPerceptron': self._moments_model.to_dict(),
+            'coefs': self._coefs,
+            'nonperiodic_residuals_scale': self._nonperiodic_residuals_scale}
 
         torch.save(model_config, self.rundir/PARAMETER_RESCALER_FILENAME)
 
@@ -345,7 +385,7 @@ class ParameterRescaler:
             n_inputs, n_outputs, **self.config.RESCALER_NN_KWARGS
             ).to(self.device)
 
-        self._fit_global_moments(parameters)
+        self._fit_standardization(compressed_data, parameters)
 
         # TODO could add optimizer state dict
         self._training_info = {'train_losses': [],
@@ -445,6 +485,8 @@ class ParameterRescaler:
     def _save_training_info(self):
         torch.save(self._training_info,
                    self.rundir/PARAMETER_RESCALER_TRAINING_FILENAME)
+        plot_loss(self.rundir)
+        plt.savefig(self.rundir/'rescaling_loss.pdf', bbox_inches='tight')
 
     def _get_dataloaders(self):
         kwargs = self.config.RESCALER_TRAIN_KWARGS
@@ -487,13 +529,6 @@ class ParameterRescaler:
         self._periodic_to_angle(parameters)
         angle = parameters[:, self._periodic_inds]
         return torch.sin(angle), torch.cos(angle)
-
-    def _fit_global_moments(self, parameters):
-        parameters = parameters.clone().detach()
-        self._decompactify_bounded_nonperiodic(parameters)
-        nonperiodic = parameters[:, self._nonperiodic_inds]
-        self._nonperiodic_mean = torch.mean(nonperiodic, dim=0)
-        self._nonperiodic_scale = torch.std(nonperiodic, dim=0)
 
     def _get_model_outputs(self, compressed_data):
         """
@@ -552,7 +587,7 @@ class ParameterRescaler:
             = model_outputs
 
         mean, chol_inv = self._get_mean_and_chol_inv(model_outputs)
-        rescaled = self._rescale(parameters, mean, chol_inv)
+        rescaled = self._rescale(compressed_data, parameters, mean, chol_inv)
         chi_squared = (rescaled**2).sum(dim=1)
 
         log_det_chol_inv = log_diag_chol_inv.sum(dim=1)
