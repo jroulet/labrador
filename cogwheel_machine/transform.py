@@ -321,6 +321,34 @@ class TargetSpaceTransformAlignedSpins(CombinedPrior):
                      ]
 
 
+class _PNCoordinatesPrior(gw_prior.PNCoordinatesPrior):
+    range_dic = {'mu1': (-np.inf, np.inf),
+                 'mu2': (-np.inf, np.inf),
+                 'lnq': None,
+                 's2z': (-1, 1)}
+    def __init__(self, eigvecs=None, par_dic_0=None, **kwargs):
+        # TODO; for now just put some values for par_dic_0 and eigvecs
+        if eigvecs is None:
+            eigvecs = np.array([[-1.57616411, -0.04111396],
+                                [-0.54265283,  0.08432735],
+                                [-0.27537869,  0.06914793]])
+        if par_dic_0 is None:
+            par_dic_0 = dict.fromkeys(['m1', 'm2', 's1z', 's2z'], 1.0)
+
+        super().__init__(eigvecs=eigvecs, par_dic_0=par_dic_0, **kwargs)
+
+
+class TargetSpaceTransformAlignedSpinsPN(CombinedPrior):
+    prior_classes = [_PNCoordinatesPrior,
+                     gw_prior.IsotropicInclinationPrior,
+                     gw_prior.UniformPolarizationPrior,
+                     gw_prior.IsotropicSkyLocationPrior,
+                     TimeTransform,
+                     PhaseTransform,
+                     DistanceTransform,
+                     ]
+
+
 def log_det_jacobian(transform, training_prior, diff_regularized0pn):
     """
     log Jacobian determinant between
