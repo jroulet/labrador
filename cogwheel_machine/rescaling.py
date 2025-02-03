@@ -55,11 +55,6 @@ class ParameterRescaler:
 
     The top-level function ``main`` provides an interface for this class
     that is suitable for simple use cases.
-
-    Methods
-    -------
-    .rescale
-    .unrescale
     """
 
     def __init__(self, rundir):
@@ -111,6 +106,27 @@ class ParameterRescaler:
         """List of bounded-non-periodic-parameter names."""
         return [par for par in self.bounded_params
                 if par not in self.periodic_params]
+
+    def process_rundir(self, rundir):
+        """
+        Rescale and save parameters in training and test directories.
+        """
+        rundir = Path(rundir)
+
+        for datadir in rundir/utils.TRAINING_DIR, rundir/utils.TEST_DIR:
+            mask = np.load(datadir/utils.MASK_FILENAME)
+            compressed_data = np.load(
+                datadir/utils.COMPRESSED_DATA_FILENAME)[mask]
+
+            with h5py.File(datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME, "r"
+                          ) as h5file:
+                folded_sampled_params = np.array(h5file["dataset"])[mask]
+
+            rescaled_parameters = self.rescale(compressed_data,
+                                               folded_sampled_params)
+
+            np.save(datadir/utils.RESCALED_PARAMETERS_FILENAME,
+                    rescaled_parameters.detach().cpu().numpy())
 
     def rescale(self, compressed_data, folded_sampled_params,
                 double_precision=True):
@@ -588,15 +604,15 @@ def _compactify(value, a, b):
 
     Parameters
     ----------
-    value: float
+    value : float
         Value to be compactified.
 
-    a, b: float
+    a, b : float
         Bounds of the finite interval.
 
     Returns
     -------
-    float: Compactified value within the interval [a, b].
+    float : Compactified value within the interval [a, b].
     """
     return (b - a) / 2 * torch.tanh(value) + (b + a) / 2
 
@@ -716,23 +732,8 @@ def main(rundir):
     present), and for the rescaled parameters in both the training and
     test directories.
     """
-    rundir = Path(rundir)
-
     parameter_rescaler = ParameterRescaler(rundir)
-
-    for datadir in rundir/utils.TRAINING_DIR, rundir/utils.TEST_DIR:
-        mask = np.load(datadir/utils.MASK_FILENAME)
-        compressed_data = np.load(datadir/utils.COMPRESSED_DATA_FILENAME)[mask]
-
-        with h5py.File(datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME, "r"
-                      ) as h5file:
-            folded_sampled_params = np.array(h5file["dataset"])[mask]
-
-        rescaled_parameters = parameter_rescaler.rescale(compressed_data,
-                                                         folded_sampled_params)
-
-        np.save(datadir/utils.RESCALED_PARAMETERS_FILENAME,
-                rescaled_parameters.detach().cpu().numpy())
+    parameter_rescaler.process_rundir(rundir)
 
 
 if __name__ == '__main__':

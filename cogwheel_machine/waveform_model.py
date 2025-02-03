@@ -1,6 +1,6 @@
 """
-Phenomenological waveform model that works with coordinates
-that are approximately orthonormal (under a reference PSD).
+Phenomenological waveform model that works with coordinates that are
+approximately orthonormal (under a reference PSD).
 """
 from pathlib import Path
 import scipy.interpolate
@@ -45,11 +45,11 @@ class PhenomenologicalWaveformGenerator:
         """
         Parameters
         ----------
-        rundir: os.PathLike
+        rundir : os.PathLike
             Path to a directory on which ``generate_parameters`` has
             been run.
 
-        n_svd_examples: int
+        n_svd_examples : int
             How many waveforms to simulate to input in the SVD of
             amplitude profiles.
         """
@@ -79,17 +79,17 @@ class PhenomenologicalWaveformGenerator:
         """
         Parameters
         ----------
-        frequencies: (n_freq,) float array
+        frequencies : (n_freq,) float array
 
-        fiducial_wht_filter: (n_det, n_freq) float array
+        fiducial_wht_filter : (n_det, n_freq) float array
 
-        waveform_generator: cogwheel.waveform.WaveformGenerator
+        waveform_generator : cogwheel.waveform.WaveformGenerator
 
-        simulation_parameters: pandas.DataFrame
+        simulation_parameters : pandas.DataFrame
             Contains parameters of waveforms to simulate, to input in
             the SVD of amplitude profiles.
 
-        pn_phase_tol: float
+        pn_phase_tol : float
             Determines the internal frequency resolution at which the
             phase model will compute inner products in order to
             orthogonalize the phase bases. Lower tolerance means higher
@@ -113,10 +113,10 @@ class PhenomenologicalWaveformGenerator:
         """
         Parameters
         ----------
-        amplitude_model: AmplitudeModel
+        amplitude_model : AmplitudeModel
             Phenomenological model for the amplitude of the waveform.
 
-        phase_model: PhaseModel
+        phase_model : PhaseModel
             Phenomenological model for the phase of the waveform.
         """
         assert phase_model.n_det == amplitude_model.n_det
@@ -127,14 +127,14 @@ class PhenomenologicalWaveformGenerator:
         """
         Parameters
         ----------
-        frequencies: float array of shape (n_frequencies,)
+        frequencies : float array of shape (n_frequencies,)
             Evaluation frequencies (Hz).
 
-        coef: float array of shape (`.n_coef`,)
+        coef : float array of shape (`.n_coef`,)
             ampcoef, phasecoef concatenated.
 
-        Return
-        ------
+        Returns
+        -------
         complex array of shape (n_det, n_frequencies)
             Waveform at detectors.
         """
@@ -157,15 +157,15 @@ class PhenomenologicalWaveformGenerator:
 
         Parameters
         ----------
-        frequencies: float array of shape (n_frequencies,)
+        frequencies : float array of shape (n_frequencies,)
             Evaluation frequencies (Hz).
 
-        shapecoef: float array of shape (`.n_coef` - 2*n_det,)
+        shapecoef : float array of shape (`.n_coef` - 2*n_det,)
             ampcoef, phasecoef concatenated, but with entries
             corresponding to detector amplitude and phase removed.
 
-        Return
-        ------
+        Returns
+        -------
         complex array of shape (n_det, n_frequencies)
             Waveform at detectors.
         """
@@ -182,19 +182,19 @@ class PhenomenologicalWaveformGenerator:
 
         Parameters
         ----------
-        shapecoef: float array
+        shapecoef : float array
             Waveform parameters other than detectors' amplitude and
             phase.
 
-        det_amp: float array of shape (n_det,)
+        det_amp : float array of shape (n_det,)
             Overall amplitude at each detector.
 
-        det_phase: float array of shape (n_det,)
+        det_phase : float array of shape (n_det,)
             Overall phase at each detector.
 
-        Return
-        ------
-        coef: float array
+        Returns
+        -------
+        coef : float array
         """
         assert shapecoef.shape == (self.n_coef - 2*self.n_det,)
 
@@ -223,11 +223,11 @@ class PhenomenologicalWaveformGenerator:
 
         Parameters
         ----------
-        coef: float array of shape (`.n_coef`,)
+        coef : float array of shape (`.n_coef`,)
             ampcoef, phasecoef concatenated.
 
-        Return
-        ------
+        Returns
+        -------
         float32 array
             A concatenation of the following quantities:
             * amp_rms                                         1
@@ -294,9 +294,9 @@ class PhenomenologicalWaveformGenerator:
         Find amplitude and phase coefficients that best match a given
         waveform amplitude and phase.
 
-        Return
-        ------
-        shapecoef: float array
+        Returns
+        -------
+        shapecoef : float array
         """
         shapeampcoef_guess \
             = self.amplitude_model.amplitude_tapering.guess_shapeampcoef(
@@ -317,10 +317,10 @@ class AmplitudeModel:
         """
         Parameters
         ----------
-        n_det: int
+        n_det : int
             Number of detectors.
 
-        amplitude_tapering: AmplitudeTapering
+        amplitude_tapering : AmplitudeTapering
             Models the merger.
         """
         self.n_det = n_det
@@ -330,19 +330,19 @@ class AmplitudeModel:
         """
         Parameters
         ----------
-        frequencies: float array of shape (n_frequencies)
+        frequencies : float array of shape (n_frequencies)
             Evaluation frequencies (Hz).
 
-        ampcoef: float array of shape (n_det+1,)
+        ampcoef : float array of shape (n_det+1,)
             ampcoef[:n_det] = Amplitude at detector (physical units).
             ampcoef[-1] = Cutoff frequency (Hz).
 
-        apply_tapering: bool
+        apply_tapering : bool
             Whether to model the merger or let the amplitude profile be
             ~ f**(-7/6).
 
-        Return
-        ------
+        Returns
+        -------
         float array of shape (n_det, n_frequencies)
             Waveform amplitude profiles.
         """
@@ -364,16 +364,16 @@ class AmplitudeModel:
 
         Parameters
         ----------
-        ampcoef: float array of shape (n_det+1,)
+        ampcoef : float array of shape (n_det+1,)
             ampcoef[:n_det] = Amplitude at detector (physical units).
             ampcoef[-1] = Cutoff frequency (Hz).
 
-        Return
-        ------
-        amp_rms: float
+        Returns
+        -------
+        amp_rms : float
             Root-mean-square amplitude over detectors.
 
-        amp_ratios: float array of shape (n_det,)
+        amp_ratios : float array of shape (n_det,)
             amp_det / amp_rms
         """
         det_amp = ampcoef[:self.n_det]
@@ -416,27 +416,27 @@ class AmplitudeTapering(utils.NpzMixin):
         """
         Parameters
         ----------
-        waveform_generator: cogwheel.waveform.WaveformGenerator
+        waveform_generator : cogwheel.waveform.WaveformGenerator
             Will be used to generate examples to input into a singular
             value decomposition to construct the model.
 
-        simulation_parameters: pd.DataFrame
+        simulation_parameters : pd.DataFrame
             Each row is an example of a binary merger's parameters, per
             `waveform_generator._waveform_params`.
 
-        frequencies: float array or 3-tuple
+        frequencies : float array or 3-tuple
             Frequency in Hz. If a 3-tuple is passed, it will be unpacked
             into ``np.geomspace`` to create the array.
 
-        relative_frequencies: float array or 3-tuple
+        relative_frequencies : float array or 3-tuple
             Frequency divided by f_cut. If a 3-tuple is passed, it will
             be unpacked into ``np.geomspace`` to create the array.
 
-        n_svd: int
+        n_svd : int
             How many SVD components to keep in the model for aligned
             taperings.
 
-        tapering_at_fcut: float
+        tapering_at_fcut : float
             Defines ``fcut`` as the frequency at which the tapering has
             this value.
         """
@@ -486,20 +486,20 @@ class AmplitudeTapering(utils.NpzMixin):
 
         Parameters
         ----------
-        relative_frequencies: (N,) array
+        relative_frequencies : (N,) array
             f / f_cut
 
-        mean_aligned_tapering: (N,) array
+        mean_aligned_tapering : (N,) array
             Mean tapering evaluated on `relative_frequencies`.
 
-        vhmat: (M, N) array
+        vhmat : (M, N) array
             SVD basis functions for the departure from the mean
             tapering, evaluated on `relative_frequencies`.
 
-        shapeampcoef_bounds: (M+1, 2) array-like
+        shapeampcoef_bounds : (M+1, 2) array-like
             Bounds on ``log10_fcut`` and the SVD coefficients.
 
-        tapering_at_fcut: float
+        tapering_at_fcut : float
             Defines ``fcut`` as the frequency at which the tapering has
             this value.
         """
@@ -534,18 +534,18 @@ class AmplitudeTapering(utils.NpzMixin):
 
         Parameters
         ----------
-        frequencies: float array of shape (n_freq,)
+        frequencies : float array of shape (n_freq,)
             Frequencies (Hz) at which the amplitude is defined.
 
-        wht_filter: float array of shape(n_det, n_freq)
+        wht_filter : float array of shape(n_det, n_freq)
             Frequency-domain whitening filter in each detector.
 
-        amplitude: float array of shape(n_det, n_freq)
+        amplitude : float array of shape(n_det, n_freq)
             Frequency domain amplitude profile in each detector.
 
-        Return
-        ------
-        shapeampcoef: float array
+        Returns
+        -------
+        shapeampcoef : float array
             Contains ``(log10fcut, *svd_coef)``.
         """
         assert wht_filter.shape[-1:] == frequencies.shape
@@ -628,14 +628,14 @@ class PhaseModel:
 
     Interpretation of parameters
     ----------------------------
-    pncoef: array of coefficients with physical meaning
+    pncoef : array of coefficients with physical meaning
         They have analytical expressions.
         * pncoef[:n_det] = phase at each detector
         * pncoef[n_det : 2*n_det] = 2*pi*time at each detector (s)
         * pncoef[2*n_det:] = 0PN, 1PN, 1.5PN prefactors before
             (f/Hz)**pn_exponent
 
-    phasecoef: array of coefficients in an orthonormal basis
+    phasecoef : array of coefficients in an orthonormal basis
         Obtained with a mixture of QR (phase & time part) and SVD
         (intrinsic part). Can be connected to `pncoef` via matrix
         algebra, see `._phasecoef_to_pncoef().
@@ -669,39 +669,39 @@ class PhaseModel:
         """
         Parameters
         ----------
-        frequencies: (n_freq,) float array
+        frequencies : (n_freq,) float array
             Frequencies at which the fiducial whitening filter is
             reported (Hz).
 
-        fiducial_wht_filter: (n_det, n_freq) float array
+        fiducial_wht_filter : (n_det, n_freq) float array
             Fiducial whitening filter used to orthogonalize phase bases.
             E.g. from a `cogwheel.EventData`, but remove the frequencies
             at which it equals 0 like so:
             `event_data.wht_filter[:, event_data.fslice]`.
 
-        n_phasecoef: int
+        n_phasecoef : int
             How many dimensions to use for describing the intrinsic
             parameter space. Increasing this allows more freedom in the
             model.
 
-        mchirp_rng: 2-tuple of floats
+        mchirp_rng : 2-tuple of floats
             Minimum and maximum chirp-mass with which examples are
             generated (as input to the SVD).
 
-        q_rng: 2-tuple of floats
+        q_rng : 2-tuple of floats
             Minimum and maximum mass ratio with which examples are
             generated (as input to the SVD).
 
-        n_examples: int
+        n_examples : int
             How many examples to input in the SVD.
 
-        pn_phase_tol: float
+        pn_phase_tol : float
             Controls the number of frequencies with which the code will
             work (`.fbin` attribute). A smaller `pn_phase_tol` produces
             finer `fbin`. The user interacts with `fbin` through the
             `.guess_phasecoef()` method.
 
-        seed: {None, int, numpy.random.Generator}
+        seed : {None, int, numpy.random.Generator}
             For reproducible output, since the SVD examples are random.
         """
         rb_splines, weights = cls._get_rbsplines_and_weights(
@@ -767,15 +767,15 @@ class PhaseModel:
 
         Parameters
         ----------
-        frequencies: float array
+        frequencies : float array
             Frequencies in Hz.
 
-        phasecoef: float array
+        phasecoef : float array
             Coefficients of the orthogonal basis.
 
-        Return
-        ------
-        phase: float array of shape (n_det, n_freq)
+        Returns
+        -------
+        phase : float array of shape (n_det, n_freq)
         """
         pnphases = self._get_pnphases(frequencies, self.n_det)  # dfn
         pncoef = self._phasecoef_to_pncoef(phasecoef)  # n
@@ -794,12 +794,12 @@ class PhaseModel:
 
     def get_detector_phases_and_times(self, phasecoef):
         """
-        Return
-        ------
-        phases: (n_det,) float array
+        Returns
+        -------
+        phases : (n_det,) float array
             Waveform phase at each detector (rad).
 
-        times: (n_det,) float array
+        times : (n_det,) float array
             Arrival time at rach detector (s).
         """
         pncoef = self._phasecoef_to_pncoef(phasecoef)
@@ -824,7 +824,7 @@ class PhaseModel:
 
         Parameters
         ----------
-        phase: (n_det, n_freq) float array
+        phase : (n_det, n_freq) float array
             Target phase profile, must be evaluated at ``.fbin``.
         """
         assert phase.shape == (self.n_det, len(frequencies))

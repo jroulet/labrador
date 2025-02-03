@@ -35,10 +35,11 @@ def simulate_and_preprocess_sample(simulator, data_preprocessor,
     Generate a signal based on parameters, add a noise realization, find
     a reference waveform and preprocess the data by heterodyning.
 
-    Return
-    ------
-    preprocessed_data: dict
+    Returns
+    -------
+    preprocessed_data : dict
         Contains the following entries
+
             * heterodyned_data: complex array of shape (n_det, n_freq)
             * heterodyned_signal: complex array of shape (n_det, n_freq)
             * fbin: float array of shape (n_freq,)
@@ -67,8 +68,8 @@ def simulate_and_preprocess_sample(simulator, data_preprocessor,
 
 def get_transform_class(config):
     """
-    Return a transform class partially instantiatied with kwargs that are
-    the same across simulations.
+    Return a transform class partially instantiatied with kwargs that
+    are the same across simulations.
     """
     return functools.partial(config.TRANSFORM_CLASS, **config.PRIOR_KWARGS)
 
@@ -81,12 +82,12 @@ def get_i_refdet(config):
 
 def get_folded_sampled_params(parameters, transform):
     """
-    Return
-    ------
-    folded_sampled_params: float array of shape (n_params,)
+    Returns
+    -------
+    folded_sampled_params : float array of shape (n_params,)
         Signal parameters expressed in the folded target space.
 
-    unfolding_label: int
+    unfolding_label : int
         Index of the region that the parameters belong to before
         applying folding. Takes a value between [0, 2**n_folded_params).
     """
@@ -126,33 +127,34 @@ def simulate_and_preprocess_samples(simulator,
 
     Parameters
     ----------
-    simulator: Simulator
+    simulator : Simulator
 
-    data_preprocessor: DataPreprocessor
+    data_preprocessor : DataPreprocessor
 
-    simulation_parameters: pandas.DataFrame
+    simulation_parameters : pandas.DataFrame
         Columns represent different parameters, each row is a
         simulation. The columns must contain all
         ``simulator._waveform_generator.params``.
 
-    processes: int or None
+    processes : int or None
         The number of worker processes to use. If `processes` is
         `None` then the number returned by `os.cpu_count()` is used.
 
-    Return
-    ------
-    preprocessed_data: dict
-        Contains the following entries
+    Returns
+    -------
+    preprocessed_data : dict
+        Contains the following entries:
+
             * heterodyned_data: (n_sim, n_det, n_freq) complex array
             * heterodyned_signal: (n_sim, n_det, n_freq) complex array
             * fbin: (n_freq,) float array
             * coef: (n_sim, n_coef) float array
             * processed_coef: (n_sim, n_processed_coef) float array
 
-    folded_sampled_params: (n_sim, n_params) float32 array
+    folded_sampled_params : (n_sim, n_params) float32 array
         Signal parameters expressed in the folded target space.
 
-    unfolding_labels: (n_sim,) int array
+    unfolding_labels : (n_sim,) int array
         Index of the region that the parameters of each simulation
         belong to before applying folding. Takes values between
         [0, 2**n_folded_params).
@@ -193,10 +195,10 @@ class Simulator:
         """
         Parameters
         ----------
-        event_data_kwargs: dict
+        event_data_kwargs : dict
             Keyword arguments to cogwheel.data.EventData.gaussian_noise
 
-        approximant: str
+        approximant : str
             Name of the approximant used to inject a signal.
         """
         self.event_data_kwargs = event_data_kwargs
@@ -217,13 +219,15 @@ class Simulator:
             Physical parameters of the signal to simulate. Must contain
             keys for all ``._waveform_generator.params``.
 
-        Return
-        ------
-        dict: Contains the following entries
+        Returns
+        -------
+        dict : Contains the following entries:
+
             * event_data
             * frequencies
             * ref_waveform_amp
             * ref_waveform_phase
+
             These can be passed to ``DataPreprocessor.preprocess_data``.
         """
         event_data = data.EventData.gaussian_noise(**self.event_data_kwargs)
@@ -311,23 +315,23 @@ class DataPreprocessor:
 
         Parameters
         ----------
-        event_data: cogwheel.data.EventData
+        event_data : cogwheel.data.EventData
             Data containing the event.
 
-        frequencies: float array of shape (n_freq,)
+        frequencies : float array of shape (n_freq,)
             Frequency array on which the user's reference waveform is
             defined. For now, it must match
             ``event_data.frequencies[event_data.fslice]``.
 
-        ref_waveform_amp: float array of shape (n_det, n_freq)
+        ref_waveform_amp : float array of shape (n_det, n_freq)
             User-provided reference waveform amplitude.
 
-        ref_waveform_phase: float array of shape (n_det, n_freq)
+        ref_waveform_phase : float array of shape (n_det, n_freq)
             User-provided reference waveform unwrapped phase.
 
-        Return
-        ------
-        preprocessed_data: dict
+        Returns
+        -------
+        preprocessed_data : dict
             Contains the following entries
                 * heterodyned_data
                 * heterodyned_signal
@@ -335,7 +339,7 @@ class DataPreprocessor:
                 * coef
                 * processed_coef
 
-        transform_kwargs: dict
+        transform_kwargs : dict
             Contains event-dependent keyword arguments to the target-
             space coordinate transform.
         """
@@ -428,11 +432,11 @@ def submit_condor(rundir,
 
     Parameters
     ----------
-    rundir: str, os.PathLike
+    rundir : str, os.PathLike
         Run directory, should contain a file `data_config.py` and
         training and test directories with simulation parameters.
 
-    request_cpus, request_memory, request_disk: int or str
+    request_cpus, request_memory, request_disk : int or str
         Specifications in the HTCondor submit file.
 
     **submit_kwargs
@@ -466,10 +470,10 @@ def append_to_hdf5(filename, **arrays):
 
     Parameters
     ----------
-    filename: os.PathLike
+    filename : os.PathLike
         Path to an hdf5 file. If it doesn't exist, it will be created.
 
-    **arrays:
+    **arrays
         Data to append. Keys are the groups in the hdf5.
     """
     with h5py.File(filename, "a") as h5file:
@@ -515,16 +519,16 @@ def setup_simulator(rundir):
     """
     Parameters
     ----------
-    rundir: str, os.PathLike
+    rundir : str, os.PathLike
         Run directory, should contain a file `data_config.py`.
 
     Returns
     -------
-    simulator: Simulator
+    simulator : Simulator
 
-    data_preprocessor: DataPreprocessor
+    data_preprocessor : DataPreprocessor
 
-    transform_class: type
+    transform_class : type
         Read from {rundir}/config.py
     """
     rundir = Path(rundir)

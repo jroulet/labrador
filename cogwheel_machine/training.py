@@ -117,7 +117,7 @@ def main(modeldir):
 
     Parameters
     ----------
-    modeldir: os.PathLike
+    modeldir : os.PathLike
         Path to directory inside a ``rundir``, containing a file
         "model_config.py". If `modeldir` also contains a previously
         trained model, it will resume training.
