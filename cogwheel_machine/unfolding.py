@@ -35,9 +35,9 @@ class UnfoldingClassifier:
         """
         # Load training data
         datadir = self.rundir/utils.TRAINING_DIR
-        rescaled_parameters, compressed_data, unfolding_labels \
-            = self._load_data(datadir)
-        data = np.hstack([rescaled_parameters, compressed_data])
+        compressed_data, rescaled_params, unfolding_labels = self._load_data(
+            datadir)
+        data = np.hstack([compressed_data, rescaled_params])
 
         # Fit
         print('Training XGBoost model...')
@@ -45,11 +45,11 @@ class UnfoldingClassifier:
         print('Done.')
         self.booster.save_model(self.rundir/utils.UNFOLDER_FILENAME)
 
-    def predict(self, rescaled_parameters, compressed_data):
+    def predict(self, compressed_data, rescaled_params):
         """
         Make predictions from the trained XGBoost model.
         """
-        data = np.hstack([rescaled_parameters, compressed_data])
+        data = np.hstack([compressed_data, rescaled_params])
         return self.booster.predict_proba(data)
 
     def confusion_matrix(self, use_test_data=True):
@@ -70,10 +70,10 @@ class UnfoldingClassifier:
             datadir = self.rundir/utils.TEST_DIR
         else:
             datadir = self.rundir/utils.TRAINING_DIR
-        rescaled_parameters, compressed_data, unfolding_labels \
-            = self._load_data(datadir)
+        compressed_data, rescaled_params, unfolding_labels = self._load_data(
+            datadir)
 
-        predictions = self.predict(rescaled_parameters, compressed_data)
+        predictions = self.predict(compressed_data, rescaled_params)
         return self._confusion_matrix(predictions, unfolding_labels)
 
     def _confusion_matrix(self, predictions, true_labels):
@@ -106,7 +106,7 @@ class UnfoldingClassifier:
         return confusion_matrix
 
     def _load_data(self, datadir):
-        rescaled_parameters = np.load(
+        rescaled_params = np.load(
             datadir/utils.RESCALED_PARAMETERS_FILENAME)
         mask = np.load(datadir/utils.MASK_FILENAME)
         compressed_data = np.load(datadir/utils.COMPRESSED_DATA_FILENAME)[mask]
@@ -114,4 +114,4 @@ class UnfoldingClassifier:
         with h5py.File(datadir/utils.UNFOLDING_LABELS_FILENAME) as file:
             unfolding_labels = file['dataset'][mask]
 
-        return rescaled_parameters, compressed_data, unfolding_labels
+        return compressed_data, rescaled_params, unfolding_labels
