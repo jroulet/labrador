@@ -31,16 +31,16 @@ def pp_plot(credible_intervals, ax=None, show_legend=True,
 
     Parameters
     ----------
-    credible_intervals: pandas.DataFrame
+    credible_intervals : pandas.DataFrame
         E.g. the output of ``get_credible_intervals``.
 
-    ax: matplotlib.axes.Axes, optional
+    ax : matplotlib.axes.Axes, optional
         Where to draw the P-P plot
 
-    show_legend: bool
+    show_legend : bool
         Whether to display the legend.
 
-    show_sigmas: sequence of float
+    show_sigmas : sequence of float
         Add shaded regions to the plot with the corresponding
         expected uncertainty.
     """
@@ -84,29 +84,29 @@ def get_credible_intervals(modeldir, load=True, save=True, n_data=None,
 
     Parameters
     ----------
-    modeldir: os.PathLike
+    modeldir : os.PathLike
         Directory containing a trained posterior.
 
-    load: bool
+    load : bool
         Whether to load credible intervals from disk if available.
 
-    save: bool
+    save : bool
         Whether to save credible intervals to disk in case they had to
         be computed.
 
-    n_data: int
+    n_data : int
         How many injections to do or load.
 
-    n_samples: int
+    n_samples : int
         How many samples to use for computing each credible interval, in
         case we have to compute them.
 
-    n_processes: int
+    n_processes : int
         How many processes to use in case we have to compute the
         credible intervals.
 
-    Return
-    ------
+    Returns
+    -------
     pd.DataFrame
         Columns contain parameters, rows contain floats between 0 and 1
         representing the credible interval at which the truth is
@@ -158,16 +158,16 @@ def _compute_credible_interval(injection, x_obs, posterior, n_samples
 
     Parameters
     ----------
-    injection: dict-like
+    injection : dict-like
         Keys correspond to the physical parameters of the posterior.
 
-    x_obs: float array
+    x_obs : float array
         Data.
 
-    posterior: sbi.inference.posteriors.direct_posterior.DirectPosterior
+    posterior : sbi.inference.posteriors.direct_posterior.DirectPosterior
         Posterior density estimator.
 
-    n_samples: int
+    n_samples : int
         How many samples to generate for computing the credible
         interval.
     """
