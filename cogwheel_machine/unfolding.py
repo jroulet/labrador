@@ -1,13 +1,17 @@
 """
-Classes for probabilistic unfolding of folded posterior samples.
+Probabilistic unfolding of folded posterior samples.
 
-"Unfolding" being a postprocessing step to undo the "folding", a
-technique to mitigate known multimodalities in the posterior.
+"Unfolding" is a postprocessing step to undo the "folding", a technique
+to mitigate known multimodalities in the posterior.
 """
+import argparse
 from pathlib import Path
 import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
 import h5py
 import xgboost
+
 from . import utils
 
 
@@ -30,9 +34,7 @@ class UnfoldingClassifier:
             self.train()
 
     def train(self):
-        """
-        Train the XGBoost model and save it in `.rundir`.
-        """
+        """Train the XGBoost model and save it in `.rundir`."""
         # Load training data
         datadir = self.rundir/utils.TRAINING_DIR
         compressed_data, rescaled_params, unfolding_labels = self._load_data(
@@ -46,11 +48,24 @@ class UnfoldingClassifier:
         self.booster.save_model(self.rundir/utils.UNFOLDER_FILENAME)
 
     def predict(self, compressed_data, rescaled_params):
-        """
-        Make predictions from the trained XGBoost model.
-        """
+        """Make predictions from the trained XGBoost model."""
         data = np.hstack([compressed_data, rescaled_params])
         return self.booster.predict_proba(data)
+
+    def plot_confusion_matrix(self):
+        """Plot confusion matrices for training and test sets."""
+        fig, axs = plt.subplots(1, 2, sharey=True, figsize=(7.5, 4))
+        axs[0].imshow(self.confusion_matrix(use_test_data=False))  # Train
+        axs[1].imshow(self.confusion_matrix(use_test_data=True))  # Test
+
+        fig.supxlabel('Predictions')
+        fig.supylabel('True region')
+        axs[0].set_title('Training set')
+        axs[1].set_title('Test set')
+        for ax in axs:
+            for axis in ax.xaxis, ax.yaxis:
+                axis.set_major_locator(MaxNLocator(integer=True))
+        plt.tight_layout()
 
     def confusion_matrix(self, use_test_data=True):
         """
@@ -115,3 +130,16 @@ class UnfoldingClassifier:
             unfolding_labels = file['dataset'][mask]
 
         return compressed_data, rescaled_params, unfolding_labels
+
+
+def main(rundir):
+    """Train and save an UnfoldingClassifier if it doesn't exist."""
+    UnfoldingClassifier(rundir)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+        description='Train a model to predict unfolding probabilities.')
+    parser.add_argument('rundir', help='Run directory.')
+
+    main(**vars(parser.parse_args()))
