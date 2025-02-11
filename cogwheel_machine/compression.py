@@ -27,7 +27,7 @@ def create_mask(rundir):
 
     Parameters
     ----------
-    rundir: os.PathLike
+    rundir : os.PathLike
         Path to run directory.
     """
     rundir = Path(rundir)
@@ -93,10 +93,10 @@ def svd_compression(rundir, target_loss=1e-3, max_svd_size=100_000,
 
     Parameters
     ----------
-    rundir: os.PathLike
+    rundir : os.PathLike
         Path to run directory.
 
-    target_loss: float between 0 and 1
+    target_loss : float between 0 and 1
         How much information we afford to discard, in terms of the
         fractional variance of the Wiener-filtered signal. Smaller is
         more conservative, at the expense of less compression.
@@ -135,7 +135,7 @@ class SVDCompressor(utils.NpzMixin):
 
         Parameters
         ----------
-        rundir: os.PathLike
+        rundir : os.PathLike
             Directory with preprocessed data.
         """
         # We will never want to create a compressor using the test data
@@ -189,17 +189,17 @@ class SVDCompressor(utils.NpzMixin):
 
         Parameters
         ----------
-        data: array of shape (?, n_features)
+        data : array of shape (?, n_features)
             Heterodyned data to compress, e.g. from the output of
             ``.load_data_and_signal``.
 
-        n_components: int
+        n_components : int
             How many components to keep, e.g. from the output of
             ``.n_components``. ``None`` (default) is no compression.
 
         Returns
         -------
-        svd_coef: array of the same shape and type as `data`
+        svd_coef : array of the same shape and type as `data`
             The first columns capture most of the variance of the
             whitened signal; compression is achieved by dropping the
             last columns.
@@ -215,7 +215,7 @@ class SVDCompressor(utils.NpzMixin):
 
         Parameters
         ----------
-        target_loss: float between 0 and 1
+        target_loss : float between 0 and 1
             How much information we afford to discard, in terms of the
             fractional variance of the Wiener-filtered signal.
         """
@@ -243,7 +243,7 @@ class SVDCompressor(utils.NpzMixin):
 
         Parameters
         ----------
-        heterodyned_data: (n_sim?, n_det, n_freq) complex array
+        heterodyned_data : (n_sim?, n_det, n_freq) complex array
             Could be one of ``preprocessed_data['heterodyned_data']`` or
             ``preprocessed_data['heterodyned_signal']``.
 
@@ -308,11 +308,11 @@ def submit_condor(rundir,
 
     Parameters
     ----------
-    rundir: str, os.PathLike
+    rundir : str, os.PathLike
         Simulations directory, on which `simulation` has already
         been run.
 
-    request_cpus, request_memory, request_disk: int or str
+    request_cpus, request_memory, request_disk : int or str
         Specifications in the HTCondor submit file.
 
     **submit_kwargs

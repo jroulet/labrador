@@ -305,7 +305,7 @@ def get_train_val_batch_inds(num_simulations, training_batch_size,
     """
     Returns
     -------
-    train_ind_batches, val_ind_batches: list of int arrays
+    train_ind_batches, val_ind_batches : list of int arrays
         Indices of the training and validation simulations, arranged in
         batches.
     """
@@ -326,11 +326,11 @@ class FixedBatchesDataLoader:
         """
         Parameters
         ----------
-        batches: list of lists of torch.Tensor
+        batches : list of lists of torch.Tensor
             Each batch contains multiple tensors, e.g. data and
             parameters.
 
-        shuffle_batches: bool
+        shuffle_batches : bool
             Whether to iterate over the batches in random order every
             time.
         """

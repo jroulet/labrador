@@ -5,7 +5,6 @@ from pathlib import Path
 from cProfile import Profile
 import numpy as np
 import matplotlib.pyplot as plt
-import h5py
 
 import torch
 from torch.utils.tensorboard import SummaryWriter
@@ -13,7 +12,7 @@ from tensorboard.backend.event_processing import event_accumulator
 
 import sbi.utils
 
-from cogwheel_machine import embedding, sbi_hacks, utils
+from cogwheel_machine import compression, embedding, sbi_hacks, utils
 
 
 def load_posterior(modeldir, device='cpu'):
@@ -71,7 +70,8 @@ def plot_loss(modeldir, save=True):
 
 
 def _instantiate_inference(modeldir):
-    datadir = modeldir.resolve().parent/utils.TRAINING_DIR
+    rundir = modeldir.resolve().parent
+    datadir = rundir/utils.TRAINING_DIR
     config = utils.load_model_config(modeldir)
 
     mask = np.load(datadir/utils.MASK_FILENAME)
@@ -88,13 +88,10 @@ def _instantiate_inference(modeldir):
     x = torch.tensor(simulation_data, dtype=torch.float32).to(config.DEVICE)
 
     if config.EMBEDDING_LAYER_SIZES:
-        with h5py.File(datadir/utils.PREPROCESSED_DATA_FILENAME, "r") as h5file:
-            n_processed_coef = h5file["processed_coef"].shape[1]
-
         embedding_net = embedding.BlockMatrixEmbeddingNetwork(
             input_size=x.shape[1],
             layer_sizes=config.EMBEDDING_LAYER_SIZES,
-            unchanged_size=n_processed_coef)
+            unchanged_size=_get_n_processed_coef(rundir))
         config.POSTERIOR_NN_KWARGS['embedding_net'] = embedding_net
 
     neural_posterior = sbi.utils.posterior_nn(**config.POSTERIOR_NN_KWARGS)
@@ -108,13 +105,20 @@ def _instantiate_inference(modeldir):
     return inference
 
 
+def _get_n_processed_coef(rundir):
+    _, n_total = np.load(
+        rundir/utils.TRAINING_DIR/utils.COMPRESSED_DATA_FILENAME).shape
+    n_svd = compression.SVDCompressor.from_npz(rundir).n_components()
+    return n_total - n_svd
+
+
 def main(modeldir):
     """
     Train neural posterior estimator.
 
     Parameters
     ----------
-    modeldir: os.PathLike
+    modeldir : os.PathLike
         Path to directory inside a ``rundir``, containing a file
         "model_config.py". If `modeldir` also contains a previously
         trained model, it will resume training.

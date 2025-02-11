@@ -37,14 +37,14 @@ def _generate_qmc_samples(prior, n_samples, seed=None):
 
     Parameters
     ----------
-    n_samples: int
+    n_samples : int
         How many samples to generate.
 
     seed:
         Passed to ``numpy.default_rng``, for reproducibility.
 
-    Return
-    ------
+    Returns
+    -------
     pd.DataFrame with columns per
     ``.sampled_params + .standard_params``, with samples distributed
     uniformly.
@@ -75,10 +75,10 @@ def submit_condor(rundir,
 
     Parameters
     ----------
-    rundir: str, os.PathLike
+    rundir : str, os.PathLike
         Simulations directory, should contain a file `data_config.py`
 
-    request_cpus, request_memory, request_disk: int or str
+    request_cpus, request_memory, request_disk : int or str
         Specifications in the HTCondor submit file.
 
     **submit_kwargs
@@ -122,13 +122,13 @@ def main(rundir):
     """
     Parameters
     ----------
-    rundir: PathLike
+    rundir : PathLike
         Path to a directory, should contain a file `data_config.py` with
         analysis choices.
         See ``cogwheel_machine/example_configs/data_config.py`` for
         an example.
 
-    See also
+    See Also
     --------
     utils.setup_rundir
     """
