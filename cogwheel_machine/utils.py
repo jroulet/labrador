@@ -214,7 +214,8 @@ def get_preprocessed_data(datadir, apply_mask=True,
 
     Returns
     -------
-    dict : keys match those of ``preprocessed_data``.
+    dict
+        keys match those of ``preprocessed_data``.
     """
     mask = None
     if apply_mask:
