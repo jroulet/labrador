@@ -49,7 +49,12 @@ class UnfoldingClassifier:
 
     def predict(self, compressed_data, rescaled_params):
         """Make predictions from the trained XGBoost model."""
+        compressed_data = np.broadcast_to(
+            compressed_data,
+            (rescaled_params.shape[0], compressed_data.shape[-1]))
+
         data = np.hstack([compressed_data, rescaled_params])
+
         return self.booster.predict_proba(data)
 
     def plot_confusion_matrix(self):
