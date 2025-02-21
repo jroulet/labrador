@@ -10,8 +10,6 @@ import lal
 from cogwheel.prior import Prior, CombinedPrior
 from cogwheel import gw_prior
 
-from . import training_priors
-
 
 class TransformMixin:
     """
@@ -332,6 +330,7 @@ def log_det_jacobian(transform, training_prior, diff_regularized0pn):
 
     This function may change in the future to make this choice flexible.
     """
+    from . import training_priors
     assert ((isinstance(transform, TargetSpaceTransformNoSpins)
              and isinstance(training_prior,
                             training_priors.NoSpinTrainingPrior))
