@@ -139,6 +139,24 @@ class ParameterRescaler:
                 double_precision=True):
         """
         Apply rescaling to physical parameters to make them ~N(0, 1).
+
+        compressed_data: (n_samples or 1, n_data) float array
+            Hint: output of
+            ``compression.JSONStandardScaler.transform``, see
+            ``compression._save_compressed_data``. # TODO improve docs
+            If it contains 1 row, it will broadcast over samples (this
+            situation arises in parameter estimation where we have many
+            samples for the same data).
+            It may also contain a number of rows equal to the number of
+            samples, then each sample will use different data (for
+            making the training set, where there is one piece of data
+            and one true parameters).
+
+        folded_sampled_params: (n_samples, n_params) float array
+            Physical parameter values to rescale ("sampled" refers to
+            parameters in the domain of the transform, "folded" means
+            that folding was applied, to prevent multimodality in the
+            distribution).
         """
         compressed_data = torch.as_tensor(compressed_data).to(self.device)
         parameters = torch.as_tensor(folded_sampled_parameters).to(self.device)
