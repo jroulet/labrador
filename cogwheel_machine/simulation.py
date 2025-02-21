@@ -46,12 +46,12 @@ def simulate_and_preprocess_sample(simulator, data_preprocessor,
             * coef: 1-d float array
             * processed_coef: 1-d float array
 
-    folded_sampled_params: float array of shape (n_params,)
+    folded_sampled_parameters : float array of shape (n_parameters,)
         Signal parameters expressed in the folded target space.
 
-    unfolding_label: int
+    unfolding_label : int
         Index of the region that the parameters belong to before
-        applying folding. Takes a value between [0, 2**n_folded_params).
+        applying folding. Takes a value between [0, 2**n_folded_parameters).
     """
     simulated_input = simulator.generate_data_and_reference_waveform(
         parameters)
@@ -60,10 +60,10 @@ def simulate_and_preprocess_sample(simulator, data_preprocessor,
         **simulated_input)
 
     transform = transform_class(**transform_kwargs)
-    folded_sampled_params, unfolding_label = get_folded_sampled_params(
+    folded_sampled_parameters, unfolding_label = get_folded_sampled_parameters(
         parameters, transform)
 
-    return preprocessed_data, folded_sampled_params, unfolding_label
+    return preprocessed_data, folded_sampled_parameters, unfolding_label
 
 
 def get_transform_class(config):
@@ -80,31 +80,31 @@ def get_i_refdet(config):
         config.PRIOR_KWARGS['ref_det_name'])
 
 
-def get_folded_sampled_params(parameters, transform):
+def get_folded_sampled_parameters(parameters, transform):
     """
     Returns
     -------
-    folded_sampled_params : float array of shape (n_params,)
+    folded_sampled_parameters : float array of shape (n_parameters,)
         Signal parameters expressed in the folded target space.
 
     unfolding_label : int
         Index of the region that the parameters belong to before
         applying folding. Takes a value between [0, 2**n_folded_params).
     """
-    sampled_params = transform.inverse_transform(
+    sampled_parameters = transform.inverse_transform(
         **parameters[transform.standard_params])
 
     # Determine which region the truth would be unfolded to:
     folded_inds = transform._folded_inds
-    values = np.fromiter(sampled_params.values(), float)[folded_inds]
+    values = np.fromiter(sampled_parameters.values(), float)[folded_inds]
     midpoint = (transform.cubemin[folded_inds]
                 + transform.folded_cubesize[folded_inds])
     flags = values > midpoint
     # Convert the array of booleans to an integer
     unfolding_label = sum(val << i for i, val in enumerate(flags))
 
-    folded_sampled_params = transform.fold(**sampled_params)
-    return folded_sampled_params, unfolding_label
+    folded_sampled_parameters = transform.fold(**sampled_parameters)
+    return folded_sampled_parameters, unfolding_label
 
 
 def simulate_and_preprocess_samples(simulator,
@@ -151,13 +151,13 @@ def simulate_and_preprocess_samples(simulator,
             * coef: (n_sim, n_coef) float array
             * processed_coef: (n_sim, n_processed_coef) float array
 
-    folded_sampled_params : (n_sim, n_params) float32 array
+    folded_sampled_parameters : (n_sim, n_parameters) float32 array
         Signal parameters expressed in the folded target space.
 
     unfolding_labels : (n_sim,) int array
         Index of the region that the parameters of each simulation
         belong to before applying folding. Takes values between
-        [0, 2**n_folded_params).
+        [0, 2**n_folded_parameters).
     """
     args_generator = ((simulator, data_preprocessor, parameters,
                        transform_class)
@@ -165,7 +165,8 @@ def simulate_and_preprocess_samples(simulator,
     results, stats = utils.multiprocessing_starmap_profiled(
         simulate_and_preprocess_sample, args_generator, processes)
 
-    preprocessed_rows, folded_sampled_params, unfolding_labels = zip(*results)
+    preprocessed_rows, folded_sampled_parameters, unfolding_labels = zip(
+        *results)
     del results
 
     # fbin should be identical across simulations, keep only one:
@@ -181,7 +182,7 @@ def simulate_and_preprocess_samples(simulator,
             count=len(preprocessed_rows))
 
     return (preprocessed_data,
-            np.array(folded_sampled_params, np.float32),
+            np.array(folded_sampled_parameters, np.float32),
             np.array(unfolding_labels),
             stats)
 
@@ -397,7 +398,7 @@ def _check_rundir(rundir):
     datadirs = rundir/utils.TRAINING_DIR, rundir/utils.TEST_DIR
 
     new_filenames = (utils.PREPROCESSED_DATA_FILENAME,
-                     utils.FOLDED_SAMPLED_PARAMS_FILENAME,
+                     utils.FOLDED_SAMPLED_PARAMETERS_FILENAME,
                      utils.UNFOLDING_LABELS_FILENAME)
 
     # Check that there is no data already
@@ -495,7 +496,7 @@ def _populate_datadir(datadir, simulator, data_preprocessor,
     stats = pstats.Stats()
 
     for chunk_start in range(0, len(simulation_parameters), chunk_size):
-        (preprocessed_data, folded_sampled_params, unfolding_labels,
+        (preprocessed_data, folded_sampled_parameters, unfolding_labels,
          chunk_stats) = simulate_and_preprocess_samples(
             simulator,
             data_preprocessor,
@@ -505,8 +506,8 @@ def _populate_datadir(datadir, simulator, data_preprocessor,
 
         append_to_hdf5(datadir/utils.PREPROCESSED_DATA_FILENAME,
                        **preprocessed_data)
-        append_to_hdf5(datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME,
-                       dataset=folded_sampled_params)
+        append_to_hdf5(datadir/utils.FOLDED_SAMPLED_PARAMETERS_FILENAME,
+                       dataset=folded_sampled_parameters)
         append_to_hdf5(datadir/utils.UNFOLDING_LABELS_FILENAME,
                        dataset=unfolding_labels)
 

@@ -2,24 +2,37 @@
 Utility functions and constants.
 
 File structure:
-The final file structure of a trained model should look as below. The
-user only edits the files `data_config.py` and `model_config.py` by
-hand, all the rest are created by the various modules of the code.
+The final file structure of a trained model should look as below.
+The user only edits the files `data_config.py`, `rescaler_config.py`,
+`sbi_config.py` and `unfolding_config.py` by hand,
+all the rest are created by the various modules of the code.
 
-{parentdir}/                             # E.g. 'coghweel-machine/data/'
-└── {rundir}/                            # E.g. 'run_0'
-    ├── {datadir}/                       # 'training_data' or 'test_data'
-    │   ├── compressed_data.npy
-    │   ├── folded_sampled_parameters.npy
-    │   ├── mask.npy
-    │   ├── preprocessed_data.npz
-    │   ├── simulation_parameters.feather
-    │   └── unfolding_labels.npy
-    ├── {modeldir}/                      # E.g. 'model_0'
-    │   ├── model_config.py
-    │   └── posterior.pt
+{parentdir}/                                   # E.g. 'coghweel-machine/data/'
+└── {rundir}/                                  # E.g. 'run_0'
     ├── data_config.py
-    └── version.txt
+    ├── JSONStandardScaler.json
+    ├── SVDCompressor.npz
+    ├── version.txt
+    ├── {datadir}/                             # 'training_data' or 'test_data'
+    │   ├── compressed_data.npy
+    │   ├── folded_sampled_parameters.h5
+    │   ├── mask.npy
+    │   ├── preprocessed_data.h5
+    │   ├── simulation_parameters.feather
+    │   ├── simulation_profiling
+    │   └── unfolding_labels.h5
+    └── {rescalerdir}/                         # E.g. 'rescaler_0'
+        ├── parameter_rescaler.pth
+        ├── parameter_rescaler_training.pth
+        ├── rescaler_config.py
+        ├── {rescaled_datadir}/                # 'training_data' or 'test_data'
+        │   └── rescaled_parameters.npy
+        ├── {sbidir}/                          # E.g. 'sbi_0'
+        │   ├── posterior.pt
+        │   └── sbi_config.py
+        └── {unfolderdir}/                     # E.g. 'unfolder_0'
+            ├── unfolder_classifier.ubj
+            └── unfolder_config.py
 """
 
 import functools
@@ -45,10 +58,12 @@ EXAMPLE_CONFIGS_DIR = Path(__file__).parent/'example_configs'
 TRAINING_DIR = 'training_data'
 TEST_DIR = 'test_data'
 DATA_CONFIG_FILENAME = 'data_config.py'
-MODEL_CONFIG_FILENAME = 'model_config.py'
+RESCALER_CONFIG_FILENAME = 'rescaler_config.py'
+SBI_CONFIG_FILENAME = 'sbi_config.py'
+UNFOLDER_CONFIG_FILENAME = 'unfolder_config.py'
 PARAMETERS_FILENAME = 'simulation_parameters.feather'
 PREPROCESSED_DATA_FILENAME = 'preprocessed_data.h5'
-FOLDED_SAMPLED_PARAMS_FILENAME = 'folded_sampled_params.h5'
+FOLDED_SAMPLED_PARAMETERS_FILENAME = 'folded_sampled_parameters.h5'
 UNFOLDING_LABELS_FILENAME = 'unfolding_labels.h5'
 MASK_FILENAME = 'mask.npy'
 COMPRESSED_DATA_FILENAME = 'compressed_data.npy'
@@ -56,6 +71,7 @@ VERSION_FILENAME = 'version.txt'
 RESCALED_PARAMETERS_FILENAME = 'rescaled_parameters.npy'
 INFERENCE_FILENAME = 'inference.pickle'
 POSTERIOR_FILENAME = 'posterior.pt'
+UNFOLDER_CONFIG_FILENAME = 'unfolder_config.py'
 
 
 def load_data_config(rundir):
@@ -64,10 +80,24 @@ def load_data_config(rundir):
     return cogwheel.validation.load_config(rundir/DATA_CONFIG_FILENAME)
 
 
-def load_model_config(modeldir):
-    """Return module `model_config` from a model directory."""
-    modeldir = Path(modeldir)
-    return cogwheel.validation.load_config(modeldir/MODEL_CONFIG_FILENAME)
+def load_rescaler_config(rescalerdir):
+    """Return module `rescaler_config` from a rescaler directory."""
+    rescalerdir = Path(rescalerdir)
+    return cogwheel.validation.load_config(
+        rescalerdir/RESCALER_CONFIG_FILENAME)
+
+
+def load_sbi_config(sbidir):
+    """Return module `sbi_config` from a sbi directory."""
+    sbidir = Path(sbidir)
+    return cogwheel.validation.load_config(sbidir/SBI_CONFIG_FILENAME)
+
+
+def load_unfolding_config(unfolderdir):
+    """Return module `unfolding_config` from an unfolding directory."""
+    unfolderdir = Path(unfolderdir)
+    return cogwheel.validation.load_config(
+        unfolderdir/UNFOLDER_CONFIG_FILENAME)
 
 
 def make_unique_dir(location, prefix):
@@ -115,33 +145,91 @@ def setup_rundir(parentdir, prefix='run_'):
     return rundir
 
 
-def setup_modeldir(rundir, prefix='model_'):
+def setup_rescalerdir(rundir, prefix='rescaler_'):
     """
-    Set up a model directory with an example model_config.py file.
+    Set up a rescaler directory with an example rescaler_config.py file.
 
     Parameters
     ----------
     rundir : os.PathLike
-        Path in which to create the model directory ``modeldir``.
+        Path in which to create the rescaler directory ``rescalerdir``.
 
     prefix : str
-        ``modeldir`` will be named as the prefix followed by a number, to
+        ``rescaler`` will be named as the prefix followed by a number, to
         make it unique.
 
     Returns
     -------
-    modeldir : os.PathLike
-        Path to the newly created model directory.
+    rescalerdir : os.PathLike
+        Path to the newly created rescaler directory.
     """
-    modeldir = make_unique_dir(rundir, prefix)
+    rescalerdir = make_unique_dir(rundir, prefix)
 
-    source = EXAMPLE_CONFIGS_DIR/MODEL_CONFIG_FILENAME
-    destination = (modeldir/MODEL_CONFIG_FILENAME).resolve()
+    source = EXAMPLE_CONFIGS_DIR/RESCALER_CONFIG_FILENAME
+    destination = (rescalerdir/RESCALER_CONFIG_FILENAME).resolve()
     shutil.copyfile(source, destination)
 
-    print(f'Created a new model config file at {destination}.',
+    print(f'Created a new rescaler config file at {destination}.',
           'Edit it as needed.')
-    return modeldir
+    return rescalerdir
+
+
+def setup_sbidir(rescalerdir, prefix='sbi_'):
+    """
+    Set up a sbi directory with an example sbi_config.py file.
+
+    Parameters
+    ----------
+    rescalerdir : os.PathLike
+        Path in which to create the sbi directory ``sbidir``.
+
+    prefix : str
+        ``sbi`` will be named as the prefix followed by a number, to
+        make it unique.
+
+    Returns
+    -------
+    sbidir : os.PathLike
+        Path to the newly created sbi directory.
+    """
+    sbidir = make_unique_dir(rescalerdir, prefix)
+
+    source = EXAMPLE_CONFIGS_DIR/SBI_CONFIG_FILENAME
+    destination = (sbidir/SBI_CONFIG_FILENAME).resolve()
+    shutil.copyfile(source, destination)
+
+    print(f'Created a new sbi config file at {destination}.',
+          'Edit it as needed.')
+    return sbidir
+
+
+def setup_unfolderdir(rescalerdir, prefix='unfolder_'):
+    """
+    Set up an unfolder directory with an example unfolder_config.py file.
+
+    Parameters
+    ----------
+    rescalerdir : os.PathLike
+        Path in which to create the unfolder directory ``unfolderdir``.
+
+    prefix : str
+        ``unfolder`` will be named as the prefix followed by a number, to
+        make it unique.
+
+    Returns
+    -------
+    unfolderdir : os.PathLike
+        Path to the newly created unfolder directory.
+    """
+    unfolderdir = make_unique_dir(rescalerdir, prefix)
+
+    source = EXAMPLE_CONFIGS_DIR/UNFOLDER_CONFIG_FILENAME
+    destination = (unfolderdir/UNFOLDER_CONFIG_FILENAME).resolve()
+    shutil.copyfile(source, destination)
+
+    print(f'Created a new unfolder config file at {destination}.',
+          'Edit it as needed.')
+    return unfolderdir
 
 
 def get_summary(datadir, apply_mask=True):
@@ -178,11 +266,11 @@ def get_summary(datadir, apply_mask=True):
     for par in config.TRANSFORM_CLASS.folded_params:
         columns[columns.index(par)] = f'folded_{par}'
 
-    with h5py.File(datadir/FOLDED_SAMPLED_PARAMS_FILENAME, "r") as h5file:
-        folded_sampled_params = pd.DataFrame(
+    with h5py.File(datadir/FOLDED_SAMPLED_PARAMETERS_FILENAME, "r") as h5file:
+        folded_sampled_parameters = pd.DataFrame(
             h5file["dataset"], columns=columns)
 
-    cogwheel.utils.update_dataframe(summary, folded_sampled_params)
+    cogwheel.utils.update_dataframe(summary, folded_sampled_parameters)
 
     # Apply mask
     if apply_mask:
