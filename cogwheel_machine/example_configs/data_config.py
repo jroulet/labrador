@@ -53,29 +53,3 @@ APPROXIMANT = 'IMRPhenomD'
 MASK_CONDITIONS = [('snr0', np.greater, 8),
                    ('snr0', np.less, 50),
                   ]
-
-# kwargs for the multilayer perceptron that learns mean and covariance
-# of the posterior, to rescale the parameters before passing them to sbi
-RESCALER_NN_KWARGS = {'n_layers': 5,
-                      'layer_size': 100,
-                      'activation_fn': 'SiLU'}
-
-RESCALER_TRAIN_KWARGS = {
-    'training_batch_size': min(16384, N_TRAINING_SIMULATIONS // 10),
-    'validation_fraction': 0.1,
-    'stop_after_epochs': 200,
-    'max_num_epochs': 10000,
-    'optimizer_kwargs': {'lr': 1e-4},  # kwargs to torch.optim.Adam
-    'scheduler_kwargs': {
-        'factor': 0.5,
-        'patience': 64,
-        'min_lr': 5e-6,
-     },  # kwargs to torch.optim.lr_scheduler.ReduceLROnPlateau
-}
-
-UNFOLDER_KWARGS = {
-    'num_class': 2 ** len(TRANSFORM_CLASS.folded_params),
-    'objective': 'multi:softprob',
-}  # kwargs to xgboost.XGBClassifier
-
-DEVICE = None  # ``None`` will try to use 'cuda' or fall back to 'cpu'.

@@ -2,7 +2,7 @@
 Example configuration file with parameters for the neural posterior
 estimation.
 
-This file may be copied into ``rundir`` and edited before training the
+This file may be copied into ``sbidir`` and edited before training the
 network.
 """
 # kwargs to sbi.utils.posterior_nn
@@ -20,9 +20,10 @@ TRAIN_KWARGS = {'training_batch_size': 65536,
                 'show_train_summary': True}
 
 MAX_TRAINING_EXAMPLES = None  # int
-DEVICE = 'cuda'
 
 # kwargs to ``torch.optim.lr_scheduler.ReduceLROnPlateau``
 # (set to ``None`` to not use the scheduler).
 LR_SCHEDULER_KWARGS = {'factor': 0.3,
                        'patience': 100}
+
+DEVICE = None  # ``None`` will try to use 'cuda' or fall back to 'cpu'.
