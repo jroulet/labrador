@@ -71,7 +71,6 @@ VERSION_FILENAME = 'version.txt'
 RESCALED_PARAMETERS_FILENAME = 'rescaled_parameters.npy'
 INFERENCE_FILENAME = 'inference.pickle'
 POSTERIOR_FILENAME = 'posterior.pt'
-UNFOLDER_CONFIG_FILENAME = 'unfolder_config.py'
 UNFOLDER_FILENAME = 'unfolding_classifier.ubj'
 
 
@@ -94,8 +93,8 @@ def load_sbi_config(sbidir):
     return cogwheel.validation.load_config(sbidir/SBI_CONFIG_FILENAME)
 
 
-def load_unfolding_config(unfolderdir):
-    """Return module `unfolding_config` from an unfolding directory."""
+def load_unfolder_config(unfolderdir):
+    """Return module `unfolder_config` from an unfolder directory."""
     unfolderdir = Path(unfolderdir)
     return cogwheel.validation.load_config(
         unfolderdir/UNFOLDER_CONFIG_FILENAME)

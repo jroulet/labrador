@@ -24,6 +24,7 @@ from cogwheel_machine import (compression,
                               rescaling,
                               simulation,
                               training,
+                              unfolding,
                               utils)
 # pylint: enable=wrong-import-position
 
@@ -72,7 +73,11 @@ class TrainingDataTestCase(TestCase):
             extra_lines += textwrap.dedent('''\
                 EMBEDDING_LAYER_SIZES = [16, 8]
                 ''')
-            self._train_sbi(rescalerdir, extra_lines)
+            sbidir = self._train_sbi(rescalerdir, extra_lines)
+
+            unfolderdir = self._train_unfolding_classifier(rescalerdir)
+
+            self._postprocess_sbi_samples(sbidir, unfolderdir)
 
     @staticmethod
     def _train_sbi(rescalerdir, extra_lines=''):
@@ -81,6 +86,18 @@ class TrainingDataTestCase(TestCase):
                   encoding='utf-8') as file:
             file.write(extra_lines)
         training.main(sbidir)
+        return sbidir
+    
+    @staticmethod
+    def _train_unfolding_classifier(rescalerdir):
+        unfolderdir = utils.setup_unfolderdir(rescalerdir)
+        unfolding.main(unfolderdir)
+        return unfolderdir
+    
+    @staticmethod
+    def _postprocess_sbi_samples(sbidir, unfolderdir):
+        # TODO
+        pass
 
     def _assert_same_training_and_testing_files(self, rundir):
         training_files = set(os.listdir(rundir/utils.TRAINING_DIR))
