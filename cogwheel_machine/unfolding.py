@@ -22,30 +22,34 @@ class UnfoldingClassifier:
     The prediction is probabilistic, based on the data and the folded
     parameter values, using an XGBoost classifier.
     """
-    def __init__(self, rundir):
-        self.rundir = Path(rundir)
+    def __init__(self, unfolderdir):
+        self.unfolderdir = Path(unfolderdir)
+        data_config = utils.load_data_config(self.unfolderdir.parents[1])
 
-        self.config = utils.load_data_config(self.rundir)
+        self.config = utils.load_unfolder_config(self.unfolderdir)
+        self.config.UNFOLDER_KWARGS['num_class'] \
+            = 2 ** len(data_config.TRANSFORM_CLASS.folded_params)
+        self.config.UNFOLDER_KWARGS['objective'] = 'multi:softprob'
+
         self.booster = xgboost.XGBClassifier(**self.config.UNFOLDER_KWARGS)
-        filename = self.rundir/utils.UNFOLDER_FILENAME
+        filename = self.unfolderdir/utils.UNFOLDER_FILENAME
         if filename.exists():
             self.booster.load_model(filename)
         else:  # Model has not been previously trained
             self.train()
 
     def train(self):
-        """Train the XGBoost model and save it in `.rundir`."""
+        """Train the XGBoost model and save it in `unfolderdir`."""
         # Load training data
-        datadir = self.rundir/utils.TRAINING_DIR
         compressed_data, rescaled_params, unfolding_labels = self._load_data(
-            datadir)
+            self.unfolderdir, use_test_data=False)
         data = np.hstack([compressed_data, rescaled_params])
 
         # Fit
         print('Training XGBoost model...')
         self.booster.fit(data, unfolding_labels)
         print('Done.')
-        self.booster.save_model(self.rundir/utils.UNFOLDER_FILENAME)
+        self.booster.save_model(self.unfolderdir/utils.UNFOLDER_FILENAME)
 
     def predict(self, compressed_data, rescaled_params):
         """Make predictions from the trained XGBoost model."""
@@ -86,12 +90,8 @@ class UnfoldingClassifier:
             If True, the confusion matrix will be computed using the
             test data. If False, using the training data.
         """
-        if use_test_data:
-            datadir = self.rundir/utils.TEST_DIR
-        else:
-            datadir = self.rundir/utils.TRAINING_DIR
         compressed_data, rescaled_params, unfolding_labels = self._load_data(
-            datadir)
+            self.unfolderdir, use_test_data)
 
         predictions = self.predict(compressed_data, rescaled_params)
         return self._confusion_matrix(predictions, unfolding_labels)
@@ -125,9 +125,16 @@ class UnfoldingClassifier:
 
         return confusion_matrix
 
-    def _load_data(self, datadir):
+    def _load_data(self, unfolderdir, use_test_data: bool):
+        if use_test_data:
+            foldername = utils.TEST_DIR
+        else:
+            foldername = utils.TRAINING_DIR
+
+        rescalerdir = unfolderdir.parent
+        datadir = rescalerdir.parent/foldername
         rescaled_params = np.load(
-            datadir/utils.RESCALED_PARAMETERS_FILENAME)
+            rescalerdir/foldername/utils.RESCALED_PARAMETERS_FILENAME)
         mask = np.load(datadir/utils.MASK_FILENAME)
         compressed_data = np.load(datadir/utils.COMPRESSED_DATA_FILENAME)[mask]
 
@@ -137,14 +144,14 @@ class UnfoldingClassifier:
         return compressed_data, rescaled_params, unfolding_labels
 
 
-def main(rundir):
+def main(unfolderdir):
     """Train and save an UnfoldingClassifier if it doesn't exist."""
-    UnfoldingClassifier(rundir)
+    UnfoldingClassifier(unfolderdir)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='Train a model to predict unfolding probabilities.')
-    parser.add_argument('rundir', help='Run directory.')
+    parser.add_argument('unfolderdir', help='Run directory.')
 
     main(**vars(parser.parse_args()))
