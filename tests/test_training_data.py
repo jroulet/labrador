@@ -6,6 +6,7 @@ Integration test of the modules for generating data and training, i.e.:
     * compression
     * rescaling
     * training
+    * unfolding
 
 """
 import os
@@ -31,53 +32,78 @@ from cogwheel_machine import (compression,
 
 class TrainingDataTestCase(TestCase):
     """Class to test simulations and training."""
-    def test_make_training_data(self):
+    def test_make_training_data(self, parentdir=None):
         """
         Generate a small amount of training data in a temporary
         directory, and train a sbi on the CPU for a few epochs.
+
+        Parameters
+        ----------
+        parentdir : os.PathLike (optional)
+            Path where a new directory containing training data will be
+            created. If not provided, a temporary directory will be used
+            and the data will be lost.
+        """
+        if parentdir is None:
+            with tempfile.TemporaryDirectory() as tmp_parentdir:
+                self.integration_test(tmp_parentdir)
+        else:
+            self.integration_test(parentdir)
+
+    def integration_test(self, parentdir):
+        """
+        Run cogwheel-machine as a pipeline, end-to-end.
+
+        This function generates a small amount of training data, trains
+        a rescaler for a few epochs, trains a simulation-based
+        inference, trains an unfolding classifier.
+
+        Parameters
+        ----------
+        parentdir : os.PathLike
+            Directory where to put all the generated files. It will be
+            created if it doesn't exist.
         """
         tracemalloc.start()
+        # Generate training data
+        rundir = utils.setup_rundir(parentdir)
+        rescalerdir = utils.setup_rescalerdir(rundir)
+        generate_parameters.main(rundir)
+        simulation.main(rundir)
 
-        with tempfile.TemporaryDirectory() as parentdir:
-            # Generate training data
-            rundir = utils.setup_rundir(parentdir)
-            rescalerdir = utils.setup_rescalerdir(rundir)
-            generate_parameters.main(rundir)
-            simulation.main(rundir)
+        size, peak = tracemalloc.get_traced_memory()
+        print(f'{size=}, {peak=}')
 
-            size, peak = tracemalloc.get_traced_memory()
-            print(f'{size=}, {peak=}')
+        compression.create_mask(rundir)
+        compression.svd_compression(rundir)
 
-            compression.create_mask(rundir)
-            compression.svd_compression(rundir)
+        rescaling.main(rescalerdir)
+        self._assert_unrescale_undoes_rescale(rescalerdir)
 
-            rescaling.main(rescalerdir)
-            self._assert_unrescale_undoes_rescale(rescalerdir)
+        print('Created these training data:')
+        os.system(f'tree {parentdir}')
 
-            print('Created these training data:')
-            os.system(f'tree {parentdir}')
+        self._assert_same_training_and_testing_files(rundir)
+        self._assert_same_training_and_testing_files(rescalerdir)
 
-            self._assert_same_training_and_testing_files(rundir)
-            self._assert_same_training_and_testing_files(rescalerdir)
+        # Train sbi for a couple epochs on the CPU
+        # - Default:
+        extra_lines = textwrap.dedent('''\
+            TRAIN_KWARGS.update(max_num_epochs=2,
+                                training_batch_size=10)
+            DEVICE = 'cpu'
+            ''')
+        self._train_sbi(rescalerdir, extra_lines)
 
-            # Train sbi for a couple epochs on the CPU
-            # - Default:
-            extra_lines = textwrap.dedent('''\
-                TRAIN_KWARGS.update(max_num_epochs=2,
-                                    training_batch_size=10)
-                DEVICE = 'cpu'
-                ''')
-            self._train_sbi(rescalerdir, extra_lines)
+        # - Embedding network:
+        extra_lines += textwrap.dedent('''\
+            EMBEDDING_LAYER_SIZES = [16, 8]
+            ''')
+        sbidir = self._train_sbi(rescalerdir, extra_lines)
 
-            # - Embedding network:
-            extra_lines += textwrap.dedent('''\
-                EMBEDDING_LAYER_SIZES = [16, 8]
-                ''')
-            sbidir = self._train_sbi(rescalerdir, extra_lines)
+        unfolderdir = self._train_unfolding_classifier(rescalerdir)
 
-            unfolderdir = self._train_unfolding_classifier(rescalerdir)
-
-            self._postprocess_sbi_samples(sbidir, unfolderdir)
+        self._postprocess_sbi_samples(sbidir, unfolderdir)
 
     @staticmethod
     def _train_sbi(rescalerdir, extra_lines=''):
@@ -87,13 +113,13 @@ class TrainingDataTestCase(TestCase):
             file.write(extra_lines)
         training.main(sbidir)
         return sbidir
-    
+
     @staticmethod
     def _train_unfolding_classifier(rescalerdir):
         unfolderdir = utils.setup_unfolderdir(rescalerdir)
         unfolding.main(unfolderdir)
         return unfolderdir
-    
+
     @staticmethod
     def _postprocess_sbi_samples(sbidir, unfolderdir):
         # TODO
@@ -121,7 +147,6 @@ class TrainingDataTestCase(TestCase):
         unrescaled = rescaler.unrescale(compressed_data,
                                         rescaled_parameters).detach().cpu()
         np.testing.assert_almost_equal(folded_sampled_parameters, unrescaled)
-
 
 
 if __name__ == '__main__':
