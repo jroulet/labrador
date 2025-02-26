@@ -101,7 +101,7 @@ def get_folded_sampled_parameters(parameters, transform):
                 + transform.folded_cubesize[folded_inds])
     flags = values > midpoint
     # Convert the array of booleans to an integer
-    unfolding_label = sum(val << i for i, val in enumerate(flags))
+    unfolding_label = sum(val << i for i, val in enumerate(flags[::-1]))
 
     folded_sampled_parameters = transform.fold(**sampled_parameters)
     return folded_sampled_parameters, unfolding_label
