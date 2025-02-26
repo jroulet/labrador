@@ -100,6 +100,14 @@ def svd_compression(rundir, target_loss=1e-3, max_svd_size=100_000,
         How much information we afford to discard, in terms of the
         fractional variance of the Wiener-filtered signal. Smaller is
         more conservative, at the expense of less compression.
+
+    max_svd_size : int
+        Maximum number of preprocessed data examples to input to the
+        SVD. Mostly for memory considerations.
+
+    chunk_size : int
+        The preprocessed data will be compressed in chunks to avoid
+        loading it all to memory.
     """
     rundir = Path(rundir)
     utils.check_version(rundir)
@@ -137,6 +145,10 @@ class SVDCompressor(utils.NpzMixin):
         ----------
         rundir : os.PathLike
             Directory with preprocessed data.
+
+        max_svd_size : int
+            Maximum number of preprocessed data examples to input to the
+            SVD. Mostly for memory considerations.
         """
         # We will never want to create a compressor using the test data
         datadir = Path(rundir)/utils.TRAINING_DIR
