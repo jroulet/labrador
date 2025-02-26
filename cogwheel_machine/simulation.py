@@ -367,10 +367,9 @@ class DataPreprocessor:
             waveform_model=self.waveform_model,
             n_coherent_segments=self.n_coherent_segments)
 
-        coef, d_h0_semicoherent, h0_h0 = like.fit_coef(
-            frequencies,
-            ref_waveform_phase=ref_waveform_phase,
-            ref_waveform_amp=ref_waveform_amp)
+        coef, h0_h0 = like.fit_coef(frequencies,
+                                    ref_waveform_phase=ref_waveform_phase,
+                                    ref_waveform_amp=ref_waveform_amp)
 
         heterodyned_data, heterodyned_signal, fbin \
             = like.get_heterodyned_data_and_signal(
@@ -384,7 +383,6 @@ class DataPreprocessor:
             'fbin': fbin,
             'coef': coef,
             'processed_coef': processed_coef,
-            'd_h0_semicoherent': d_h0_semicoherent,
             'h0_h0': h0_h0,
             'd_h': event_data.injection['d_h'],
             'h_h': event_data.injection['h_h']}
