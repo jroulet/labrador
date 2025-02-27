@@ -15,6 +15,7 @@ os.environ['OMP_NUM_THREADS'] = '1'
 # pylint: disable=wrong-import-position
 import tempfile
 import textwrap
+import torch
 import tracemalloc
 from unittest import TestCase, main
 import numpy as np
@@ -22,6 +23,7 @@ import h5py
 
 from cogwheel_machine import (compression,
                               generate_parameters,
+                              postprocessing,
                               rescaling,
                               simulation,
                               training,
@@ -30,7 +32,7 @@ from cogwheel_machine import (compression,
 # pylint: enable=wrong-import-position
 
 
-class TrainingDataTestCase(TestCase):
+class IntegrationTestCase(TestCase):
     """Class to test simulations and training."""
     def test_make_training_data(self, parentdir=None):
         """
@@ -103,7 +105,7 @@ class TrainingDataTestCase(TestCase):
 
         unfolderdir = self._train_unfolding_classifier(rescalerdir)
 
-        self._postprocess_sbi_samples(sbidir, unfolderdir)
+        self._event_end_to_end(sbidir, unfolderdir)
 
     @staticmethod
     def _train_sbi(rescalerdir, extra_lines=''):
@@ -121,9 +123,27 @@ class TrainingDataTestCase(TestCase):
         return unfolderdir
 
     @staticmethod
-    def _postprocess_sbi_samples(sbidir, unfolderdir):
-        # TODO
-        pass
+    def _event_end_to_end(sbidir, unfolderdir):
+        rescalerdir, rundir = sbidir.parents[:2]
+        preprocessed_data, transform \
+            = generate_preprocessed_data_and_transform(rundir)
+
+        compressed_data = get_compressed_data(
+            rundir,
+            preprocessed_data['heterodyned_data'],
+            preprocessed_data['processed_coef'])
+
+        sbi_posterior = training.load_posterior(sbidir)
+
+        unfolding_classifier = unfolding.UnfoldingClassifier(unfolderdir)
+        parameter_rescaler = rescaling.ParameterRescaler(rescalerdir)
+        postprocessor = postprocessing.PostProcessor(
+            unfolding_classifier, parameter_rescaler, transform)
+
+        rescaled_parameters = sbi_posterior.sample([100], x=compressed_data)
+        samples = postprocessor.postprocess_samples(compressed_data,
+                                                    rescaled_parameters)
+        assert set(transform.standard_params) <= set(samples)
 
     def _assert_same_training_and_testing_files(self, rundir):
         training_files = set(os.listdir(rundir/utils.TRAINING_DIR))
@@ -134,7 +154,7 @@ class TrainingDataTestCase(TestCase):
     def _assert_unrescale_undoes_rescale(rescalerdir):
         rescaler = rescaling.ParameterRescaler(rescalerdir)
         rescaled_datadir = rescalerdir/utils.TRAINING_DIR
-        rundir = rescalerdir.resolve().parent
+        rundir = rescalerdir.parent
         datadir = rundir/utils.TRAINING_DIR
         mask = np.load(datadir/utils.MASK_FILENAME)
         compressed_data = np.load(datadir/utils.COMPRESSED_DATA_FILENAME)[mask]
@@ -147,6 +167,54 @@ class TrainingDataTestCase(TestCase):
         unrescaled = rescaler.unrescale(compressed_data,
                                         rescaled_parameters).detach().cpu()
         np.testing.assert_almost_equal(folded_sampled_parameters, unrescaled)
+
+
+def generate_preprocessed_data_and_transform(rundir):
+    """
+    Return preprocessed data and transform for a random simulated event.
+
+    Parameters
+    ----------
+    rundir : os.PathLike
+        Path to run directory.
+
+    Returns
+    -------
+    preprocessed_data : dict
+        Contains keys 'heterodyned_data', 'processed_coef', etc.
+
+    transform : cogwheel_machine.transform.TransformMixin
+        Instance of the transform class that corresponds to these data.
+    """
+    data_config = utils.load_data_config(rundir)
+    prior = data_config.PRIOR_CLASS(**data_config.PRIOR_KWARGS)
+    parameters = prior.generate_random_samples(1).iloc[0]
+
+    simulator, data_preprocessor, transform_class \
+        = simulation.setup_simulator(rundir)
+
+    simulated_input = simulator.generate_data_and_reference_waveform(
+        parameters)
+    preprocessed_data, transform_kwargs \
+        = data_preprocessor.preprocess_data(**simulated_input)
+
+    transform = transform_class(**transform_kwargs)
+    return preprocessed_data, transform
+
+
+def get_compressed_data(rundir, heterodyned_data, processed_coef):
+    """Return compressed data from preprocessed data."""
+    # TODO put this function in compression.py?
+    compressor = compression.SVDCompressor.from_npz(rundir)
+    n_components = compressor.n_components()
+    reshaped_data = compressor.reshape_heterodyned_data(heterodyned_data)
+    svd_coef = compressor.get_svd_coefficients(reshaped_data, n_components)
+
+    data_scaler = compression.JSONStandardScaler.from_json(rundir)
+    compressed_data = data_scaler.transform(np.atleast_2d(np.concatenate(
+        [svd_coef, processed_coef], axis=-1)))
+
+    return torch.from_numpy(compressed_data).to(torch.float32)
 
 
 if __name__ == '__main__':
