@@ -108,8 +108,8 @@ def _instantiate_inference(sbidir):
 
 def _get_n_processed_coef(rundir):
     _, n_total = np.load(
-        rundir/utils.TRAINING_DIR/utils.COMPRESSED_DATA_FILENAME).shape
-    n_svd = compression.SVDCompressor.from_npz(rundir).n_components()
+        rundir/utils.TEST_DIR/utils.COMPRESSED_DATA_FILENAME).shape
+    n_svd = compression.SVDCompressor.from_npz(rundir).n_components
     return n_total - n_svd
 
 

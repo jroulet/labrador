@@ -15,7 +15,6 @@ os.environ['OMP_NUM_THREADS'] = '1'
 # pylint: disable=wrong-import-position
 import tempfile
 import textwrap
-import torch
 import tracemalloc
 from unittest import TestCase, main
 import numpy as np
@@ -128,7 +127,7 @@ class IntegrationTestCase(TestCase):
         preprocessed_data, transform \
             = generate_preprocessed_data_and_transform(rundir)
 
-        compressed_data = get_compressed_data(
+        compressed_data = compression.compress_data(
             rundir,
             preprocessed_data['heterodyned_data'],
             preprocessed_data['processed_coef'])
@@ -200,21 +199,6 @@ def generate_preprocessed_data_and_transform(rundir):
 
     transform = transform_class(**transform_kwargs)
     return preprocessed_data, transform
-
-
-def get_compressed_data(rundir, heterodyned_data, processed_coef):
-    """Return compressed data from preprocessed data."""
-    # TODO put this function in compression.py?
-    compressor = compression.SVDCompressor.from_npz(rundir)
-    n_components = compressor.n_components()
-    reshaped_data = compressor.reshape_heterodyned_data(heterodyned_data)
-    svd_coef = compressor.get_svd_coefficients(reshaped_data, n_components)
-
-    data_scaler = compression.JSONStandardScaler.from_json(rundir)
-    compressed_data = data_scaler.transform(np.atleast_2d(np.concatenate(
-        [svd_coef, processed_coef], axis=-1)))
-
-    return torch.from_numpy(compressed_data).to(torch.float32)
 
 
 if __name__ == '__main__':

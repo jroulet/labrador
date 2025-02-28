@@ -2,28 +2,28 @@
 UnfoldingClassifier
     Inputs
         compressed_data
-        rescaled_params
+        rescaled_parameters
     Outputs
         Unfolding probabilities
 
 ParameterRescaler
     Inputs
         compressed_data
-        rescaled_params
+        rescaled_parameters
     Outputs
-        folded_sampled_params
+        folded_sampled_parameters
 
 PostProcessor._unfold
     Inputs
         Unfolding probabilities
-        folded_sampled_params
+        folded_sampled_parameters
     Outputs
-        sampled_params
+        sampled_parameters
 
 Transform
     Inputs
         transform_kwargs
-        sampled_params
+        sampled_parameters
     Outputs
         standard_params
 """
@@ -50,15 +50,15 @@ class PostProcessor:
         """
         Parameters
         ----------
-        unfolding_classifier: unfolding.UnfoldingClassifier
+        unfolding_classifier : unfolding.UnfoldingClassifier
             Predicts the probabilities of unfolding into each of the
             2**len(transform.folded_params) regions of parameter space.
 
-        parameter_rescaler: rescaling.ParameterRescaler
+        parameter_rescaler : rescaling.ParameterRescaler
             Implements a data-dependent coordinate transformation that
             makes the posterior approximately standard normal.
 
-        transform: transform.TransformMixin
+        transform : transform.TransformMixin
             Transforms between standard parameters and coordinates
             suitable for folding.
         """
@@ -68,27 +68,26 @@ class PostProcessor:
         self._unfold_v = np.vectorize(self.transform.unfold,
                                       signature='(n)->(m,n)', otypes=[float])
 
-    def postprocess_samples(self, compressed_data, rescaled_params):
-        """
-        End to end, from folded-rescaled to standard parameters.
-        """
+    def postprocess_samples(self, compressed_data, rescaled_parameters):
+        """End to end, from folded-rescaled to standard parameters."""
         with torch.no_grad():
-            folded_sampled_params = self.parameter_rescaler.unrescale(
-                compressed_data, rescaled_params)
+            folded_sampled_parameters = self.parameter_rescaler.unrescale(
+                compressed_data, rescaled_parameters)
 
         unfolding_probabilities = self.unfolding_classifier.predict(
-            compressed_data, rescaled_params)
+            compressed_data, rescaled_parameters)
 
-        sampled_params = self._unfold(unfolding_probabilities,
-                                      folded_sampled_params)
+        sampled_parameters = self._unfold(unfolding_probabilities,
+                                          folded_sampled_parameters)
 
-        self.transform.transform_samples(sampled_params)
+        self.transform.transform_samples(sampled_parameters)
 
-        return sampled_params
+        return sampled_parameters
 
-    def _unfold(self, unfolding_probabilities, folded_sampled_params):
+    def _unfold(self, unfolding_probabilities,
+                folded_sampled_parameters):
         """
-        Choose a random unfolding of the folded parameters, vectorized.
+        Choose a random unfolding of the folded parameters (vectorized).
 
         Parameters
         ----------
@@ -97,21 +96,20 @@ class PostProcessor:
             2**n_folded_params regions of parameter space.
             Should sum to 1 along the ``n_unfolding`` axis.
 
-        folded_sampled_params : (n_samples, n_sampled_params) array
+        folded_sampled_parameters : (n_samples, n_sampled_params) array
             Folded parameters.
 
         Returns
         -------
-        unfolded_sampled_params : pandas.DataFrame
+        unfolded_sampled_parameters : pandas.DataFrame
             Sampled parameters in the unfolded space. It has shape
-            (n_samples, n_sampled_params).
+            (n_samples, n_sampled_parameters).
         """
-        unfolded = self._unfold_v(folded_sampled_params)
+        unfolded = self._unfold_v(folded_sampled_parameters)
         cumprobs = np.cumsum(unfolding_probabilities, axis=-1)
 
         rng = np.random.default_rng()
-        inds = _searchsorted_v(cumprobs,
-                               rng.uniform(size=len(folded_sampled_params)))
+        inds = _searchsorted_v(cumprobs, rng.uniform(size=len(cumprobs)))
 
         return pd.DataFrame(unfolded[np.arange(len(inds)), inds],
                             columns=self.transform.sampled_params)
