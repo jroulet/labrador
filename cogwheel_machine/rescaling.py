@@ -140,7 +140,7 @@ class ParameterRescaler:
         """
         Apply rescaling to physical parameters to make them ~N(0, 1).
 
-        compressed_data: (n_samples or 1, n_data) float array
+        compressed_data : (n_samples or 1, n_data) float array
             Hint: output of
             ``compression.JSONStandardScaler.transform``, see
             ``compression._save_compressed_data``. # TODO improve docs
@@ -152,7 +152,7 @@ class ParameterRescaler:
             making the training set, where there is one piece of data
             and one true parameters).
 
-        folded_sampled_params: (n_samples, n_params) float array
+        folded_sampled_params : (n_samples, n_params) float array
             Physical parameter values to rescale ("sampled" refers to
             parameters in the domain of the transform, "folded" means
             that folding was applied, to prevent multimodality in the
@@ -655,18 +655,18 @@ def _decompactify(compact_value, a, b, eps=1e-7):
 
     Parameters
     ----------
-    compact_value: float
+    compact_value : float
         Compactified value within the interval [a, b].
 
-    a, b: float
+    a, b : float
         Bounds of the finite interval.
 
-    eps: float
+    eps : float
         Prevents overflow if `compact_value` is close to the edge.
 
     Returns
     -------
-    float: Decompactified value within the infinite interval.
+    float : Decompactified value within the infinite interval.
     """
     arg = torch.clamp(2 * (compact_value - (b + a) / 2) / (b - a),
                       -1 + eps, 1 - eps)
@@ -693,19 +693,19 @@ class _MultiLayerPerceptron(nn.Module):
         """
         Parameters
         ----------
-        n_inputs: int
+        n_inputs : int
             Number of input features.
 
-        n_outputs: int
+        n_outputs : int
             Number of output features.
 
-        n_layers: int
+        n_layers : int
             Number of hidden layers.
 
-        layer_size: int
+        layer_size : int
             Number of neurons in each hidden layer.
 
-        activation_fn: nn.Module
+        activation_fn : nn.Module
             Activation function class from PyTorch (e.g., ``nn.SiLU``)
             without parentheses.
         """
@@ -759,9 +759,9 @@ def main(rescalerdir):
     Fit mean and scale using a multilayer perceptron, and save rescaled
     parameters.
 
-    This will create files for the model in `rescalerdir` (if not already
-    present), and for the rescaled parameters in both the training and
-    test directories.
+    This will create files for the model in `rescalerdir` (if not
+    already present), and for the rescaled parameters in both the
+    training and test directories.
     """
     parameter_rescaler = ParameterRescaler(rescalerdir)
     parameter_rescaler.process_rescalerdir(rescalerdir)

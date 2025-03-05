@@ -21,7 +21,7 @@ PRIOR_KWARGS = {
     'f_avg': 100.,
     'f_ref': 100.,
     'd_hat_max': 400.,
-    }
+}
 
 EVENT_DATA_KWARGS = {
     'eventname': None,
@@ -30,7 +30,7 @@ EVENT_DATA_KWARGS = {
     'asd_funcs': ['asd_H_O3', 'asd_L_O3'],
     'tgps': TGPS,
     'tcoarse': 0.,
-    }
+}
 
 PN_PHASE_TOL = 0.1
 
@@ -50,6 +50,7 @@ TRANSFORM_CLASS = PRIOR_CLASS.default_transform_class
 
 APPROXIMANT = 'IMRPhenomD'
 
-MASK_CONDITIONS = [('snr0', np.greater, 8),
-                   ('snr0', np.less, 50),
-                  ]
+MASK_CONDITIONS = [
+    ('snr0', np.greater, 8),
+    ('snr0', np.less, 50),
+]
