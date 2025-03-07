@@ -9,10 +9,10 @@ class FullyConnectedEmbeddingNetwork(nn.Module):
         """
         Parameters
         ----------
-        input_size: int
+        input_size : int
             The size of the input features.
 
-        layer_sizes: list of int
+        layer_sizes : list of int
             Each element is the size of the corresponding hidden layer.
         """
         super().__init__()
@@ -36,12 +36,12 @@ class FullyConnectedEmbeddingNetwork(nn.Module):
 
         Parameters
         ----------
-        x: torch.Tensor
+        x : torch.Tensor
             Input tensor of shape (batch_size, input_size).
 
         Returns
         -------
-        torch.Tensor: Output of shape (batch_size, final_layer_size).
+        torch.Tensor : Output of shape (batch_size, final_layer_size).
         """
         return self.fc_layers(x)
 
@@ -52,13 +52,13 @@ class BlockMatrixEmbeddingNetwork(nn.Module):
         """
         Parameters
         ----------
-        input_size: int
+        input_size : int
             The size of the input features.
             
-        layer_sizes: list of int
+        layer_sizes : list of int
             Each element is the size of the corresponding hidden layer.
 
-        unchanged_size: int
+        unchanged_size : int
             The size of the part of the input that should remain
             unaffected.
         """
@@ -81,12 +81,12 @@ class BlockMatrixEmbeddingNetwork(nn.Module):
 
         Parameters
         ----------
-        x: torch.Tensor
+        x : torch.Tensor
             Input tensor of shape (batch_size, input_size).
 
         Returns
         -------
-        torch.Tensor:
+        torch.Tensor
             Of shape (batch_size, final_layer_size + unchanged_size).
         """
         # Split the input into two parts

@@ -10,8 +10,6 @@ import lal
 from cogwheel.prior import Prior, CombinedPrior
 from cogwheel import gw_prior
 
-from . import training_priors
-
 
 class TransformMixin:
     """
@@ -52,16 +50,16 @@ class MassesTransform(TransformMixin, Prior):
         """
         Parameters
         ----------
-        coef0pn: float
+        coef0pn : float
             Estimate of the 0-pN coefficient from the reference
             waveform.
 
-        mchirp_break: float
+        mchirp_break : float
             Chirp mass (Msun) at which to shift from the post-Newtonian
             regime to a linear regime for the chirp-mass
             reparametrization.
 
-        See also
+        See Also
         --------
         waveform_model.PhenomenologicalWaveformGenerator.get_transform_kwargs
         waveform_model.PhaseModel.get_coef0pn
@@ -160,17 +158,17 @@ class PhaseTransform(TransformMixin, gw_prior.UniformPhasePrior):
         """
         Parameters
         ----------
-        tgps: float
+        tgps : float
             Fiducial GPS time used in the training set.
             NOT the real GPS time of the event!
 
-        ref_det_name: str
+        ref_det_name : str
             Reference detector name, e.g. 'H' for Hanford.
 
-        f_avg: float
+        f_avg : float
             Fiducial f_avg used in the training set.
 
-        phase_refdet_0: float
+        phase_refdet_0 : float
             Phase of the reference waveform at the reference detector.
         """
         super().__init__(tgps=tgps, ref_det_name=ref_det_name, f_avg=f_avg,
@@ -199,14 +197,14 @@ class TimeTransform(TransformMixin, Prior):
         """
         Parameters
         ----------
-        tgps: float
+        tgps : float
             Fiducial GPS time used in the training set.
             NOT the real GPS time of the event!
 
-        ref_det_name: str
+        ref_det_name : str
             Reference detector name, e.g. 'H' for Hanford.
 
-        amp_ref_det: float
+        amp_ref_det : float
             Amplitude of the reference waveform at the reference
             detector (units don't matter as long as they are
             consistent across training and production).
@@ -252,14 +250,14 @@ class DistanceTransform(TransformMixin, Prior):
         """
         Parameters
         ----------
-        tgps: float
+        tgps : float
             Fiducial GPS time used in the training set.
             NOT the real GPS time of the event!
 
-        ref_det_name: str
+        ref_det_name : str
             Reference detector name, e.g. 'H' for Hanford.
 
-        amp_ref_det: float
+        amp_ref_det : float
             Amplitude of the reference waveform at the reference
             detector (units don't matter as long as they are
             consistent across training and production).
@@ -332,6 +330,7 @@ def log_det_jacobian(transform, training_prior, diff_regularized0pn):
 
     This function may change in the future to make this choice flexible.
     """
+    from . import training_priors
     assert ((isinstance(transform, TargetSpaceTransformNoSpins)
              and isinstance(training_prior,
                             training_priors.NoSpinTrainingPrior))
