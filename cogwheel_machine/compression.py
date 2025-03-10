@@ -318,7 +318,8 @@ class JSONStandardScaler(sklearn.preprocessing.StandardScaler):
         scaler_params = {key: getattr(self, key) for key in self._KEYS}
 
         with open(filepath, 'w', encoding='utf-8') as file:
-            json.dump(scaler_params, file, cls=cogwheel.utils.NumpyEncoder)
+            json.dump(scaler_params, file, cls=cogwheel.utils.NumpyEncoder,
+                      indent=2)
 
     @classmethod
     def _get_filepath(cls, directory):
