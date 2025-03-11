@@ -2,6 +2,7 @@
 Phenomenological waveform model that works with coordinates that are
 approximately orthonormal (under a reference PSD).
 """
+from collections import OrderedDict
 from pathlib import Path
 import scipy.interpolate
 import scipy.optimize
@@ -667,7 +668,10 @@ class PhaseModel(hdf5_utils.HDF5Mixin):
     #     i: parameter example
     #     ?: optional dimensions
 
-    _int_pn_exponents = np.array([-5/3, -1, -2/3])
+    _int_pn_exponents = (-5/3, -1, -2/3)
+
+    _cache = OrderedDict()
+    _cache_size = 2
 
     @classmethod
     def from_scratch(cls,
@@ -903,6 +907,13 @@ class PhaseModel(hdf5_utils.HDF5Mixin):
 
         float array of shape (n_det, n_freq, n_pncoef).
         """
+        frequencies = np.asarray(frequencies)
+        cache_key = (frequencies.tobytes(), frequencies.shape,
+                     frequencies.dtype, n_det)
+        if (pnphases := cls._cache.get(cache_key, None)) is not None:
+            return pnphases
+
+
         n_freq = len(frequencies)
         n_ext = 2 * n_det  # phase at detector, time at detector
         n_int = len(cls._int_pn_exponents)
@@ -913,9 +924,14 @@ class PhaseModel(hdf5_utils.HDF5Mixin):
         intrinsic_phases = np.broadcast_to(
             np.power.outer(frequencies, cls._int_pn_exponents),
             (n_det, n_freq, n_int))  # dfn
+        pnphases = np.concatenate([extrinsic_phases, intrinsic_phases],
+                                  axis=2)[()]  # dfn
 
-        return np.concatenate([extrinsic_phases, intrinsic_phases],
-                              axis=2)  # dfn
+        cls._cache[cache_key] = pnphases
+        if len(cls._cache) > cls._cache_size:  # Delete oldest cache
+            cls._cache.popitem(last=False)
+
+        return pnphases
 
     @staticmethod
     def _get_parameter_examples(mchirp_rng, q_rng, n_examples, seed):
