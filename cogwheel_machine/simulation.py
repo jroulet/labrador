@@ -556,7 +556,7 @@ def main(rundir, processes=None):
 
     simulator, data_preprocessor, transform_class = setup_simulator(rundir)
 
-    for dirname in utils.TRAINING_DIR, utils.TEST_DIR:
+    for dirname in utils.TEST_DIR, utils.TRAINING_DIR:
         _populate_datadir(rundir/dirname, simulator, data_preprocessor,
                           transform_class, processes)
 
