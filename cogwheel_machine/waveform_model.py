@@ -16,10 +16,10 @@ import cogwheel.gw_utils
 import cogwheel.waveform
 
 from .rbsplines import RelativeBinningSplines
-from . import utils
+from . import utils, hdf5_utils
 
 
-class PhenomenologicalWaveformGenerator:
+class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
     """
     Class that implementes a simple waveform model with the purpose of
     finding a reference waveform quickly.
@@ -43,6 +43,9 @@ class PhenomenologicalWaveformGenerator:
     @classmethod
     def from_rundir(cls, rundir, n_svd_examples=1000):
         """
+        Attempt to load from a saved file. If there is no such file,
+        construct an instance, save it to a file and return it.
+
         Parameters
         ----------
         rundir : os.PathLike
@@ -51,9 +54,15 @@ class PhenomenologicalWaveformGenerator:
 
         n_svd_examples : int
             How many waveforms to simulate to input in the SVD of
-            amplitude profiles.
+            amplitude profiles. Ignored if there is already a saved
+            file in `rundir`.
         """
         rundir = Path(rundir)
+
+        filename = rundir/utils.WAVEFORM_MODEL_FILENAME
+        if filename.exists():
+            return hdf5_utils.read_hdf5(filename)
+
         config = utils.load_data_config(rundir)
         dummy_event_data = cogwheel.data.EventData.gaussian_noise(
             **config.EVENT_DATA_KWARGS)
@@ -69,8 +78,12 @@ class PhenomenologicalWaveformGenerator:
             rundir/utils.TRAINING_DIR/utils.PARAMETERS_FILENAME
             )[:n_svd_examples]
 
-        return cls.from_waveforms(frequencies, wht_filter, waveform_generator,
-                                  simulation_parameters, config.PN_PHASE_TOL)
+        waveform_model =  cls.from_waveforms(
+            frequencies, wht_filter, waveform_generator, simulation_parameters,
+            config.PN_PHASE_TOL)
+
+        waveform_model.to_hdf5(filename)
+        return waveform_model
 
     @classmethod
     def from_waveforms(cls, frequencies, fiducial_wht_filter,
@@ -311,7 +324,7 @@ class PhenomenologicalWaveformGenerator:
         return shapecoef_guess
 
 
-class AmplitudeModel:
+class AmplitudeModel(hdf5_utils.HDF5Mixin):
     """Simple phenomenological model for the waveform amplitude."""
     def __init__(self, n_det, amplitude_tapering):
         """
@@ -391,7 +404,7 @@ class AmplitudeModel:
         return self.n_det + self.amplitude_tapering.n_shapeampcoef
 
 
-class AmplitudeTapering(utils.NpzMixin):
+class AmplitudeTapering(hdf5_utils.HDF5Mixin):
     """
     Multiplicative correction to A(f) ~ f^{-7/6}.
 
@@ -620,7 +633,7 @@ class AmplitudeTapering(utils.NpzMixin):
         return aligned_tapering, np.log10(fcut)
 
 
-class PhaseModel:
+class PhaseModel(hdf5_utils.HDF5Mixin):
     """
     Model the phase profile of the waveform as a function of intrinsic
     parameters in terms of orthogonalized coordinates.
