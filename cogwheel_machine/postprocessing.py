@@ -34,6 +34,7 @@ import torch
 _searchsorted_v = np.vectorize(np.searchsorted,
                                signature='(n),()->()', otypes=[int])
 
+
 class PostProcessor:
     """
     Turn folded rescaled parameters into unfolded standard parameters.

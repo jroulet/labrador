@@ -240,7 +240,7 @@ class PhenomenologicalWaveformGenerator:
             * sin(ref_det_phase)                              1
             * ref_det_time                                    1
         """
-        ampcoef, phasecoef = np.split(coef, [self.amplitude_model.n_ampcoef])
+        ampcoef, phasecoef = self.split_amp_phase_coef(coef)
         amp_rms, amp_ratios \
             = self.amplitude_model.get_detector_amp_rms_and_ratios(ampcoef)
 
