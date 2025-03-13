@@ -668,7 +668,7 @@ class PhaseModel(hdf5_utils.HDF5Mixin):
     #     i: parameter example
     #     ?: optional dimensions
 
-    _int_pn_exponents = (-5/3, -1, -2/3)
+    _int_pn_exponents = np.array([-5/3, -1, -2/3])
 
     _cache = OrderedDict()
     _cache_size = 2
@@ -777,6 +777,8 @@ class PhaseModel(hdf5_utils.HDF5Mixin):
         self._dphase_to_phasecoef_mat = _dphase_to_phasecoef_mat  # cdf
         self._phasecoef_to_dpncoef_mat = _phasecoef_to_dpncoef_mat  # nc
         self._avg_pncoef = _avg_pncoef  # n
+        self._det_phase_to_detphasecoef_mat = np.linalg.inv(
+            self._phasecoef_to_dpncoef_mat[:self.n_det, :self.n_det])
 
     def __call__(self, frequencies, phasecoef):
         """
@@ -865,9 +867,7 @@ class PhaseModel(hdf5_utils.HDF5Mixin):
         """
         # Note: relies on the orthogonality of the detector phase
         # coefficients to the remaining ones.
-        return np.linalg.inv(
-            self._phasecoef_to_dpncoef_mat[:self.n_det, :self.n_det]
-            ) @ det_phase
+        return self._det_phase_to_detphasecoef_mat @ det_phase
 
     def _phasecoef_to_pncoef(self, phasecoef):
         return self._avg_pncoef + self._phasecoef_to_dpncoef_mat @ phasecoef
