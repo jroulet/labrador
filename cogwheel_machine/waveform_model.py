@@ -425,7 +425,7 @@ class AmplitudeTapering(hdf5_utils.HDF5Mixin):
                      simulation_parameters,
                      frequencies=(1e-2, 1e4, 500),
                      relative_frequencies=(1e-4, 1e1, 1000),
-                     n_svd=1,
+                     n_svd=0,
                      tapering_at_fcut=0.1):
         """
         Parameters
@@ -912,7 +912,6 @@ class PhaseModel(hdf5_utils.HDF5Mixin):
                      frequencies.dtype, n_det)
         if (pnphases := cls._cache.get(cache_key, None)) is not None:
             return pnphases
-
 
         n_freq = len(frequencies)
         n_ext = 2 * n_det  # phase at detector, time at detector
