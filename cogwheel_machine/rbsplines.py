@@ -11,8 +11,10 @@ import numpy as np
 
 from cogwheel import utils
 
+from . import hdf5_utils
 
-class RelativeBinningSplines(utils.JSONMixin):
+
+class RelativeBinningSplines(hdf5_utils.HDF5Mixin, utils.JSONMixin):
     # TODO: Integrate this in cogwheel.likelihood.relative_binning
     """Class that implements relative binning compression."""
     def __init__(self, frequencies, fbin=None, pn_phase_tol=None,
@@ -182,8 +184,17 @@ class RelativeBinningSplines(utils.JSONMixin):
         *pre_shape, nrfft = integrand.shape
         shape = pre_shape + [len(self.fbin)]
         projected_integrand = np.zeros(shape, dtype=integrand.dtype)
+
         for i, arr_f in enumerate(integrand.reshape(-1, nrfft)):
             projected_integrand[np.unravel_index(i, pre_shape)] \
                 = self._basis_splines @ arr_f
+
         df = self.frequencies[1] - self.frequencies[0]
         return 4 * df * projected_integrand.dot(self._coefficients.T)
+
+    def get_init_dict(self, **kwargs):
+        """Keyword arguments to reproduce instance."""
+        if self.pn_phase_tol is not None:
+            kwargs = {'fbin': None} | kwargs
+
+        return super().get_init_dict(**kwargs)

@@ -101,7 +101,7 @@ def get_folded_sampled_parameters(parameters, transform):
                 + transform.folded_cubesize[folded_inds])
     flags = values > midpoint
     # Convert the array of booleans to an integer
-    unfolding_label = sum(val << i for i, val in enumerate(flags))
+    unfolding_label = sum(val << i for i, val in enumerate(flags[::-1]))
 
     folded_sampled_parameters = transform.fold(**sampled_parameters)
     return folded_sampled_parameters, unfolding_label
@@ -216,7 +216,7 @@ class Simulator:
 
         Parameters
         ----------
-        parameters: dict-like
+        parameters : dict-like
             Physical parameters of the signal to simulate. Must contain
             keys for all ``._waveform_generator.params``.
 
@@ -257,6 +257,16 @@ class DataPreprocessor:
 
     @classmethod
     def from_rundir(cls, rundir):
+        """
+        Constructor from a run directory.
+
+        Parameters
+        ----------
+        rundir : os.PathLike
+            Run directory, should contain a file `data_config.py` and
+            training and test directories with simulation parameters.
+        """
+
         rundir = Path(rundir)
         config = utils.load_data_config(rundir)
 
@@ -276,10 +286,10 @@ class DataPreprocessor:
         """
         Parameters
         ----------
-        waveform_model: waveform_model.PhenomenologicalWaveformGenerator
+        waveform_model : waveform_model.PhenomenologicalWaveformGenerator
             Used to generate the reference waveform.
 
-        n_coherent_segments: int
+        n_coherent_segments : int
             When maximizing the likelihood to find a reference waveform,
             the frequency range is partitioned into segments and a
             constant phase is optimized independently in each segment.
@@ -287,7 +297,7 @@ class DataPreprocessor:
             more robust to limitations in the phase model.
             ``n_coherent_segments=1`` corresponds to fully coherent.
 
-        pn_phase_tol_compression: float
+        pn_phase_tol_compression : float
             Controls the relative-binning frequency resolution used for
             compressing the data after the reference waveform has been
             found. Lower tolerance means higher resolution.
@@ -367,10 +377,9 @@ class DataPreprocessor:
             waveform_model=self.waveform_model,
             n_coherent_segments=self.n_coherent_segments)
 
-        coef, d_h0_semicoherent, h0_h0 = like.fit_coef(
-            frequencies,
-            ref_waveform_phase=ref_waveform_phase,
-            ref_waveform_amp=ref_waveform_amp)
+        coef, h0_h0 = like.fit_coef(frequencies,
+                                    ref_waveform_phase=ref_waveform_phase,
+                                    ref_waveform_amp=ref_waveform_amp)
 
         heterodyned_data, heterodyned_signal, fbin \
             = like.get_heterodyned_data_and_signal(
@@ -384,7 +393,6 @@ class DataPreprocessor:
             'fbin': fbin,
             'coef': coef,
             'processed_coef': processed_coef,
-            'd_h0_semicoherent': d_h0_semicoherent,
             'h0_h0': h0_h0,
             'd_h': event_data.injection['d_h'],
             'h_h': event_data.injection['h_h']}
@@ -433,7 +441,7 @@ def submit_condor(rundir,
 
     Parameters
     ----------
-    rundir : str, os.PathLike
+    rundir : os.PathLike
         Run directory, should contain a file `data_config.py` and
         training and test directories with simulation parameters.
 
@@ -548,7 +556,7 @@ def main(rundir, processes=None):
 
     simulator, data_preprocessor, transform_class = setup_simulator(rundir)
 
-    for dirname in utils.TRAINING_DIR, utils.TEST_DIR:
+    for dirname in utils.TEST_DIR, utils.TRAINING_DIR:
         _populate_datadir(rundir/dirname, simulator, data_preprocessor,
                           transform_class, processes)
 

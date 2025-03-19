@@ -72,6 +72,7 @@ RESCALED_PARAMETERS_FILENAME = 'rescaled_parameters.npy'
 INFERENCE_FILENAME = 'inference.pickle'
 POSTERIOR_FILENAME = 'posterior.pt'
 UNFOLDER_FILENAME = 'unfolding_classifier.ubj'
+WAVEFORM_MODEL_FILENAME = 'waveform_model.h5'
 
 
 def load_data_config(rundir):
@@ -255,11 +256,11 @@ def get_summary(datadir, apply_mask=True):
     # Add SNR
     with h5py.File(datadir/PREPROCESSED_DATA_FILENAME, "r"
                   ) as preprocessed_data:
-        for key in 'd_h', 'h_h', 'd_h0_semicoherent', 'h0_h0':
+        for key in 'd_h', 'h_h', 'h0_h0':
             summary[key] = np.sum(preprocessed_data[key], axis=1)
 
     summary['snr'] = summary['d_h'] / np.sqrt(summary['h_h'])
-    summary['snr0'] = summary['d_h0_semicoherent'] / np.sqrt(summary['h0_h0'])
+    summary['snr0'] = np.sqrt(summary['h0_h0'])
 
     # Add transformed parameters
     columns = list(config.TRANSFORM_CLASS.sampled_params)

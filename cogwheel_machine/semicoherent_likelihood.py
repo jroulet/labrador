@@ -194,9 +194,8 @@ class SemicoherentLikelihood:
         coef = self.waveform_model.coef_from_shapecoef(shapecoef,
                                                        det_amp=best_amp,
                                                        det_phase=best_phase)
-        dh_semicoherent = np.abs(dh_semicoherent_d) * best_amp
-        h_h = hh_d * best_amp**2
-        return coef, dh_semicoherent, h_h
+        best_hh_d = hh_d * best_amp**2
+        return coef, best_hh_d
 
     def _get_dh_hh(self, shapecoef):
         """With fiducial amp_det=1, phase_det=0."""

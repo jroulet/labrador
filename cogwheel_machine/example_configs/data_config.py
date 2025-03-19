@@ -12,6 +12,9 @@ from cogwheel_machine import training_priors
 # GPS time until we have a cleaner implementation.)
 TGPS = 0.0
 
+SNR_MIN, SNR_MAX = 8, 50
+D_HAT_CONVERSION = 3e3  # snr ≈ D_HAT_CONVERSION / d_hat (but depends on PSD!)
+
 PRIOR_KWARGS = {
     'mchirp_range': (1., 50.),
     'q_min': 1/20,
@@ -20,8 +23,9 @@ PRIOR_KWARGS = {
     'ref_det_name': 'L',
     'f_avg': 100.,
     'f_ref': 100.,
-    'd_hat_max': 400.,
-    }
+    'd_hat_max': D_HAT_CONVERSION / SNR_MIN,
+    'd_hat_min': D_HAT_CONVERSION / SNR_MAX,
+}
 
 EVENT_DATA_KWARGS = {
     'eventname': None,
@@ -30,7 +34,7 @@ EVENT_DATA_KWARGS = {
     'asd_funcs': ['asd_H_O3', 'asd_L_O3'],
     'tgps': TGPS,
     'tcoarse': 0.,
-    }
+}
 
 PN_PHASE_TOL = 0.1
 
@@ -50,6 +54,7 @@ TRANSFORM_CLASS = PRIOR_CLASS.default_transform_class
 
 APPROXIMANT = 'IMRPhenomD'
 
-MASK_CONDITIONS = [('snr0', np.greater, 8),
-                   ('snr0', np.less, 50),
-                  ]
+MASK_CONDITIONS = [
+    ('snr0', np.greater, SNR_MIN),
+    ('snr0', np.less, SNR_MAX),
+]
