@@ -216,7 +216,7 @@ class Simulator:
 
         Parameters
         ----------
-        parameters: dict-like
+        parameters : dict-like
             Physical parameters of the signal to simulate. Must contain
             keys for all ``._waveform_generator.params``.
 
@@ -257,6 +257,16 @@ class DataPreprocessor:
 
     @classmethod
     def from_rundir(cls, rundir):
+        """
+        Constructor from a run directory.
+
+        Parameters
+        ----------
+        rundir : os.PathLike
+            Run directory, should contain a file `data_config.py` and
+            training and test directories with simulation parameters.
+        """
+
         rundir = Path(rundir)
         config = utils.load_data_config(rundir)
 
@@ -276,10 +286,10 @@ class DataPreprocessor:
         """
         Parameters
         ----------
-        waveform_model: waveform_model.PhenomenologicalWaveformGenerator
+        waveform_model : waveform_model.PhenomenologicalWaveformGenerator
             Used to generate the reference waveform.
 
-        n_coherent_segments: int
+        n_coherent_segments : int
             When maximizing the likelihood to find a reference waveform,
             the frequency range is partitioned into segments and a
             constant phase is optimized independently in each segment.
@@ -287,7 +297,7 @@ class DataPreprocessor:
             more robust to limitations in the phase model.
             ``n_coherent_segments=1`` corresponds to fully coherent.
 
-        pn_phase_tol_compression: float
+        pn_phase_tol_compression : float
             Controls the relative-binning frequency resolution used for
             compressing the data after the reference waveform has been
             found. Lower tolerance means higher resolution.
@@ -431,7 +441,7 @@ def submit_condor(rundir,
 
     Parameters
     ----------
-    rundir : str, os.PathLike
+    rundir : os.PathLike
         Run directory, should contain a file `data_config.py` and
         training and test directories with simulation parameters.
 
@@ -546,7 +556,7 @@ def main(rundir, processes=None):
 
     simulator, data_preprocessor, transform_class = setup_simulator(rundir)
 
-    for dirname in utils.TRAINING_DIR, utils.TEST_DIR:
+    for dirname in utils.TEST_DIR, utils.TRAINING_DIR:
         _populate_datadir(rundir/dirname, simulator, data_preprocessor,
                           transform_class, processes)
 

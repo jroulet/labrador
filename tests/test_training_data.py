@@ -81,9 +81,6 @@ class IntegrationTestCase(TestCase):
         rescaling.main(rescalerdir)
         self._assert_unrescale_undoes_rescale(rescalerdir)
 
-        print('Created these training data:')
-        os.system(f'tree {parentdir}')
-
         self._assert_same_training_and_testing_files(rundir)
         self._assert_same_training_and_testing_files(rescalerdir)
 
@@ -105,6 +102,9 @@ class IntegrationTestCase(TestCase):
         unfolderdir = self._train_unfolding_classifier(rescalerdir)
 
         self._event_end_to_end(sbidir, unfolderdir)
+
+        print('Created these files:')
+        os.system(f'tree {parentdir}')
 
     @staticmethod
     def _train_sbi(rescalerdir, extra_lines=''):

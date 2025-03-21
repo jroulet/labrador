@@ -2,6 +2,7 @@
 Phenomenological waveform model that works with coordinates that are
 approximately orthonormal (under a reference PSD).
 """
+from collections import OrderedDict
 from pathlib import Path
 import scipy.interpolate
 import scipy.optimize
@@ -16,10 +17,10 @@ import cogwheel.gw_utils
 import cogwheel.waveform
 
 from .rbsplines import RelativeBinningSplines
-from . import utils
+from . import utils, hdf5_utils
 
 
-class PhenomenologicalWaveformGenerator:
+class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
     """
     Class that implementes a simple waveform model with the purpose of
     finding a reference waveform quickly.
@@ -43,6 +44,9 @@ class PhenomenologicalWaveformGenerator:
     @classmethod
     def from_rundir(cls, rundir, n_svd_examples=1000):
         """
+        Attempt to load from a saved file. If there is no such file,
+        construct an instance, save it to a file and return it.
+
         Parameters
         ----------
         rundir : os.PathLike
@@ -51,9 +55,15 @@ class PhenomenologicalWaveformGenerator:
 
         n_svd_examples : int
             How many waveforms to simulate to input in the SVD of
-            amplitude profiles.
+            amplitude profiles. Ignored if there is already a saved
+            file in `rundir`.
         """
         rundir = Path(rundir)
+
+        filename = rundir/utils.WAVEFORM_MODEL_FILENAME
+        if filename.exists():
+            return hdf5_utils.read_hdf5(filename)
+
         config = utils.load_data_config(rundir)
         dummy_event_data = cogwheel.data.EventData.gaussian_noise(
             **config.EVENT_DATA_KWARGS)
@@ -69,8 +79,12 @@ class PhenomenologicalWaveformGenerator:
             rundir/utils.TRAINING_DIR/utils.PARAMETERS_FILENAME
             )[:n_svd_examples]
 
-        return cls.from_waveforms(frequencies, wht_filter, waveform_generator,
-                                  simulation_parameters, config.PN_PHASE_TOL)
+        waveform_model =  cls.from_waveforms(
+            frequencies, wht_filter, waveform_generator, simulation_parameters,
+            config.PN_PHASE_TOL)
+
+        waveform_model.to_hdf5(filename)
+        return waveform_model
 
     @classmethod
     def from_waveforms(cls, frequencies, fiducial_wht_filter,
@@ -240,7 +254,7 @@ class PhenomenologicalWaveformGenerator:
             * sin(ref_det_phase)                              1
             * ref_det_time                                    1
         """
-        ampcoef, phasecoef = np.split(coef, [self.amplitude_model.n_ampcoef])
+        ampcoef, phasecoef = self.split_amp_phase_coef(coef)
         amp_rms, amp_ratios \
             = self.amplitude_model.get_detector_amp_rms_and_ratios(ampcoef)
 
@@ -311,7 +325,7 @@ class PhenomenologicalWaveformGenerator:
         return shapecoef_guess
 
 
-class AmplitudeModel:
+class AmplitudeModel(hdf5_utils.HDF5Mixin):
     """Simple phenomenological model for the waveform amplitude."""
     def __init__(self, n_det, amplitude_tapering):
         """
@@ -391,7 +405,7 @@ class AmplitudeModel:
         return self.n_det + self.amplitude_tapering.n_shapeampcoef
 
 
-class AmplitudeTapering(utils.NpzMixin):
+class AmplitudeTapering(hdf5_utils.HDF5Mixin):
     """
     Multiplicative correction to A(f) ~ f^{-7/6}.
 
@@ -411,7 +425,7 @@ class AmplitudeTapering(utils.NpzMixin):
                      simulation_parameters,
                      frequencies=(1e-2, 1e4, 500),
                      relative_frequencies=(1e-4, 1e1, 1000),
-                     n_svd=1,
+                     n_svd=0,
                      tapering_at_fcut=0.1):
         """
         Parameters
@@ -620,7 +634,7 @@ class AmplitudeTapering(utils.NpzMixin):
         return aligned_tapering, np.log10(fcut)
 
 
-class PhaseModel:
+class PhaseModel(hdf5_utils.HDF5Mixin):
     """
     Model the phase profile of the waveform as a function of intrinsic
     parameters in terms of orthogonalized coordinates.
@@ -655,6 +669,9 @@ class PhaseModel:
     #     ?: optional dimensions
 
     _int_pn_exponents = np.array([-5/3, -1, -2/3])
+
+    _cache = OrderedDict()
+    _cache_size = 2
 
     @classmethod
     def from_scratch(cls,
@@ -760,6 +777,8 @@ class PhaseModel:
         self._dphase_to_phasecoef_mat = _dphase_to_phasecoef_mat  # cdf
         self._phasecoef_to_dpncoef_mat = _phasecoef_to_dpncoef_mat  # nc
         self._avg_pncoef = _avg_pncoef  # n
+        self._det_phase_to_detphasecoef_mat = np.linalg.inv(
+            self._phasecoef_to_dpncoef_mat[:self.n_det, :self.n_det])
 
     def __call__(self, frequencies, phasecoef):
         """
@@ -848,9 +867,7 @@ class PhaseModel:
         """
         # Note: relies on the orthogonality of the detector phase
         # coefficients to the remaining ones.
-        return np.linalg.inv(
-            self._phasecoef_to_dpncoef_mat[:self.n_det, :self.n_det]
-            ) @ det_phase
+        return self._det_phase_to_detphasecoef_mat @ det_phase
 
     def _phasecoef_to_pncoef(self, phasecoef):
         return self._avg_pncoef + self._phasecoef_to_dpncoef_mat @ phasecoef
@@ -890,6 +907,12 @@ class PhaseModel:
 
         float array of shape (n_det, n_freq, n_pncoef).
         """
+        frequencies = np.asarray(frequencies)
+        cache_key = (frequencies.tobytes(), frequencies.shape,
+                     frequencies.dtype, n_det)
+        if (pnphases := cls._cache.get(cache_key, None)) is not None:
+            return pnphases
+
         n_freq = len(frequencies)
         n_ext = 2 * n_det  # phase at detector, time at detector
         n_int = len(cls._int_pn_exponents)
@@ -900,9 +923,14 @@ class PhaseModel:
         intrinsic_phases = np.broadcast_to(
             np.power.outer(frequencies, cls._int_pn_exponents),
             (n_det, n_freq, n_int))  # dfn
+        pnphases = np.concatenate([extrinsic_phases, intrinsic_phases],
+                                  axis=2)[()]  # dfn
 
-        return np.concatenate([extrinsic_phases, intrinsic_phases],
-                              axis=2)  # dfn
+        cls._cache[cache_key] = pnphases
+        if len(cls._cache) > cls._cache_size:  # Delete oldest cache
+            cls._cache.popitem(last=False)
+
+        return pnphases
 
     @staticmethod
     def _get_parameter_examples(mchirp_rng, q_rng, n_examples, seed):

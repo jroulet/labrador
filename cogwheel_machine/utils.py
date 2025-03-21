@@ -72,6 +72,7 @@ RESCALED_PARAMETERS_FILENAME = 'rescaled_parameters.npy'
 INFERENCE_FILENAME = 'inference.pickle'
 POSTERIOR_FILENAME = 'posterior.pt'
 UNFOLDER_FILENAME = 'unfolding_classifier.ubj'
+WAVEFORM_MODEL_FILENAME = 'waveform_model.h5'
 
 
 def load_data_config(rundir):
