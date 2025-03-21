@@ -26,12 +26,7 @@ def load_posterior(sbidir, device='cpu'):
 
 def load_loss(sbidir):
     """Load the training and validation losses of a trained model."""
-    accumulator = event_accumulator.EventAccumulator(
-        sbidir.as_posix(),
-        size_guidance=event_accumulator.STORE_EVERYTHING_SIZE_GUIDANCE
-    )
-    accumulator.Reload()
-
+    accumulator = _load_accumulator(sbidir)
     training_scalars = accumulator.Scalars('training_loss')
     validation_scalars = accumulator.Scalars('validation_loss')
 
@@ -44,12 +39,18 @@ def load_loss(sbidir):
 
 def load_runtime(sbidir):
     """Array of length n_epochs with cumulative training time (h)."""
-    accumulator = event_accumulator.EventAccumulator(
-        sbidir.as_posix(),
-        size_guidance=event_accumulator.STORE_EVERYTHING_SIZE_GUIDANCE)
-    accumulator.Reload()
+    accumulator = _load_accumulator(sbidir)
     durations = [x.value for x in accumulator.Scalars('epoch_durations_sec')]
     return np.cumsum(durations) / 3600
+
+
+def _load_accumulator(sbidir):
+    """Return tensorboard EventAccumulator saved in `sbidir`."""
+    accumulator = event_accumulator.EventAccumulator(
+        str(sbidir),
+        size_guidance=event_accumulator.STORE_EVERYTHING_SIZE_GUIDANCE)
+    accumulator.Reload()
+    return accumulator
 
 
 def plot_loss(sbidir, save=True):

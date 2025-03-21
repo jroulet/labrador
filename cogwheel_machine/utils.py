@@ -392,7 +392,7 @@ def multiprocessing_starmap_profiled(func, iterable, processes=None):
             results = pool.map(profiled_func, iterable)
 
         # Aggregate the stats
-        paths = (path.as_posix() for path in Path(profile_dir).glob('*.prof'))
+        paths = map(str, Path(profile_dir).glob('*.prof'))
         stats = pstats.Stats(*paths)
 
     return results, stats
