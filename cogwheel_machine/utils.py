@@ -20,19 +20,22 @@ all the rest are created by the various modules of the code.
     │   ├── preprocessed_data.h5
     │   ├── simulation_parameters.feather
     │   ├── simulation_profiling
-    │   └── unfolding_labels.h5
+    │   ├── unfolding_labels.h5
+    |   ├── weights_IAS_prior.npy
+    │   └── weights_LAL_prior.npy
     └── {rescalerdir}/                         # E.g. 'rescaler_0'
         ├── parameter_rescaler.pth
         ├── parameter_rescaler_training.pth
         ├── rescaler_config.py
         ├── {rescaled_datadir}/                # 'training_data' or 'test_data'
         │   └── rescaled_parameters.npy
-        ├── {sbidir}/                          # E.g. 'sbi_0'
-        │   ├── posterior.pt
-        │   └── sbi_config.py
-        └── {unfolderdir}/                     # E.g. 'unfolder_0'
-            ├── unfolder_classifier.ubj
-            └── unfolder_config.py
+        └── {prior}/
+            ├── {sbidir}/                          # E.g. 'sbi_0'
+            │   ├── posterior.pt
+            │   └── sbi_config.py
+            └── {unfolderdir}/                     # E.g. 'unfolder_0'
+                ├── unfolder_classifier.ubj
+                └── unfolder_config.py
 """
 
 import functools

@@ -84,10 +84,15 @@ def _instantiate_inference(sbidir):
 
     simulation_data = np.load(datadir/utils.COMPRESSED_DATA_FILENAME
                              )[mask][:config.MAX_TRAINING_EXAMPLES]
+    
+    simulation_weights = np.load(datadir/utils.WEIGHTS_FILENAME
+                             )[mask][:config.MAX_TRAINING_EXAMPLES]
 
     theta = torch.tensor(simulation_parameters, dtype=torch.float32
                         ).to(config.DEVICE)
     x = torch.tensor(simulation_data, dtype=torch.float32).to(config.DEVICE)
+    weights = torch.tensor(simulation_weights, dtype=torch.float32
+                           ).to(config.DEVICE)
 
     if config.EMBEDDING_LAYER_SIZES:
         embedding_net = embedding.BlockMatrixEmbeddingNetwork(
@@ -102,7 +107,7 @@ def _instantiate_inference(sbidir):
         density_estimator=neural_posterior,
         device=config.DEVICE,
         summary_writer=SummaryWriter(sbidir)
-        ).append_simulations(theta, x)
+        ).append_simulations(theta, x, weights=weights)
 
     return inference
 

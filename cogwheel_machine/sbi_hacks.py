@@ -1,8 +1,12 @@
 """Modifications to the behavior of ``sbi``."""
+import functools
+from typing import Callable, Optional, Tuple
 import numpy as np
 
+from torch import Tensor
 import torch.utils.data
 import sbi.inference
+from sbi.utils.sbiutils import get_simulations_since_round
 
 from sbi.inference.trainers.npe.npe_base import (
     Adam,
@@ -31,6 +35,36 @@ class NPEFixedBatches(sbi.inference.NPE):
     By making the batches once and for all we speed up iterations over
     the data.
     """
+    @functools.wraps(sbi.inference.NPE.__init__)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._weights_roundwise = []
+
+    def get_simulations(
+        self,
+        starting_round: int = 0,
+    ) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+        r"""Returns all $\theta$, $x$, prior_masks and weights from
+        rounds >= `starting_round`.
+
+        If requested, do not return invalid data.
+
+        Args:
+            starting_round: The earliest round to return samples from
+            (we start counting from zero).
+            warn_on_invalid: Whether to give out a warning if invalid
+            simulations were found.
+
+        Returns: Parameters, simulation outputs, prior masks and weights.
+        """
+
+        theta, x, prior_masks = super().get_simulations(starting_round)
+        weights = get_simulations_since_round(
+            self._weights_roundwise, self._data_round_index, starting_round
+        )
+
+        return theta, x, prior_masks, weights
+
     def get_dataloaders(self,
                         starting_round: int = 0,
                         training_batch_size: int = 200,
@@ -61,6 +95,15 @@ class NPEFixedBatches(sbi.inference.NPE):
         val_loader = FixedBatchesDataLoader(val_batches)
 
         return train_loader, val_loader
+    
+    def append_simulations(self, theta, x, proposal=None,
+                           exclude_invalid_x=None, data_device=None, *,
+                           weights):
+        super().append_simulations(theta, x, proposal, exclude_invalid_x,
+                                   data_device)
+        if weights is None:
+            weights = torch.ones(len(theta))
+        self._weights_roundwise.append(weights)
 
     # Override ``train`` method to allow `lr_scheduler_kwargs`.
     # The code below is copied from sbi.inference.trainers.npe.npe_base
@@ -177,7 +220,7 @@ class NPEFixedBatches(sbi.inference.NPE):
         # can `sample()` and `log_prob()`. The network is accessible via `.net`.
         if self._neural_net is None or retrain_from_scratch:
             # Get theta,x to initialize NN
-            theta, x, _ = self.get_simulations(starting_round=start_idx)
+            theta, x, *_ = self.get_simulations(starting_round=start_idx)
             # Use only training data for building the neural net (z-scoring transforms)
 
             self._neural_net = self._build_neural_net(
@@ -214,10 +257,11 @@ class NPEFixedBatches(sbi.inference.NPE):
             for batch in train_loader:
                 self.optimizer.zero_grad()
                 # Get batches on current device.
-                theta_batch, x_batch, masks_batch = (
+                theta_batch, x_batch, masks_batch, weights_batch = (
                     batch[0].to(self._device),
                     batch[1].to(self._device),
                     batch[2].to(self._device),
+                    batch[3].to(self._device),
                 )
 
                 train_losses = self._loss(
@@ -227,6 +271,7 @@ class NPEFixedBatches(sbi.inference.NPE):
                     proposal,
                     calibration_kernel,
                     force_first_round_loss=force_first_round_loss,
+                    weights=weights_batch,
                 )
                 train_loss = torch.mean(train_losses)
                 train_loss_sum += train_losses.sum().item()
@@ -251,10 +296,11 @@ class NPEFixedBatches(sbi.inference.NPE):
 
             with torch.no_grad():
                 for batch in val_loader:
-                    theta_batch, x_batch, masks_batch = (
+                    theta_batch, x_batch, masks_batch, weights_batch = (
                         batch[0].to(self._device),
                         batch[1].to(self._device),
                         batch[2].to(self._device),
+                        batch[3].to(self._device),
                     )
                     # Take negative loss here to get validation log_prob.
                     val_losses = self._loss(
@@ -264,6 +310,7 @@ class NPEFixedBatches(sbi.inference.NPE):
                         proposal,
                         calibration_kernel,
                         force_first_round_loss=force_first_round_loss,
+                        weights=weights_batch,
                     )
                     val_loss_sum += val_losses.sum().item()
 
@@ -298,7 +345,12 @@ class NPEFixedBatches(sbi.inference.NPE):
         self._neural_net.zero_grad(set_to_none=True)
 
         return deepcopy(self._neural_net)
-
+    
+    def _loss(self, theta, x, masks, proposal, calibration_kernel,
+              force_first_round_loss, weights):
+        return weights * super()._loss(theta, x, masks, proposal,
+                                       calibration_kernel,
+                                       force_first_round_loss)
 
 def get_train_val_batch_inds(num_simulations, training_batch_size,
                              validation_fraction):
