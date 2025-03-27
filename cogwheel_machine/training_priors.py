@@ -78,6 +78,14 @@ class LogMassPrior(UniformPriorMixin, Prior):
         return {'mchirp_range': np.exp(self.range_dic['lnmchirp']),
                 'q_min': np.exp(self.range_dic['lnq'][0])}
 
+    def ln_jacobian_determinant(self, m1, m2):
+        """
+        Return log of the Jacobian determinant of `.transform`.
+
+        I.e.: log|∂{lnmchirp, lnq} / ∂{m1, m2}|
+        """
+        return -np.log(m1 * m2)
+
 
 class UniformAmplitudePrior(UniformPriorMixin, Prior):
     """Distance prior uniform in amp_refdet ≡ 1/d_hat."""
@@ -98,18 +106,30 @@ class UniformAmplitudePrior(UniformPriorMixin, Prior):
                          d_hat_max=d_hat_max,
                          **kwargs)
 
-    def transform(self, amp_refdet, ra, dec, psi, iota, m1, m2):
+    def transform(self, amp_refdet, ra, dec, psi, iota, m1, m2) -> dict:
         """amp_refdet to d_luminosity"""
         d_hat = 1 / amp_refdet
 
         return self.aux_prior.transform(d_hat, ra, dec, psi, iota, m1, m2)
 
-    def inverse_transform(self, d_luminosity, ra, dec, psi, iota, m1, m2):
+    def inverse_transform(self, d_luminosity, ra, dec, psi, iota,
+                          m1, m2) -> dict:
         """d_luminosity to amp_refdet"""
         d_hat = self.aux_prior.inverse_transform(
-            d_luminosity, ra, dec, psi, iota, m1, m2)
+            d_luminosity, ra, dec, psi, iota, m1, m2)['d_hat']
 
         return {'amp_refdet': 1 / d_hat}
+
+    def ln_jacobian_determinant(self, d_luminosity, ra, dec, psi, iota,
+                                m1, m2) -> float:
+        """
+        Return log of the Jacobian determinant of `.transform`.
+
+        I.e.: log|∂{amp_refdet} / ∂{d_luminosity}|
+        """
+        amp_refdet = self.inverse_transform(
+            d_luminosity, ra, dec, psi, iota, m1, m2)['amp_refdet']
+        return np.log(amp_refdet / d_luminosity)
 
     def get_init_dict(self):
         """Keyword arguments to reproduce the class instance."""
