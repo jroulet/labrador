@@ -2,6 +2,7 @@
 Phenomenological waveform model that works with coordinates that are
 approximately orthonormal (under a reference PSD).
 """
+from collections import OrderedDict
 from pathlib import Path
 import scipy.interpolate
 import scipy.optimize
@@ -424,7 +425,7 @@ class AmplitudeTapering(hdf5_utils.HDF5Mixin):
                      simulation_parameters,
                      frequencies=(1e-2, 1e4, 500),
                      relative_frequencies=(1e-4, 1e1, 1000),
-                     n_svd=1,
+                     n_svd=0,
                      tapering_at_fcut=0.1):
         """
         Parameters
@@ -669,6 +670,9 @@ class PhaseModel(hdf5_utils.HDF5Mixin):
 
     _int_pn_exponents = np.array([-5/3, -1, -2/3])
 
+    _cache = OrderedDict()
+    _cache_size = 2
+
     @classmethod
     def from_scratch(cls,
                      frequencies,
@@ -773,6 +777,8 @@ class PhaseModel(hdf5_utils.HDF5Mixin):
         self._dphase_to_phasecoef_mat = _dphase_to_phasecoef_mat  # cdf
         self._phasecoef_to_dpncoef_mat = _phasecoef_to_dpncoef_mat  # nc
         self._avg_pncoef = _avg_pncoef  # n
+        self._det_phase_to_detphasecoef_mat = np.linalg.inv(
+            self._phasecoef_to_dpncoef_mat[:self.n_det, :self.n_det])
 
     def __call__(self, frequencies, phasecoef):
         """
@@ -861,9 +867,7 @@ class PhaseModel(hdf5_utils.HDF5Mixin):
         """
         # Note: relies on the orthogonality of the detector phase
         # coefficients to the remaining ones.
-        return np.linalg.inv(
-            self._phasecoef_to_dpncoef_mat[:self.n_det, :self.n_det]
-            ) @ det_phase
+        return self._det_phase_to_detphasecoef_mat @ det_phase
 
     def _phasecoef_to_pncoef(self, phasecoef):
         return self._avg_pncoef + self._phasecoef_to_dpncoef_mat @ phasecoef
@@ -903,6 +907,12 @@ class PhaseModel(hdf5_utils.HDF5Mixin):
 
         float array of shape (n_det, n_freq, n_pncoef).
         """
+        frequencies = np.asarray(frequencies)
+        cache_key = (frequencies.tobytes(), frequencies.shape,
+                     frequencies.dtype, n_det)
+        if (pnphases := cls._cache.get(cache_key, None)) is not None:
+            return pnphases
+
         n_freq = len(frequencies)
         n_ext = 2 * n_det  # phase at detector, time at detector
         n_int = len(cls._int_pn_exponents)
@@ -913,9 +923,14 @@ class PhaseModel(hdf5_utils.HDF5Mixin):
         intrinsic_phases = np.broadcast_to(
             np.power.outer(frequencies, cls._int_pn_exponents),
             (n_det, n_freq, n_int))  # dfn
+        pnphases = np.concatenate([extrinsic_phases, intrinsic_phases],
+                                  axis=2)[()]  # dfn
 
-        return np.concatenate([extrinsic_phases, intrinsic_phases],
-                              axis=2)  # dfn
+        cls._cache[cache_key] = pnphases
+        if len(cls._cache) > cls._cache_size:  # Delete oldest cache
+            cls._cache.popitem(last=False)
+
+        return pnphases
 
     @staticmethod
     def _get_parameter_examples(mchirp_rng, q_rng, n_examples, seed):

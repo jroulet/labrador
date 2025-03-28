@@ -2,6 +2,7 @@
 Integration test of the modules for generating data and training, i.e.:
 
     * generate_parameters
+    * weighting
     * simulation
     * compression
     * rescaling
@@ -27,7 +28,8 @@ from cogwheel_machine import (compression,
                               simulation,
                               training,
                               unfolding,
-                              utils)
+                              utils,
+                              weighting)
 # pylint: enable=wrong-import-position
 
 
@@ -70,6 +72,7 @@ class IntegrationTestCase(TestCase):
         rundir = utils.setup_rundir(parentdir)
         rescalerdir = utils.setup_rescalerdir(rundir)
         generate_parameters.main(rundir)
+        weighting.main(rundir)
         simulation.main(rundir)
 
         size, peak = tracemalloc.get_traced_memory()

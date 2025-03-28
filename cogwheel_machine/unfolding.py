@@ -24,14 +24,17 @@ class UnfoldingClassifier:
     """
     def __init__(self, unfolderdir):
         self.unfolderdir = Path(unfolderdir)
-        data_config = utils.load_data_config(self.unfolderdir.parents[1])
+        rundir = self.unfolderdir.resolve().parents[1]
+        data_config = utils.load_data_config(rundir)
 
+        # Setup booster
         self.config = utils.load_unfolder_config(self.unfolderdir)
         self.config.UNFOLDER_KWARGS['num_class'] \
             = 2 ** len(data_config.TRANSFORM_CLASS.folded_params)
         self.config.UNFOLDER_KWARGS['objective'] = 'multi:softprob'
-
         self.booster = xgboost.XGBClassifier(**self.config.UNFOLDER_KWARGS)
+
+        # Load or train booster
         filename = self.unfolderdir/utils.UNFOLDER_FILENAME
         if filename.exists():
             self.booster.load_model(filename)

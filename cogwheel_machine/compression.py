@@ -294,10 +294,7 @@ class JSONStandardScaler(sklearn.preprocessing.StandardScaler):
     Like ``sklearn.preprocessing.StandardScaler`` but it can be saved to
     JSON.
     """
-    _KEYS = ('mean_',
-             'var_',
-             'scale_',
-             'n_samples_seen_')
+    _KEYS = 'mean_', 'var_', 'scale_', 'n_samples_seen_'
 
     @classmethod
     def from_json(cls, directory):
@@ -327,7 +324,6 @@ class JSONStandardScaler(sklearn.preprocessing.StandardScaler):
 
 
 def submit_condor(rundir,
-                  compression_algorithm='svd_compression',
                   request_cpus=1,
                   request_memory='25G',
                   request_disk='1G',
@@ -362,7 +358,7 @@ def submit_condor(rundir,
         'output': scripts_dir/'compression.out',
         'error': scripts_dir/'compression.err',
         'log': scripts_dir/'compression.log',
-        'args': f'{rundir} {compression_algorithm}',
+        'args': str(rundir),
         'request_cpus': request_cpus,
         'request_memory': request_memory,
         'request_disk': request_disk,

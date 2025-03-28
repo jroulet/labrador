@@ -3,6 +3,7 @@ Settings for generating the training and testing sets, that need to be
 shared across modules.
 """
 import numpy as np
+import cogwheel
 from cogwheel_machine import training_priors
 
 
@@ -49,6 +50,7 @@ N_TEST_SIMULATIONS = 10**2
 QMC = True
 
 PRIOR_CLASS = training_priors.AlignedSpinTrainingPrior
+PHYSICAL_PRIOR_CLASSES = (cogwheel.gw_prior.AlignedSpinIASPrior,)
 
 TRANSFORM_CLASS = PRIOR_CLASS.default_transform_class
 

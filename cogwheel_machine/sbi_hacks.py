@@ -25,7 +25,7 @@ from sbi.inference.trainers.npe.npe_base import (
 
 class NPEFixedBatches(sbi.inference.NPE):
     """
-    Like sbi.inference.SNPE except the batches are fixed.
+    Like sbi.inference.NPE except the batches are fixed.
 
     The batches are made of consecutive simulations (no shuffling), the
     first batches are training and the last are validation.

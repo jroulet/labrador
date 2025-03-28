@@ -78,6 +78,18 @@ UNFOLDER_FILENAME = 'unfolding_classifier.ubj'
 WAVEFORM_MODEL_FILENAME = 'waveform_model.h5'
 
 
+def get_weights_filename(physical_prior_name: str) -> str:
+    """
+    Standard name for the weights file.
+
+    Parameters
+    ----------
+    physical_prior_name : str
+        Name of a physical prior class.
+    """
+    return f'weights_{physical_prior_name}.npy'
+
+
 def load_data_config(rundir):
     """Return module `data_config` from a run directory."""
     rundir = Path(rundir)
@@ -395,7 +407,7 @@ def multiprocessing_starmap_profiled(func, iterable, processes=None):
             results = pool.map(profiled_func, iterable)
 
         # Aggregate the stats
-        paths = (path.as_posix() for path in Path(profile_dir).glob('*.prof'))
+        paths = map(str, Path(profile_dir).glob('*.prof'))
         stats = pstats.Stats(*paths)
 
     return results, stats
