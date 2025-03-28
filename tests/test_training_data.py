@@ -72,7 +72,6 @@ class IntegrationTestCase(TestCase):
         rundir = utils.setup_rundir(parentdir)
         rescalerdir = utils.setup_rescalerdir(rundir)
         generate_parameters.main(rundir)
-        weighting.main(rundir)
         simulation.main(rundir)
 
         size, peak = tracemalloc.get_traced_memory()
@@ -80,6 +79,8 @@ class IntegrationTestCase(TestCase):
 
         compression.create_mask(rundir)
         compression.svd_compression(rundir)
+
+        weighting.main(rundir)
 
         rescaling.main(rescalerdir)
         self._assert_unrescale_undoes_rescale(rescalerdir)
