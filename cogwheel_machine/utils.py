@@ -4,8 +4,8 @@ Utility functions and constants.
 File structure:
 The final file structure of a trained model should look as below.
 The user only edits the files `data_config.py`, `rescaler_config.py`,
-`sbi_config.py` and `unfolding_config.py` by hand,
-all the rest are created by the various modules of the code.
+`sbi_config.py` and `unfolding_config.py` by hand, all the rest are
+created by the various modules of the code.
 
 {parentdir}/                                   # E.g. 'coghweel-machine/data/'
 └── {rundir}/                                  # E.g. 'run_0'
@@ -20,7 +20,10 @@ all the rest are created by the various modules of the code.
     │   ├── preprocessed_data.h5
     │   ├── simulation_parameters.feather
     │   ├── simulation_profiling
-    │   └── unfolding_labels.h5
+    │   ├── unfolding_labels.h5
+    │   └── {priordir}                         # Name of physical-prior class
+    │       ├── ln_prior_ratios.npy
+    │       └── weights.npy
     └── {rescalerdir}/                         # E.g. 'rescaler_0'
         ├── parameter_rescaler.pth
         ├── parameter_rescaler_training.pth
@@ -73,18 +76,7 @@ INFERENCE_FILENAME = 'inference.pickle'
 POSTERIOR_FILENAME = 'posterior.pt'
 UNFOLDER_FILENAME = 'unfolding_classifier.ubj'
 WAVEFORM_MODEL_FILENAME = 'waveform_model.h5'
-
-
-def get_weights_filename(physical_prior_name: str) -> str:
-    """
-    Standard name for the weights file.
-
-    Parameters
-    ----------
-    physical_prior_name : str
-        Name of a physical prior class.
-    """
-    return f'weights_{physical_prior_name}.npy'
+WEIGHTS_FILENAME = 'weights.npy'
 
 
 def load_data_config(rundir):
