@@ -24,7 +24,7 @@ class UnfoldingClassifier:
     """
     def __init__(self, unfolderdir):
         self.unfolderdir = Path(unfolderdir)
-        rundir = self.unfolderdir.resolve().parents[1]
+        rundir = self.unfolderdir.resolve().parents[2]
         data_config = utils.load_data_config(rundir)
 
         # Setup booster
@@ -134,7 +134,7 @@ class UnfoldingClassifier:
         else:
             foldername = utils.TRAINING_DIR
 
-        rescalerdir = unfolderdir.parent
+        rescalerdir = unfolderdir.parents[1]
         datadir = rescalerdir.parent/foldername
         rescaled_params = np.load(
             rescalerdir/foldername/utils.RESCALED_PARAMETERS_FILENAME)

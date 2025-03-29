@@ -88,31 +88,34 @@ class IntegrationTestCase(TestCase):
         self._assert_same_training_and_testing_files(rundir)
         self._assert_same_training_and_testing_files(rescalerdir)
 
-        # Train sbi for a couple epochs on the CPU
-        # - Default:
-        extra_lines = textwrap.dedent('''\
-            TRAIN_KWARGS.update(max_num_epochs=2,
-                                training_batch_size=10)
-            DEVICE = 'cpu'
-            ''')
-        self._train_sbi(rescalerdir, extra_lines)
+        priordirs = utils.setup_priordirs(rescalerdir)
+        for priordir in priordirs:
+            # Train sbi for a couple epochs on the CPU
+            # - Default:
+            extra_lines = textwrap.dedent('''\
+                TRAIN_KWARGS.update(max_num_epochs=2,
+                                    training_batch_size=10)
+                DEVICE = 'cpu'
+                ''')
 
-        # - Embedding network:
-        extra_lines += textwrap.dedent('''\
-            EMBEDDING_LAYER_SIZES = [16, 8]
-            ''')
-        sbidir = self._train_sbi(rescalerdir, extra_lines)
+            self._train_sbi(priordir, extra_lines)
 
-        unfolderdir = self._train_unfolding_classifier(rescalerdir)
+            # - Embedding network:
+            extra_lines += textwrap.dedent('''\
+                EMBEDDING_LAYER_SIZES = [16, 8]
+                ''')
+            sbidir = self._train_sbi(priordir, extra_lines)
 
-        self._event_end_to_end(sbidir, unfolderdir)
+            unfolderdir = self._train_unfolding_classifier(priordir)
+
+            self._event_end_to_end(sbidir, unfolderdir)
 
         print('Created these files:')
         os.system(f'tree {parentdir}')
 
     @staticmethod
-    def _train_sbi(rescalerdir, extra_lines=''):
-        sbidir = utils.setup_sbidir(rescalerdir)
+    def _train_sbi(priordir, extra_lines=''):
+        sbidir = utils.setup_sbidir(priordir)
         with open(sbidir/utils.SBI_CONFIG_FILENAME, 'a',
                   encoding='utf-8') as file:
             file.write(extra_lines)
@@ -120,14 +123,14 @@ class IntegrationTestCase(TestCase):
         return sbidir
 
     @staticmethod
-    def _train_unfolding_classifier(rescalerdir):
-        unfolderdir = utils.setup_unfolderdir(rescalerdir)
+    def _train_unfolding_classifier(priordir):
+        unfolderdir = utils.setup_unfolderdir(priordir)
         unfolding.main(unfolderdir)
         return unfolderdir
 
     @staticmethod
     def _event_end_to_end(sbidir, unfolderdir):
-        rescalerdir, rundir = sbidir.parents[:2]
+        rescalerdir, rundir = sbidir.parents[1 : 3]
         preprocessed_data, transform \
             = generate_preprocessed_data_and_transform(rundir)
 

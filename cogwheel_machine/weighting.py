@@ -73,7 +73,7 @@ def _train_regressor_and_compute_weights(rundir,
     compressed_data_train = np.load(
         traindir/utils.COMPRESSED_DATA_FILENAME)[mask_train]
 
-    testdir = rundir/utils.TRAINING_DIR
+    testdir = rundir/utils.TEST_DIR
     mask_test = np.load(testdir/utils.MASK_FILENAME)
     compressed_data_test = np.load(
         testdir/utils.COMPRESSED_DATA_FILENAME)[mask_test]

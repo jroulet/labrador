@@ -1,18 +1,16 @@
 """Modifications to the behavior of ``sbi``."""
 import functools
-from typing import Callable, Optional, Tuple
 import numpy as np
-
+from typing import Any, Callable, Optional, Tuple
 from torch import Tensor
 import torch.utils.data
 import sbi.inference
 from sbi.utils.sbiutils import get_simulations_since_round
+from sbi.inference.trainers.npe.npe_base import PosteriorEstimator
 
 from sbi.inference.trainers.npe.npe_base import (
     Adam,
-    Callable,
     ConditionalDensityEstimator,
-    Optional,
     clip_grad_norm_,
     deepcopy,
     ones,
@@ -20,10 +18,10 @@ from sbi.inference.trainers.npe.npe_base import (
     reshape_to_batch_event,
     test_posterior_net_for_multi_d_x,
     time,
-    )
+)
 
 
-class NPEFixedBatches(sbi.inference.NPE):
+class NPEFixedBatches(PosteriorEstimator):
     """
     Like sbi.inference.NPE except the batches are fixed.
 
@@ -35,7 +33,7 @@ class NPEFixedBatches(sbi.inference.NPE):
     By making the batches once and for all we speed up iterations over
     the data.
     """
-    @functools.wraps(sbi.inference.NPE.__init__)
+    @functools.wraps(PosteriorEstimator.__init__)
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._weights_roundwise = []
@@ -57,7 +55,6 @@ class NPEFixedBatches(sbi.inference.NPE):
 
         Returns: Parameters, simulation outputs, prior masks and weights.
         """
-
         theta, x, prior_masks = super().get_simulations(starting_round)
         weights = get_simulations_since_round(
             self._weights_roundwise, self._data_round_index, starting_round
@@ -95,15 +92,24 @@ class NPEFixedBatches(sbi.inference.NPE):
         val_loader = FixedBatchesDataLoader(val_batches)
 
         return train_loader, val_loader
-    
+
     def append_simulations(self, theta, x, proposal=None,
                            exclude_invalid_x=None, data_device=None, *,
-                           weights):
-        super().append_simulations(theta, x, proposal, exclude_invalid_x,
-                                   data_device)
+                           weights=None):
+        """
+        Append simulations, including weights
+
+        Like sbi.inference.trainers.npe.npe_base.PosteriorEstimator.append_simulations
+        but it also appends weights.
+        """
         if weights is None:
             weights = torch.ones(len(theta))
         self._weights_roundwise.append(weights)
+
+        super().append_simulations(theta, x, proposal, exclude_invalid_x,
+                                   data_device)
+
+        return self
 
     # Override ``train`` method to allow `lr_scheduler_kwargs`.
     # The code below is copied from sbi.inference.trainers.npe.npe_base
@@ -345,12 +351,22 @@ class NPEFixedBatches(sbi.inference.NPE):
         self._neural_net.zero_grad(set_to_none=True)
 
         return deepcopy(self._neural_net)
-    
+
     def _loss(self, theta, x, masks, proposal, calibration_kernel,
               force_first_round_loss, weights):
         return weights * super()._loss(theta, x, masks, proposal,
                                        calibration_kernel,
                                        force_first_round_loss)
+
+    def _log_prob_proposal_posterior(
+        self,
+        theta: Tensor,
+        x: Tensor,
+        masks: Tensor,
+        proposal: Optional[Any],
+    ) -> Tensor:
+        raise NotImplementedError(
+            "Sequential posterior estimation not implemented.")
 
 def get_train_val_batch_inds(num_simulations, training_batch_size,
                              validation_fraction):

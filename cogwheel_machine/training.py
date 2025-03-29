@@ -71,25 +71,24 @@ def plot_loss(sbidir, save=True):
 
 
 def _instantiate_inference(sbidir):
-    rescalerdir = sbidir.parent
-    rundir = rescalerdir.parent
+    priordir, rescalerdir, rundir = sbidir.resolve().parents[:3]
     datadir = rundir/utils.TRAINING_DIR
     rescaled_datadir = rescalerdir/utils.TRAINING_DIR
     config = utils.load_sbi_config(sbidir)
 
     mask = np.load(datadir/utils.MASK_FILENAME)
 
-    simulation_parameters = np.load(
+    rescaled_parameters = np.load(
         rescaled_datadir/utils.RESCALED_PARAMETERS_FILENAME
         )[:config.MAX_TRAINING_EXAMPLES]
 
     simulation_data = np.load(datadir/utils.COMPRESSED_DATA_FILENAME
                              )[mask][:config.MAX_TRAINING_EXAMPLES]
-    
-    simulation_weights = np.load(datadir/utils.WEIGHTS_FILENAME
-                             )[mask][:config.MAX_TRAINING_EXAMPLES]
 
-    theta = torch.tensor(simulation_parameters, dtype=torch.float32
+    simulation_weights = np.load(datadir/priordir.name/utils.WEIGHTS_FILENAME
+                                )[:config.MAX_TRAINING_EXAMPLES]
+
+    theta = torch.tensor(rescaled_parameters, dtype=torch.float32
                         ).to(config.DEVICE)
     x = torch.tensor(simulation_data, dtype=torch.float32).to(config.DEVICE)
     weights = torch.tensor(simulation_weights, dtype=torch.float32
