@@ -27,6 +27,8 @@ import cogwheel.utils
 from cogwheel_machine import utils, sbi_hacks
 
 
+logger = logging.getLogger(__name__)
+
 PARAMETER_RESCALER_TRAINING_FILENAME = 'parameter_rescaler_training.pth'
 PARAMETER_RESCALER_FILENAME = 'parameter_rescaler.pth'
 
@@ -71,9 +73,15 @@ class ParameterRescaler:
         assert set(self.bounded_params) <= self.folded_range_dic.keys()
         assert set(self.periodic_params) <= self.folded_range_dic.keys()
 
-        self.device = torch.device(
-            self.rescaler_config.DEVICE
-            or ('cuda' if torch.cuda.is_available() else 'cpu'))
+        device = self.rescaler_config.DEVICE
+        if device is None:
+            if torch.cuda.is_available():
+                device = 'cuda'
+            else:
+                logger.info('cuda unavailable, default to cpu.')
+                device = 'cpu'
+        self.device = torch.device(device)
+        logger.info(f'Using {device=}')
 
         params = list(self.folded_range_dic)
         self._periodic_inds = [
@@ -92,6 +100,7 @@ class ParameterRescaler:
         try:
             self._load_model()
         except FileNotFoundError:  # Models have not been trained yet
+            logger.info('Did not find existing rescaler, will train one...')
             self._setup_model()
             self.train()
 
@@ -270,9 +279,13 @@ class ParameterRescaler:
         ones = torch.ones((compressed_data.shape[0], 1),
                           device=compressed_data.device)
         data_augmented = torch.hstack([compressed_data, ones])
-        self._coefs = torch.linalg.lstsq(data_augmented, nonperiodic).solution
+        logger.info('About to fit coefs')
+        self._coefs = torch.linalg.lstsq(data_augmented,
+                                         nonperiodic).solution
+        logger.info('Done')
         fit = self._nonperiodic_fit(compressed_data)
-        self._nonperiodic_residuals_scale = torch.std(nonperiodic - fit, dim=0)
+        self._nonperiodic_residuals_scale = torch.std(nonperiodic - fit,
+                                                      dim=0)
 
     def _nonperiodic_fit(self, compressed_data):
         return compressed_data @ self._coefs[:-1] + self._coefs[-1]
@@ -522,7 +535,7 @@ class ParameterRescaler:
 
         training_batch_size = kwargs['training_batch_size']
         if training_batch_size > (max_size := len(compressed_data) // 10):
-            logging.warning('Rescaler batch size too large, reducing it.')
+            logger.warning('Rescaler batch size too large, reducing it.')
             training_batch_size = max_size
 
         train_ind_batches, val_ind_batches \
@@ -543,13 +556,19 @@ class ParameterRescaler:
         datadir = rundir/utils.TRAINING_DIR
 
         mask = np.load(datadir/utils.MASK_FILENAME)
+
+        logger.info('Loading compressed data...')
         compressed_data = torch.from_numpy(
             np.load(datadir/utils.COMPRESSED_DATA_FILENAME)[mask]
             ).to(self.device)
+
+        logger.info('Loading folded sampled parameters...')
         with h5py.File(datadir/utils.FOLDED_SAMPLED_PARAMETERS_FILENAME, "r"
                       ) as h5file:
-            parameters = torch.tensor(h5file["dataset"][mask]).to(self.device)
+            parameters = torch.as_tensor(h5file["dataset"][:][mask],
+                                         device=self.device)
 
+        logger.info('Done')
         return compressed_data, parameters
 
     def _get_sin_cos_periodic_parameters(self, parameters):
@@ -795,6 +814,11 @@ def main(rescalerdir):
     already present), and for the rescaled parameters in both the
     training and test directories.
     """
+    rescalerdir = Path(rescalerdir)
+    logging.basicConfig(filename=rescalerdir/'rescaling.log', encoding='utf-8',
+                        level=logging.DEBUG)
+    logger.info('Running rescaling')
+
     parameter_rescaler = ParameterRescaler(rescalerdir)
     parameter_rescaler.process_rescalerdir()
 
