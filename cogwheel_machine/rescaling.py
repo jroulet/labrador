@@ -61,7 +61,7 @@ class ParameterRescaler:
     """
 
     def __init__(self, rescalerdir):
-        self.rescalerdir = Path(rescalerdir)
+        self.rescalerdir = Path(rescalerdir).resolve()
         self.rescaler_config = utils.load_rescaler_config(self.rescalerdir)
         self.data_config = utils.load_data_config(self.rescalerdir.parent)
 
