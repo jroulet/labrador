@@ -15,28 +15,29 @@ created by the various modules of the code.
     ├── version.txt
     ├── {datadir}/                             # 'training_data' or 'test_data'
     │   ├── compressed_data.npy
-    │   ├── folded_sampled_parameters.h5
+    │   ├── folded_sampled_params.h5
     │   ├── mask.npy
     │   ├── preprocessed_data.h5
     │   ├── simulation_parameters.feather
     │   ├── simulation_profiling
-    │   ├── unfolding_labels.h5
-    │   └── {priordir}                         # Name of physical-prior class
-    │       ├── ln_prior_ratios.npy
-    │       └── weights.npy
-    └── {rescalerdir}/                         # E.g. 'rescaler_0'
-        ├── parameter_rescaler.pth
-        ├── parameter_rescaler_training.pth
-        ├── rescaler_config.py
-        ├── {rescaled_datadir}/                # 'training_data' or 'test_data'
-        │   └── rescaled_parameters.npy
-        └── {priordir}/                        # Name of physical-prior class
+    │   └── unfolding_labels.h5
+    └── {priordir}/                            # Name of physical-prior class
+        ├── {datadir}/                         # 'training_data' or 'test_data'
+        │   ├── ln_prior_ratios.npy
+        │   └── weights.npy
+        └── {rescalerdir}/                     # E.g. 'rescaler_0'
+            ├── parameter_rescaler.pth
+            ├── parameter_rescaler_training.pth
+            ├── rescaler_config.py
+            ├── {datadir}/                     # 'training_data' or 'test_data'
+            │   └── rescaled_params.npy
             ├── {sbidir}/                      # E.g. 'sbi_0'
             │   ├── posterior.pt
             │   └── sbi_config.py
             └── {unfolderdir}/                 # E.g. 'unfolder_0'
-                ├── unfolder_classifier.ubj
-                └── unfolder_config.py
+                ├── unfolding_classifier.ubj
+                └── unfolding_config.py
+
 """
 
 import functools
@@ -151,13 +152,13 @@ def setup_rundir(parentdir, prefix='run_'):
     return rundir
 
 
-def setup_rescalerdir(rundir, prefix='rescaler_'):
+def setup_rescalerdir(priordir, prefix='rescaler_'):
     """
     Set up a rescaler directory with an example rescaler_config.py file.
 
     Parameters
     ----------
-    rundir : os.PathLike
+    priordir : os.PathLike
         Path in which to create the rescaler directory ``rescalerdir``.
 
     prefix : str
@@ -169,7 +170,7 @@ def setup_rescalerdir(rundir, prefix='rescaler_'):
     rescalerdir : os.PathLike
         Path to the newly created rescaler directory.
     """
-    rescalerdir = make_unique_dir(rundir, prefix)
+    rescalerdir = make_unique_dir(priordir, prefix)
 
     source = EXAMPLE_CONFIGS_DIR/RESCALER_CONFIG_FILENAME
     destination = (rescalerdir/RESCALER_CONFIG_FILENAME).resolve()
@@ -180,36 +181,35 @@ def setup_rescalerdir(rundir, prefix='rescaler_'):
     return rescalerdir
 
 
-def setup_priordirs(rescalerdir):
+def get_priordirs(rundir):
     """
-    Make directories for physical priors inside a `rescalerdir`.
+    Get directories for physical priors inside a `rundir`.
+
+    Does not create the directories or check whether they exist.
 
     Parameters
     ----------
-    rescalerdir : os.PathLike
+    rundir : os.PathLike
         Path in which to create the prior directories.
 
     Returns
     -------
     priordirs : list of pathlib.Path
     """
-    data_config = load_data_config(rescalerdir.parent)
-    priordirs = []
-    for prior_cls in data_config.PHYSICAL_PRIOR_CLASSES:
-        priordir = rescalerdir/prior_cls.__name__
-        os.makedirs(priordir)
-        priordirs.append(priordir)
+    rundir = Path(rundir)
+    data_config = load_data_config(rundir)
 
-    return priordirs
+    return [rundir/prior_cls.__name__
+            for prior_cls in data_config.PHYSICAL_PRIOR_CLASSES]
 
 
-def setup_sbidir(priordir, prefix='sbi_'):
+def setup_sbidir(rescalerdir, prefix='sbi_'):
     """
     Set up a sbi directory with an example sbi_config.py file.
 
     Parameters
     ----------
-    priordir : os.PathLike
+    rescalerdir : os.PathLike
         Path in which to create the sbi directory ``sbidir``.
 
     prefix : str
@@ -221,7 +221,7 @@ def setup_sbidir(priordir, prefix='sbi_'):
     sbidir : os.PathLike
         Path to the newly created sbi directory.
     """
-    sbidir = make_unique_dir(priordir, prefix)
+    sbidir = make_unique_dir(rescalerdir, prefix)
 
     source = EXAMPLE_CONFIGS_DIR/SBI_CONFIG_FILENAME
     destination = (sbidir/SBI_CONFIG_FILENAME).resolve()
@@ -232,13 +232,13 @@ def setup_sbidir(priordir, prefix='sbi_'):
     return sbidir
 
 
-def setup_unfolderdir(priordir, prefix='unfolder_'):
+def setup_unfolderdir(rescalerdir, prefix='unfolder_'):
     """
     Setup an unfolder directory with an example unfolder_config.py file.
 
     Parameters
     ----------
-    priordir : os.PathLike
+    rescalerdir : os.PathLike
         Path in which to create the unfolder directory ``unfolderdir``.
 
     prefix : str
@@ -250,7 +250,7 @@ def setup_unfolderdir(priordir, prefix='unfolder_'):
     unfolderdir : os.PathLike
         Path to the newly created unfolder directory.
     """
-    unfolderdir = make_unique_dir(priordir, prefix)
+    unfolderdir = make_unique_dir(rescalerdir, prefix)
 
     source = EXAMPLE_CONFIGS_DIR/UNFOLDER_CONFIG_FILENAME
     destination = (unfolderdir/UNFOLDER_CONFIG_FILENAME).resolve()

@@ -70,7 +70,6 @@ class IntegrationTestCase(TestCase):
         tracemalloc.start()
         # Generate training data
         rundir = utils.setup_rundir(parentdir)
-        rescalerdir = utils.setup_rescalerdir(rundir)
         generate_parameters.main(rundir)
         simulation.main(rundir)
 
@@ -82,14 +81,15 @@ class IntegrationTestCase(TestCase):
 
         weighting.main(rundir)
 
-        rescaling.main(rescalerdir)
-        self._assert_unrescale_undoes_rescale(rescalerdir)
-
-        self._assert_same_training_and_testing_files(rundir)
-        self._assert_same_training_and_testing_files(rescalerdir)
-
-        priordirs = utils.setup_priordirs(rescalerdir)
+        priordirs = utils.get_priordirs(rundir)
         for priordir in priordirs:
+            rescalerdir = utils.setup_rescalerdir(priordir)
+            rescaling.main(rescalerdir)
+            self._assert_unrescale_undoes_rescale(rescalerdir)
+
+            self._assert_same_training_and_testing_files(rundir)
+            self._assert_same_training_and_testing_files(rescalerdir)
+
             # Train sbi for a couple epochs on the CPU
             # - Default:
             extra_lines = textwrap.dedent('''\
@@ -98,15 +98,15 @@ class IntegrationTestCase(TestCase):
                 DEVICE = 'cpu'
                 ''')
 
-            self._train_sbi(priordir, extra_lines)
+            self._train_sbi(rescalerdir, extra_lines)
 
             # - Embedding network:
             extra_lines += textwrap.dedent('''\
                 EMBEDDING_LAYER_SIZES = [16, 8]
                 ''')
-            sbidir = self._train_sbi(priordir, extra_lines)
+            sbidir = self._train_sbi(rescalerdir, extra_lines)
 
-            unfolderdir = self._train_unfolding_classifier(priordir)
+            unfolderdir = self._train_unfolding_classifier(rescalerdir)
 
             self._event_end_to_end(sbidir, unfolderdir)
 
@@ -114,8 +114,8 @@ class IntegrationTestCase(TestCase):
         os.system(f'tree {parentdir}')
 
     @staticmethod
-    def _train_sbi(priordir, extra_lines=''):
-        sbidir = utils.setup_sbidir(priordir)
+    def _train_sbi(rescalerdir, extra_lines=''):
+        sbidir = utils.setup_sbidir(rescalerdir)
         with open(sbidir/utils.SBI_CONFIG_FILENAME, 'a',
                   encoding='utf-8') as file:
             file.write(extra_lines)
@@ -123,14 +123,14 @@ class IntegrationTestCase(TestCase):
         return sbidir
 
     @staticmethod
-    def _train_unfolding_classifier(priordir):
-        unfolderdir = utils.setup_unfolderdir(priordir)
+    def _train_unfolding_classifier(rescalerdir):
+        unfolderdir = utils.setup_unfolderdir(rescalerdir)
         unfolding.main(unfolderdir)
         return unfolderdir
 
     @staticmethod
     def _event_end_to_end(sbidir, unfolderdir):
-        rescalerdir, rundir = sbidir.parents[1 : 3]
+        rescalerdir, _, rundir = sbidir.parents[:3]
         preprocessed_data, transform \
             = generate_preprocessed_data_and_transform(rundir)
 
@@ -160,7 +160,7 @@ class IntegrationTestCase(TestCase):
     def _assert_unrescale_undoes_rescale(rescalerdir):
         rescaler = rescaling.ParameterRescaler(rescalerdir)
         rescaled_datadir = rescalerdir/utils.TRAINING_DIR
-        rundir = rescalerdir.parent
+        rundir = rescalerdir.parents[1]
         datadir = rundir/utils.TRAINING_DIR
         mask = np.load(datadir/utils.MASK_FILENAME)
         compressed_data = np.load(datadir/utils.COMPRESSED_DATA_FILENAME)[mask]
