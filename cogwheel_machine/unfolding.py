@@ -142,7 +142,7 @@ class UnfoldingClassifier:
         compressed_data = np.load(datadir/utils.COMPRESSED_DATA_FILENAME)[mask]
 
         with h5py.File(datadir/utils.UNFOLDING_LABELS_FILENAME) as file:
-            unfolding_labels = file['dataset'][mask]
+            unfolding_labels = file['dataset'][:][mask]  # [:] makes it faster
 
         return compressed_data, rescaled_params, unfolding_labels
 
