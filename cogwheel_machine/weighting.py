@@ -45,16 +45,17 @@ def _compute_ln_prior_ratios(rundir, recompute_existing=False):
         prior_ratio = PriorRatio(physical_prior, simulation_prior)
         get_ln_prior_ratio = np.vectorize(prior_ratio.ln_prior_ratio)
 
-        for datadir in rundir/utils.TEST_DIR, rundir/utils.TRAINING_DIR:
-            priordir = datadir/physical_prior_cls.__name__
+        for datadir in utils.TEST_DIR, utils.TRAINING_DIR:
+            priordir = rundir/physical_prior_cls.__name__/datadir
             os.makedirs(priordir, exist_ok=True)
             filename = priordir/LN_PRIOR_RATIOS_FILENAME
             if not recompute_existing and filename.exists():
                 print(f'Skipping existing {filename}...')
                 continue
 
-            parameters = pd.read_feather(datadir/utils.PARAMETERS_FILENAME
-                                        )[simulation_prior.standard_params]
+            parameters = pd.read_feather(
+                rundir/datadir/utils.PARAMETERS_FILENAME
+                )[simulation_prior.standard_params]
 
             ln_prior_ratios = get_ln_prior_ratio(**parameters)
             np.save(filename, ln_prior_ratios)
@@ -79,14 +80,15 @@ def _train_regressor_and_compute_weights(rundir,
         testdir/utils.COMPRESSED_DATA_FILENAME)[mask_test]
 
     for prior_name in prior_names:
+        priordir = rundir/prior_name
         ln_prior_ratios_train = np.load(
-            traindir/prior_name/LN_PRIOR_RATIOS_FILENAME)[mask_train]
+            priordir/utils.TRAINING_DIR/LN_PRIOR_RATIOS_FILENAME)[mask_train]
 
         ln_prior_ratios_test = np.load(
-            testdir/prior_name/LN_PRIOR_RATIOS_FILENAME)[mask_test]
+            priordir/utils.TEST_DIR/LN_PRIOR_RATIOS_FILENAME)[mask_test]
 
         # Train (or load) regressor
-        filename = traindir/prior_name/'ln-prior-ratio_regressor.ubj'
+        filename = priordir/utils.TRAINING_DIR/'ln-prior-ratio_regressor.ubj'
         booster = xgboost.XGBRegressor()
         if not recompute_existing and filename.exists():
             print(f'Loading existing {filename}...')
@@ -99,19 +101,19 @@ def _train_regressor_and_compute_weights(rundir,
         _compute_and_save_weights(booster,
                                   compressed_data_train,
                                   ln_prior_ratios_train,
-                                  traindir/prior_name,
+                                  priordir/utils.TRAINING_DIR,
                                   recompute_existing)
 
         _compute_and_save_weights(booster,
                                   compressed_data_test,
                                   ln_prior_ratios_test,
-                                  testdir/prior_name,
+                                  priordir/utils.TEST_DIR,
                                   recompute_existing)
 
 
 def _compute_and_save_weights(booster, compressed_data, ln_prior_ratios,
-                              priordir, recompute_existing):
-    filename = priordir/utils.WEIGHTS_FILENAME
+                              prior_datadir, recompute_existing):
+    filename = prior_datadir/utils.WEIGHTS_FILENAME
     if not recompute_existing and filename.exists():
         print(f'Skipping existing {filename}...')
         return

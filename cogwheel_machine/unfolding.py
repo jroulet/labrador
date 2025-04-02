@@ -44,13 +44,13 @@ class UnfoldingClassifier:
     def train(self):
         """Train the XGBoost model and save it in `unfolderdir`."""
         # Load training data
-        compressed_data, rescaled_params, unfolding_labels = self._load_data(
-            self.unfolderdir, use_test_data=False)
+        compressed_data, rescaled_params, unfolding_labels, weights \
+            = self._load_data(self.unfolderdir, use_test_data=False)
         data = np.hstack([compressed_data, rescaled_params])
 
         # Fit
         print('Training XGBoost model...')
-        self.booster.fit(data, unfolding_labels)
+        self.booster.fit(data, unfolding_labels, sample_weight=weights)
         print('Done.')
         self.booster.save_model(self.unfolderdir/utils.UNFOLDER_FILENAME)
 
@@ -134,8 +134,8 @@ class UnfoldingClassifier:
         else:
             foldername = utils.TRAINING_DIR
 
-        rescalerdir = unfolderdir.parents[1]
-        datadir = rescalerdir.parent/foldername
+        rescalerdir, priordir, rundir = unfolderdir.parents[:3]
+        datadir = rundir/foldername
         rescaled_params = np.load(
             rescalerdir/foldername/utils.RESCALED_PARAMETERS_FILENAME)
         mask = np.load(datadir/utils.MASK_FILENAME)
@@ -144,7 +144,9 @@ class UnfoldingClassifier:
         with h5py.File(datadir/utils.UNFOLDING_LABELS_FILENAME) as file:
             unfolding_labels = file['dataset'][:][mask]  # [:] makes it faster
 
-        return compressed_data, rescaled_params, unfolding_labels
+        weights = np.load(priordir/foldername/utils.WEIGHTS_FILENAME)
+
+        return compressed_data, rescaled_params, unfolding_labels, weights
 
 
 def main(unfolderdir):

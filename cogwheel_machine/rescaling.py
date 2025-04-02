@@ -65,7 +65,8 @@ class ParameterRescaler:
     def __init__(self, rescalerdir):
         self.rescalerdir = Path(rescalerdir).resolve()
         self.rescaler_config = utils.load_rescaler_config(self.rescalerdir)
-        self.data_config = utils.load_data_config(self.rescalerdir.parent)
+        rundir = self.rescalerdir.parents[1]
+        self.data_config = utils.load_data_config(rundir)
 
         self.folded_range_dic = self._get_folded_range_dic()
         self.bounded_params = self._get_bounded_params()
@@ -124,7 +125,7 @@ class ParameterRescaler:
         """
         Rescale and save parameters in training and test directories.
         """
-        rundir = self.rescalerdir.parent
+        rundir = self.rescalerdir.parents[1]
 
         for datadir in rundir/utils.TRAINING_DIR, rundir/utils.TEST_DIR:
             mask = np.load(datadir/utils.MASK_FILENAME)
@@ -410,7 +411,7 @@ class ParameterRescaler:
         by measuring them from the dataset, and ``_moments_model`` by
         training a neural network.
         """
-        compressed_data, parameters = self._load_data()
+        compressed_data, parameters, _ = self._load_data()
 
         n_inputs = compressed_data.shape[1]
 
@@ -529,10 +530,10 @@ class ParameterRescaler:
     def _get_dataloaders(self):
         kwargs = self.rescaler_config.RESCALER_TRAIN_KWARGS
 
-        compressed_data, parameters = self._load_data()
+        compressed_data, parameters, weights = self._load_data()
         sin, cos = self._get_sin_cos_periodic_parameters(parameters)
         dataset = torch.utils.data.TensorDataset(
-            compressed_data, parameters, sin, cos)
+            compressed_data, parameters, sin, cos, weights)
 
         training_batch_size = kwargs['training_batch_size']
         if training_batch_size > (max_size := len(compressed_data) // 10):
@@ -553,15 +554,15 @@ class ParameterRescaler:
         return train_loader, val_loader
 
     def _load_data(self):
-        rundir = self.rescalerdir.parent
+        priordir, rundir = self.rescalerdir.parents[:2]
         datadir = rundir/utils.TRAINING_DIR
 
         mask = np.load(datadir/utils.MASK_FILENAME)
 
         logger.info('Loading compressed data...')
-        compressed_data = torch.from_numpy(
-            np.load(datadir/utils.COMPRESSED_DATA_FILENAME)[mask]
-            ).to(self.device)
+        compressed_data = torch.as_tensor(
+            np.load(datadir/utils.COMPRESSED_DATA_FILENAME)[mask],
+            device=self.device)
 
         logger.info('Loading folded sampled parameters...')
         with h5py.File(datadir/utils.FOLDED_SAMPLED_PARAMETERS_FILENAME, "r"
@@ -570,8 +571,12 @@ class ParameterRescaler:
             parameters = torch.as_tensor(h5file["dataset"][:][mask],
                                          device=self.device)
 
+        weights = torch.as_tensor(
+            np.load(priordir/utils.TRAINING_DIR/utils.WEIGHTS_FILENAME),
+            device=self.device)
+
         logger.info('Done')
-        return compressed_data, parameters
+        return compressed_data, parameters, weights
 
     def _get_sin_cos_periodic_parameters(self, parameters):
         parameters = parameters.clone().detach()
@@ -630,7 +635,8 @@ class ParameterRescaler:
 
         return mean, chol_inv
 
-    def _loss_function(self, compressed_data, parameters, sin, cos):
+    def _loss_function(self, compressed_data, parameters, sin, cos,
+                       weights):
         model_outputs = self._get_model_outputs(compressed_data)
         _, mean_sin_periodic, mean_cos_periodic, log_diag_chol_inv, _ \
             = model_outputs
@@ -649,7 +655,8 @@ class ParameterRescaler:
                           + (cos - mean_cos_periodic) ** 2
                          ).sum(dim=1)
 
-        return torch.mean(chi_squared/2 - log_det_chol_inv + circular_term)
+        return torch.mean(
+            weights * (chi_squared/2 - log_det_chol_inv + circular_term))
 
     def _get_folded_range_dic(self):
         """
