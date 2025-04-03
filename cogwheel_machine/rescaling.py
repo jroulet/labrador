@@ -12,6 +12,7 @@ main(rescalerdir)  # Will create the files in the training and test directory
 ```
 """
 import argparse
+import cProfile
 import logging
 from pathlib import Path
 import os
@@ -102,8 +103,11 @@ class ParameterRescaler:
             self._load_model()
         except FileNotFoundError:  # Models have not been trained yet
             logger.info('Did not find existing rescaler, will train one...')
-            self._setup_model()
-            self.train()
+
+            with cProfile.Profile() as profile:
+                self._setup_model()
+                self.train()
+                profile.dump_stats(self.rescalerdir/'rescaling.profile')
 
     @property
     def n_parameters(self):
