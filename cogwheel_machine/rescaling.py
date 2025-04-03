@@ -181,17 +181,25 @@ class ParameterRescaler:
         model_outputs = self._get_model_outputs(compressed_data)
         mean, chol_inv = self._get_mean_and_chol_inv(model_outputs)
 
-        return self._rescale(compressed_data, parameters, mean, chol_inv)
+        preconditioned = self._precondition(compressed_data, parameters)
+        return self._rescale(preconditioned, mean, chol_inv)
 
-    def _rescale(self, compressed_data, parameters, mean, chol_inv):
-        parameters = parameters.clone()
+    def _precondition(self, compressed_data, parameters):
+        """
+        Part of rescaling that does not depend on trainable parameters.
+        """
+        parameters = parameters.clone().detach()
         self._decompactify_bounded_nonperiodic(parameters)
         self._standardize_nonperiodic(compressed_data, parameters)
         self._periodic_to_angle(parameters)
-        self._remove_mean(mean, parameters)
-        self._decompactify_periodic(parameters)
-        parameters = self._remove_scale(chol_inv, parameters)
         return parameters
+
+    def _rescale(self, preconditioned, mean, chol_inv):
+        """Part of rescaling that depends on trainable parameters."""
+        self._remove_mean(mean, preconditioned)
+        self._decompactify_periodic(preconditioned)
+        rescaled = self._remove_scale(chol_inv, preconditioned)
+        return rescaled
 
     def unrescale(self, compressed_data, rescaled_parameters,
                   double_precision=True):
@@ -535,9 +543,10 @@ class ParameterRescaler:
         kwargs = self.rescaler_config.RESCALER_TRAIN_KWARGS
 
         compressed_data, parameters, weights = self._load_data()
+        preconditioned = self._precondition(compressed_data, parameters)
         sin, cos = self._get_sin_cos_periodic_parameters(parameters)
         dataset = torch.utils.data.TensorDataset(
-            compressed_data, parameters, sin, cos, weights)
+            compressed_data, preconditioned, sin, cos, weights)
 
         training_batch_size = kwargs['training_batch_size']
         if training_batch_size > (max_size := len(compressed_data) // 10):
@@ -639,14 +648,14 @@ class ParameterRescaler:
 
         return mean, chol_inv
 
-    def _loss_function(self, compressed_data, parameters, sin, cos,
+    def _loss_function(self, compressed_data, preconditioned, sin, cos,
                        weights):
         model_outputs = self._get_model_outputs(compressed_data)
         _, mean_sin_periodic, mean_cos_periodic, log_diag_chol_inv, _ \
             = model_outputs
 
         mean, chol_inv = self._get_mean_and_chol_inv(model_outputs)
-        rescaled = self._rescale(compressed_data, parameters, mean, chol_inv)
+        rescaled = self._rescale(preconditioned.detach(), mean, chol_inv)
         chi_squared = (rescaled**2).sum(dim=1)
 
         log_det_chol_inv = log_diag_chol_inv.sum(dim=1)
