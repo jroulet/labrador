@@ -196,6 +196,7 @@ class ParameterRescaler:
 
     def _rescale(self, preconditioned, mean, chol_inv):
         """Part of rescaling that depends on trainable parameters."""
+        preconditioned = preconditioned.clone()
         self._remove_mean(mean, preconditioned)
         self._decompactify_periodic(preconditioned)
         rescaled = self._remove_scale(chol_inv, preconditioned)
@@ -380,7 +381,9 @@ class ParameterRescaler:
     def _remove_scale(self, chol_inv, parameters):
         """Divide parameters by their predicted scale."""
         chol_inv = chol_inv.to(parameters.dtype)
-        return torch.einsum('...j,...jk', parameters, chol_inv)
+        # Same but matmul is faster
+        # return torch.einsum('...j,...jk', parameters, chol_inv)
+        return torch.matmul(parameters.unsqueeze(-2), chol_inv).squeeze(-2)
 
     def _add_scale(self, chol_inv, parameters):
         """Multiply parameters by their predicted scale."""
@@ -601,13 +604,13 @@ class ParameterRescaler:
         """
         Returns
         -------
-        torch tensors:
-        * mean_nonperiodic (n_samples, n_nonperiodic)
-        * mean_sin_periodic (n_samples, n_periodic)
-        * mean_cos_periodic (n_samples, n_periodic)
-        * log_diag_chol_inv (n_samples, n_parameters)
-        * offdiagonal_chol_inv (n_samples,
-                                n_parameters*(n_parameters-1)//2)
+        torch tensors
+            * mean_nonperiodic (n_samples, n_nonperiodic)
+            * mean_sin_periodic (n_samples, n_periodic)
+            * mean_cos_periodic (n_samples, n_periodic)
+            * log_diag_chol_inv (n_samples, n_parameters)
+            * offdiagonal_chol_inv (n_samples,
+                                    n_parameters*(n_parameters-1)//2)
         """
         output = self._moments_model(compressed_data)
 
@@ -665,8 +668,8 @@ class ParameterRescaler:
         # ratio and have arbitrary norm). It's not derived from a KL
         # divergence, but it should have a similar optimum.
         circular_term = ((sin - mean_sin_periodic) ** 2
-                          + (cos - mean_cos_periodic) ** 2
-                         ).sum(dim=1)
+                         + (cos - mean_cos_periodic) ** 2
+                        ).sum(dim=1)
 
         return torch.mean(
             weights * (chi_squared/2 - log_det_chol_inv + circular_term))

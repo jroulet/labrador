@@ -73,7 +73,7 @@ class PostProcessor:
         """End to end, from folded-rescaled to standard parameters."""
         with torch.no_grad():
             folded_sampled_parameters = self.parameter_rescaler.unrescale(
-                compressed_data, rescaled_parameters)
+                compressed_data, rescaled_parameters).cpu()
 
         unfolding_probabilities = self.unfolding_classifier.predict(
             compressed_data, rescaled_parameters)
