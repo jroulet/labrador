@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from cogwheel_machine import utils
-from cogwheel_machine.prior_ratio import PriorRatio
+from cogwheel.prior_ratio import PriorRatio
 
 
 LN_PRIOR_RATIOS_FILENAME = 'ln_prior_ratios.npy'
