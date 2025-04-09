@@ -68,22 +68,48 @@ class PostProcessor:
         self.transform = transform
         self._unfold_v = np.vectorize(self.transform.unfold,
                                       signature='(n)->(m,n)', otypes=[float])
+        self._ln_jacobian_v = np.vectorize(
+            self.transform.ln_jacobian_determinant, otypes=[float])
 
     def postprocess_samples(self, compressed_data, rescaled_parameters):
-        """End to end, from folded-rescaled to standard parameters."""
+        """
+        End to end, from folded-rescaled to standard parameters.
+
+        Parameters
+        ----------
+        compressed_data : (n_samples, n_compressed_params) array
+            Compressed data, i.e. the output of the compression step.
+            This is the input to the normalizing flow.
+
+        rescaled_parameters : (n_samples, n_rescaled_params) array
+            Rescaled parameters, i.e. the output of the normalizing flow.
+            This is the input to the postprocessor.
+
+        Returns
+        -------
+        parameters : pandas.DataFrame
+            Parameters in the physical space.
+
+        lnj : (n_samples,) float array
+            Logarithm of the Jacobian of the transformation from
+            folded-rescaled to unfolded standard parameters.
+        """
         with torch.no_grad():
-            folded_sampled_parameters = self.parameter_rescaler.unrescale(
-                compressed_data, rescaled_parameters).cpu()
+            folded_sampled_parameters, lnj = self.parameter_rescaler.unrescale(
+                compressed_data, rescaled_parameters)
+        folded_sampled_parameters = folded_sampled_parameters.cpu()
 
         unfolding_probabilities = self.unfolding_classifier.predict(
             compressed_data, rescaled_parameters)
 
-        sampled_parameters = self._unfold(unfolding_probabilities,
-                                          folded_sampled_parameters)
+        parameters, lnp = self._unfold(unfolding_probabilities,
+                                       folded_sampled_parameters)
 
-        self.transform.transform_samples(sampled_parameters)
+        self.transform.transform_samples(parameters)
+        lnj += self._ln_jacobian_v(
+            **parameters[self.transform.standard_params])
 
-        return sampled_parameters
+        return parameters, lnj + lnp
 
     def _unfold(self, unfolding_probabilities,
                 folded_sampled_parameters):
@@ -105,6 +131,9 @@ class PostProcessor:
         unfolded_sampled_parameters : pandas.DataFrame
             Sampled parameters in the unfolded space. It has shape
             (n_samples, n_sampled_parameters).
+
+        lnp : (n_samples,) float array
+            Logarithm of the unfolding probability.
         """
         unfolded = self._unfold_v(folded_sampled_parameters)
         cumprobs = np.cumsum(unfolding_probabilities, axis=-1)
@@ -112,5 +141,9 @@ class PostProcessor:
         rng = np.random.default_rng()
         inds = _searchsorted_v(cumprobs, rng.uniform(size=len(cumprobs)))
 
-        return pd.DataFrame(unfolded[np.arange(len(inds)), inds],
-                            columns=self.transform.sampled_params)
+        unfolded_sampled_parameters = pd.DataFrame(
+            unfolded[np.arange(len(inds)), inds],
+            columns=self.transform.sampled_params)
+
+        lnp = np.log(unfolding_probabilities[np.arange(len(inds)), inds])
+        return unfolded_sampled_parameters, lnp

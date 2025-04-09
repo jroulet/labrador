@@ -1,10 +1,9 @@
 """Modifications to the behavior of ``sbi``."""
 import functools
-import numpy as np
 from typing import Any, Callable, Optional, Tuple
+import numpy as np
 from torch import Tensor
 import torch.utils.data
-import sbi.inference
 from sbi.utils.sbiutils import get_simulations_since_round
 from sbi.inference.trainers.npe.npe_base import PosteriorEstimator
 
