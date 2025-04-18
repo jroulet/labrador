@@ -34,19 +34,37 @@ PARAMETER_RESCALER_TRAINING_FILENAME = 'parameter_rescaler_training.pth'
 PARAMETER_RESCALER_FILENAME = 'parameter_rescaler.pth'
 
 
-def plot_loss(rescalerdir):
-    """Plot loss function of the rescaling model vs. training epoch."""
+def plot_loss(rescalerdir, ax=None):
+    """
+    Plot loss function of the rescaling model vs. training epoch.
+
+    Parameters
+    ----------
+    rescalerdir : os.PathLike
+        Path to rescaler directory.
+
+    ax : matplotlib.axes.Axes
+        Axes where to draw the figure, optional.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+    """
     rescalerdir = Path(rescalerdir)
     training_info = torch.load(
         rescalerdir/PARAMETER_RESCALER_TRAINING_FILENAME, weights_only=True)
 
-    plt.figure()
-    plt.plot(training_info['train_losses'], label='Training')
-    plt.plot(training_info['val_losses'], label='Validation')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.grid(linestyle=':')
+    if ax is None:
+        _, ax = plt.subplots()
+
+    ax.plot(training_info['train_losses'], label='Training')
+    ax.plot(training_info['val_losses'], label='Validation')
+    ax.set_xlabel('Epoch')
+    ax.set_ylabel('Loss')
+    ax.legend()
+    ax.grid(linestyle=':')
+
+    return ax
 
 
 class ParameterRescaler:
