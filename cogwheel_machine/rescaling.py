@@ -225,7 +225,7 @@ class ParameterRescaler:
 
         model_outputs = self._get_model_outputs(compressed_data)
         mean, chol_inv = self._get_mean_and_chol_inv(model_outputs)
-        log_det_chol_inv = model_outputs[3].sum(dim=1).detach().numpy()
+        log_det_chol_inv = model_outputs[3].sum(dim=1).detach().cpu().numpy()
 
         return self._unrescale(compressed_data, parameters, mean, chol_inv,
                                log_det_chol_inv)
@@ -267,7 +267,7 @@ class ParameterRescaler:
             parameters[..., i] = _compactify(parameters[..., i],
                                              *self.folded_range_dic[par])
             lnj += _compactify_log_jacobian_determinant(
-                parameters[..., i].detach().numpy(),
+                parameters[..., i].detach().cpu().numpy(),
                 *self.folded_range_dic[par])
 
         return lnj
@@ -416,7 +416,7 @@ class ParameterRescaler:
         for i in self._periodic_inds:
             parameters[..., i] = _compactify(parameters[..., i], -np.pi, np.pi)
             lnj += _compactify_log_jacobian_determinant(
-                parameters.detach()[..., i].numpy(), -np.pi, np.pi)
+                parameters.detach()[..., i].cpu().numpy(), -np.pi, np.pi)
         return lnj
 
     def _remove_scale(self, chol_inv, parameters):
@@ -446,7 +446,7 @@ class ParameterRescaler:
         self._nonperiodic_residuals_scale \
             = model_config['nonperiodic_residuals_scale']
         self._lnj_scale = np.sum(
-            np.log(self._nonperiodic_residuals_scale.detach().numpy()))
+            np.log(self._nonperiodic_residuals_scale.detach().cpu().numpy()))
 
         self._moments_model = _MultiLayerPerceptron.from_dict(
             model_config['_MultiLayerPerceptron']).to(self.device)
