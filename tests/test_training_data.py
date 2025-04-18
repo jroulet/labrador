@@ -147,17 +147,18 @@ class IntegrationTestCase(TestCase):
             unfolding_classifier, parameter_rescaler, transform)
 
         rescaled_parameters = sbi_posterior.sample([100], x=compressed_data)
-        samples = postprocessor.postprocess_samples(compressed_data,
-                                                    rescaled_parameters)
+        samples, lnj = postprocessor.postprocess_samples(compressed_data,
+                                                         rescaled_parameters)
         assert set(transform.standard_params) <= set(samples)
+        assert set(transform.sampled_params) <= set(samples)
+        assert len(lnj) == len(samples)
 
     def _assert_same_training_and_testing_files(self, rundir):
         training_files = set(os.listdir(rundir/utils.TRAINING_DIR))
         test_files = set(os.listdir(rundir/utils.TEST_DIR))
         self.assertEqual(training_files, test_files)
 
-    @staticmethod
-    def _assert_unrescale_undoes_rescale(rescalerdir):
+    def _assert_unrescale_undoes_rescale(self, rescalerdir):
         rescaler = rescaling.ParameterRescaler(rescalerdir)
         rescaled_datadir = rescalerdir/utils.TRAINING_DIR
         rundir = rescalerdir.parents[1]
@@ -170,9 +171,12 @@ class IntegrationTestCase(TestCase):
 
         rescaled_parameters = np.load(
             rescaled_datadir/utils.RESCALED_PARAMETERS_FILENAME)
-        unrescaled = rescaler.unrescale(compressed_data,
-                                        rescaled_parameters).detach().cpu()
+        unrescaled, lnj = rescaler.unrescale(
+            compressed_data, rescaled_parameters)
+        unrescaled = unrescaled.detach().cpu()
         np.testing.assert_almost_equal(folded_sampled_parameters, unrescaled)
+
+        self.assertEqual(lnj.shape, rescaled_parameters.shape[:-1])
 
 
 def generate_preprocessed_data_and_transform(rundir):

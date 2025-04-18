@@ -115,6 +115,7 @@ class ParameterRescaler:
 
         self._coefs = None  # Set by ._{load|fit}_model
         self._nonperiodic_residuals_scale = None  # Set by ._{load|fit}_model
+        self._lnj_scale = None  # Set by ._{load|fit}_model
         self._moments_model = None  # Set by ._{load|fit}_model
         self._training_info = None  # Set by ._{load|fit}_model
         try:
@@ -226,6 +227,14 @@ class ParameterRescaler:
         Map rescaled parameters from ~N(0, 1) to their physical range.
 
         Inverse of ``.rescale``.
+
+        Returns
+        -------
+        parameters : (n_samples, n_params) torch tensor
+            Physical parameter values.
+
+        lnj : float
+            Log Jacobian determinant of the unrescaling transformation.
         """
         compressed_data = torch.as_tensor(compressed_data).to(self.device)
         parameters = torch.as_tensor(rescaled_parameters).to(self.device)
@@ -234,19 +243,27 @@ class ParameterRescaler:
 
         model_outputs = self._get_model_outputs(compressed_data)
         mean, chol_inv = self._get_mean_and_chol_inv(model_outputs)
+        log_det_chol_inv = model_outputs[3].sum(dim=1).detach().numpy()
 
-        return self._unrescale(compressed_data, parameters, mean, chol_inv)
+        return self._unrescale(compressed_data, parameters, mean, chol_inv,
+                               log_det_chol_inv)
 
-    def _unrescale(self, compressed_data, parameters, mean, chol_inv):
-        parameters = parameters.clone()
+    def _unrescale(self, compressed_data, parameters, mean, chol_inv,
+                   log_det_chol_inv):
         parameters = self._add_scale(chol_inv, parameters)
-        self._compactify_periodic(parameters)
-        self._add_mean(mean, parameters)
-        self._angle_to_periodic(parameters)
-        self._unstandardize_nonperiodic(compressed_data, parameters)
-        self._compactify_bounded_nonperiodic(parameters)
+        lnj = -log_det_chol_inv
 
-        return parameters
+        lnj = lnj + self._compactify_periodic(parameters)
+
+        self._add_mean(mean, parameters)
+
+        lnj += self._angle_to_periodic(parameters)
+
+        lnj += self._unstandardize_nonperiodic(compressed_data, parameters)
+
+        lnj += self._compactify_bounded_nonperiodic(parameters)
+
+        return parameters, lnj
 
     def _decompactify_bounded_nonperiodic(self, parameters):
         """
@@ -262,10 +279,16 @@ class ParameterRescaler:
         """
         Compactify columns for ``.bounded_nonperiodic_params`` inplace.
         """
+        lnj = 0.0
         for i, par in zip(self._bounded_nonperiodic_inds,
                           self.bounded_nonperiodic_params):
             parameters[..., i] = _compactify(parameters[..., i],
                                              *self.folded_range_dic[par])
+            lnj += _compactify_log_jacobian_determinant(
+                parameters[..., i].detach().numpy(),
+                *self.folded_range_dic[par])
+
+        return lnj
 
     def _standardize_nonperiodic(self, compressed_data, parameters):
         """
@@ -280,13 +303,16 @@ class ParameterRescaler:
 
     def _unstandardize_nonperiodic(self, compressed_data, parameters):
         """
-        Add a fit and scale inplace to the nonperiodic parameters.
+        Add a fit and scale inplace to the nonperiodic parameters, and
+        return the log Jacobian determinant.
         """
         parameters[..., self._nonperiodic_inds] \
             *= self._nonperiodic_residuals_scale
 
         parameters[..., self._nonperiodic_inds] \
             += self._nonperiodic_fit(compressed_data)
+
+        return self._lnj_scale
 
     def _fit_standardization(self, compressed_data, parameters):
         """
@@ -334,19 +360,28 @@ class ParameterRescaler:
     def _angle_to_periodic(self, parameters):
         """
         Map the periodic parameters from (-pi, pi) to their physical
-        range inplace.
+        range inplace, return the log Jacobian determinant.
+
         Inverse of ``._periodic_to_angle``.
         """
+        lnj = 0.0
         for i, par in zip(self._periodic_inds, self.periodic_params):
-            parameters[..., i] = self._linear_rescale(
+            parameters[..., i], log_abs_slope = self._linear_rescale(
                 parameters[..., i],
                 (-np.pi, np.pi),
-                self.folded_range_dic[par])
+                self.folded_range_dic[par],
+                return_lnj=True)
+            lnj += log_abs_slope
+        return lnj
 
     @staticmethod
-    def _linear_rescale(x, x_rng, y_rng):
+    def _linear_rescale(x, x_rng, y_rng, return_lnj=False):
         slope = (y_rng[1] - y_rng[0]) / (x_rng[1] - x_rng[0])
-        return y_rng[0] + (x - x_rng[0]) * slope
+        rescaled = y_rng[0] + (x - x_rng[0]) * slope
+        if return_lnj:
+            return rescaled, np.log(np.abs(slope))
+        return rescaled
+
 
     def _remove_mean(self, mean, parameters):
         """
@@ -390,11 +425,17 @@ class ParameterRescaler:
 
     def _compactify_periodic(self, parameters):
         """
-        Compactify columns for ``.periodic_params`` inplace.
+        Compactify columns for ``.periodic_params`` inplace and return
+        the log Jacobian determinant.
+
         Inverse of ``._decompactify_periodic``.
         """
+        lnj = 0.0
         for i in self._periodic_inds:
             parameters[..., i] = _compactify(parameters[..., i], -np.pi, np.pi)
+            lnj += _compactify_log_jacobian_determinant(
+                parameters.detach()[..., i].numpy(), -np.pi, np.pi)
+        return lnj
 
     def _remove_scale(self, chol_inv, parameters):
         """Divide parameters by their predicted scale."""
@@ -422,6 +463,8 @@ class ParameterRescaler:
 
         self._nonperiodic_residuals_scale \
             = model_config['nonperiodic_residuals_scale']
+        self._lnj_scale = np.sum(
+            np.log(self._nonperiodic_residuals_scale.detach().numpy()))
 
         self._moments_model = _MultiLayerPerceptron.from_dict(
             model_config['_MultiLayerPerceptron']).to(self.device)
@@ -765,6 +808,31 @@ def _decompactify(compact_value, a, b, eps=1e-7):
     arg = torch.clamp(2 * (compact_value - (b + a) / 2) / (b - a),
                       -1 + eps, 1 - eps)
     return torch.arctanh(arg)
+
+
+def _compactify_log_jacobian_determinant(value, a, b):
+    """
+    Log of the Jacobian determinant of the ``_compactify`` function.
+
+    Parameters
+    ----------
+    value: float
+        The value at which to compute the log Jacobian determinant.
+
+    a, b: float
+        The bounds of the finite interval.
+
+    Returns
+    -------
+    float: The log of the Jacobian determinant.
+    """
+    return np.log((b - a) / 2) - 2 * _log_cosh(value)
+
+
+def _log_cosh(x):
+    """Numerically stable log(cosh(x))."""
+    abs_x = np.abs(x)
+    return abs_x + np.log1p(np.exp(-2 * abs_x)) - np.log(2)
 
 
 class _MultiLayerPerceptron(nn.Module):
