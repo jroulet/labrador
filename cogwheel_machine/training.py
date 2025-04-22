@@ -82,11 +82,8 @@ def _instantiate_inference(sbidir):
 
     device = config.DEVICE
     if device is None:
-        if torch.cuda.is_available():
-            device = 'cuda'
-        else:
-            logger.info('cuda unavailable, default to cpu.')
-            device = 'cpu'
+        device = utils.get_best_device()
+        logger.info(f'Using {device=}')
 
     mask = np.load(datadir/utils.MASK_FILENAME)
 

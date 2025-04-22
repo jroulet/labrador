@@ -95,13 +95,10 @@ class ParameterRescaler:
 
         device = self.rescaler_config.DEVICE
         if device is None:
-            if torch.cuda.is_available():
-                device = 'cuda'
-            else:
-                logger.info('cuda unavailable, default to cpu.')
-                device = 'cpu'
-        self.device = torch.device(device)
+            device = utils.get_best_device()
         logger.info(f'Using {device=}')
+
+        self.device = torch.device(device)
 
         params = list(self.folded_range_dic)
         self._periodic_inds = [
