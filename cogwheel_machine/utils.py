@@ -467,18 +467,20 @@ def get_best_device(by='utilization'):
     if not shutil.which('nvidia-smi'):
         return torch.device('cuda')
 
-    queries = {
-        'utilization': ('utilization.gpu', np.argmin),
-        'memory': ('memory.free', np.argmax)
-    }
-    if by not in queries:
-        raise ValueError(f'`by` must be one of {queries.keys()}.')
+    def query_gpu(query):
+        result = subprocess.check_output(
+            ['nvidia-smi', f'--query-gpu={query}',
+             '--format=csv,noheader,nounits'],
+            encoding='utf-8')
+        return [int(x) for x in result.strip().split('\n')]
 
-    query, func = queries[by]
-    result = subprocess.check_output(
-        ['nvidia-smi', f'--query-gpu={query}',
-         '--format=csv,noheader,nounits'],
-        encoding='utf-8')
-    values = [int(x) for x in result.strip().split('\n')]
-    gpu_id = func(values)
+    memory = query_gpu('memory.free')
+    utilization = query_gpu('utilization.gpu')
+
+    if by == 'utilization':
+        key = lambda i: (utilization[i], -memory[i])
+    else:
+        key = lambda i: (-memory[i], utilization[i])
+
+    gpu_id = min(range(len(memory)), key=key)
     return torch.device(f'cuda:{gpu_id}')
