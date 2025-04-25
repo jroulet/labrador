@@ -478,9 +478,13 @@ def get_best_device(by='utilization'):
     utilization = query_gpu('utilization.gpu')
 
     if by == 'utilization':
-        key = lambda i: (utilization[i], -memory[i])
+        def key(i):
+            return utilization[i], -memory[i]
+    elif by == 'memory':
+        def key(i):
+            return -memory[i], utilization[i]
     else:
-        key = lambda i: (-memory[i], utilization[i])
+        raise ValueError("`by` should be 'utilization' or 'memory'.")
 
     gpu_id = min(range(len(memory)), key=key)
     return torch.device(f'cuda:{gpu_id}')
