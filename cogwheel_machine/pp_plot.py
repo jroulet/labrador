@@ -1,6 +1,7 @@
 """P-P plots."""
 import argparse
 import multiprocessing
+import warnings
 from pathlib import Path
 from scipy import stats
 
@@ -14,6 +15,8 @@ from cogwheel import gw_plotting
 
 from cogwheel_machine import utils
 
+warnings.filterwarnings('ignore',
+                        message='torch.triangular_solve is deprecated')
 
 CREDIBLE_INTERVALS_FILENAME = 'credible_intervals.feather'
 
@@ -154,9 +157,9 @@ def _compute_credible_intervals(sbidir, n_data, n_samples, n_processes
                            map_location=torch.device('cpu'),
                            weights_only=False)
 
-    with multiprocessing.Pool(n_processes) as pool:
-        injections = (row for _, row in folded_sampled_params.iterrows())
+    injections = (row for _, row in folded_sampled_params.iterrows())
 
+    with multiprocessing.Pool(n_processes) as pool:
         credible_intervals = pool.starmap(
             _compute_credible_interval,
             ((injection, x_obs, posterior, n_samples)
@@ -230,10 +233,12 @@ def _pp_error(sigmas: float, n_sim: int):
     return x_values, *y_values
 
 
-def main(sbidir, n_data=2000, n_processes=20):
+def main(sbidir, load=True, save=True, n_data=None, n_samples=1000,
+         n_processes=20):
     """Make a P-P plot and save it in `sbidir`."""
     sbidir = Path(sbidir).resolve()
-    credible_intervals = get_credible_intervals(sbidir, n_data, n_processes)
+    credible_intervals = get_credible_intervals(
+        sbidir, load, save, n_data, n_samples, n_processes)
 
     pp_plot(credible_intervals)
     plt.title(sbidir.name)
