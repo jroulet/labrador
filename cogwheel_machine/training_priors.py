@@ -139,6 +139,14 @@ class UniformAmplitudePrior(UniformPriorMixin, Prior):
                 'd_hat_min': 1 / self.range_dic['amp_refdet'][1]}
 
 
+
+class UniformDHatPrior(UniformPriorMixin, UniformLuminosityVolumePrior):
+    """
+    Auxiliary prior intended for generating training parameters.
+    Flat in `d_hat` (https://arxiv.org/pdf/2207.03508#equation.3.18).
+    """
+
+
 class PhasePrior(UniformPriorMixin, IdentityTransformMixin, Prior):
     """Uniform prior for the phase. No change of coordinates."""
     # The reason why this class is used here instead of
@@ -187,3 +195,13 @@ class AlignedSpinSamplingPrior(RegisteredPriorMixin, CombinedPrior):
         AlignedSpinTrainingPrior.prior_classes,
         PhasePrior,
         UniformPhasePrior)
+
+
+class AlignedSpinUniformDHatTrainingPrior(RegisteredPriorMixin,
+                                          CombinedPrior):
+    """Intended for generating training parameters."""
+    prior_classes = cogwheel.utils.replace(AlignedSpinTrainingPrior.prior_classes,
+                                           UniformAmplitudePrior,
+                                           UniformDHatPrior)
+
+    default_transform_class = transform.TargetSpaceTransformAlignedSpins
