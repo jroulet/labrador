@@ -139,18 +139,18 @@ def main(rundir):
 
     prior = config.PRIOR_CLASS(**config.PRIOR_KWARGS)
 
-    # Training set:
-    _write_datadir(prior,
-                   rundir/utils.TRAINING_DIR,
-                   config.N_TRAINING_SIMULATIONS,
-                   qmc=config.QMC)
-
     # Test set:
     _write_datadir(prior,
                    rundir/utils.TEST_DIR,
                    config.N_TEST_SIMULATIONS,
                    qmc=False)  # Two different quasirandom sequences can
                                # have weird correlations.
+
+    # Training set:
+    _write_datadir(prior,
+                   rundir/utils.TRAINING_DIR,
+                   config.N_TRAINING_SIMULATIONS,
+                   qmc=config.QMC)
 
 
 def _check_rundir(rundir):
