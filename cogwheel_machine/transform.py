@@ -322,10 +322,7 @@ class TargetSpaceTransformAlignedSpins(CombinedPrior):
 
 
 class _PNCoordinatesPrior(gw_prior.PNCoordinatesPrior):
-    range_dic = {'mu1': (-np.inf, np.inf),
-                 'mu2': (-np.inf, np.inf),
-                 'lnq': None,
-                 's2z': (-1, 1)}
+
     def __init__(self, eigvecs=None, par_dic_0=None, **kwargs):
         # TODO; for now just put some values for par_dic_0 and eigvecs
         if eigvecs is None:
@@ -336,6 +333,18 @@ class _PNCoordinatesPrior(gw_prior.PNCoordinatesPrior):
             par_dic_0 = dict.fromkeys(['m1', 'm2', 's1z', 's2z'], 1.0)
 
         super().__init__(eigvecs=eigvecs, par_dic_0=par_dic_0, **kwargs)
+
+        # The parent class tries to be smart about the range_dic, undo.
+        # TODO change cogwheel.gw_prior.PNCoordinatesPrior, perhaps allow
+        # par_dic_0 = None
+        # Perhaps make a base class with abstract standard_lnprior
+        self.range_dic.update(mu1=(-np.inf, np.inf),
+                              mu2=(-np.inf, np.inf))
+        self.cubemin = np.array([rng[0] for rng in self.range_dic.values()])
+        cubemax = np.array([rng[1] for rng in self.range_dic.values()])
+        self.cubesize = cubemax - self.cubemin
+        self.folded_cubesize = self.cubesize.copy()
+        self.folded_cubesize[self._folded_inds] /= 2
 
 
 class TargetSpaceTransformAlignedSpinsPN(CombinedPrior):
