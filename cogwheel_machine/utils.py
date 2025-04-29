@@ -46,9 +46,11 @@ import multiprocessing
 import os
 import pstats
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 from cProfile import Profile
+import torch
 import numpy as np
 import pandas as pd
 import h5py
@@ -441,3 +443,48 @@ def _aux_profiled_func(args, func, profile_dir):
     profiler.dump_stats(Path(profile_dir)/f'{process_id}.prof')
 
     return result
+
+
+def get_best_device(by='utilization'):
+    """
+    Get the GPU with the best utilization or memory usage.
+
+    If there are no GPUs available, return the CPU.
+    If `nvidia-smi` is not available, return the default GPU.
+
+    Parameters
+    ----------
+    by : str
+        Either 'utilization' or 'memory'.
+
+    Returns
+    -------
+    torch.device
+    """
+    if not torch.cuda.is_available():
+        return torch.device('cpu')
+
+    if not shutil.which('nvidia-smi'):
+        return torch.device('cuda')
+
+    def query_gpu(query):
+        result = subprocess.check_output(
+            ['nvidia-smi', f'--query-gpu={query}',
+             '--format=csv,noheader,nounits'],
+            encoding='utf-8')
+        return [int(x) for x in result.strip().split('\n')]
+
+    memory = query_gpu('memory.free')
+    utilization = query_gpu('utilization.gpu')
+
+    if by == 'utilization':
+        def key(i):
+            return utilization[i], -memory[i]
+    elif by == 'memory':
+        def key(i):
+            return -memory[i], utilization[i]
+    else:
+        raise ValueError("`by` should be 'utilization' or 'memory'.")
+
+    gpu_id = min(range(len(memory)), key=key)
+    return torch.device(f'cuda:{gpu_id}')

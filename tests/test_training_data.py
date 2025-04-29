@@ -24,6 +24,7 @@ import h5py
 from cogwheel_machine import (compression,
                               generate_parameters,
                               postprocessing,
+                              pp_plot,
                               rescaling,
                               simulation,
                               training,
@@ -108,6 +109,10 @@ class IntegrationTestCase(TestCase):
 
             unfolderdir = self._train_unfolding_classifier(rescalerdir)
 
+            print('Making pp-plot...')
+            pp_plot.main(sbidir, n_data=10, n_processes=2)
+            print('Done.')
+
             self._event_end_to_end(sbidir, unfolderdir)
 
         print('Created these files:')
@@ -116,10 +121,14 @@ class IntegrationTestCase(TestCase):
     @staticmethod
     def _train_sbi(rescalerdir, extra_lines=''):
         sbidir = utils.setup_sbidir(rescalerdir)
+
+        print(f'Training sbi in {sbidir}...')
         with open(sbidir/utils.SBI_CONFIG_FILENAME, 'a',
                   encoding='utf-8') as file:
             file.write(extra_lines)
         training.main(sbidir)
+        print('Done.')
+
         return sbidir
 
     @staticmethod
