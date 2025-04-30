@@ -11,8 +11,10 @@ import numpy as np
 
 from cogwheel import utils
 
+from . import hdf5_utils
 
-class RelativeBinningSplines(utils.JSONMixin):
+
+class RelativeBinningSplines(hdf5_utils.HDF5Mixin, utils.JSONMixin):
     # TODO: Integrate this in cogwheel.likelihood.relative_binning
     """Class that implements relative binning compression."""
     def __init__(self, frequencies, fbin=None, pn_phase_tol=None,
@@ -20,19 +22,19 @@ class RelativeBinningSplines(utils.JSONMixin):
         """
         Parameters
         ----------
-        frequencies: 1-d float array
+        frequencies : 1-d float array
             RFFT frequencies [Hz], only over the domain where the whitened
             waveform is nonzero.
 
-        fbin: 1-d float array or None
+        fbin : 1-d float array or None
             Array with edges of the frequency bins used for relative
             binning [Hz]. Alternatively, pass `pn_phase_tol`.
 
-        pn_phase_tol: float or None
+        pn_phase_tol : float or None
             Tolerance in the post-Newtonian phase [rad] used for
             defining frequency bins. Alternatively, pass `fbin`.
 
-        spline_degree: int
+        spline_degree : int
             Degree of the spline used to interpolate the ratio between
             waveform and reference waveform for relative binning.
         """
@@ -167,14 +169,14 @@ class RelativeBinningSplines(utils.JSONMixin):
 
         Parameters
         ----------
-        integrand: array of shape (..., nrfft)
+        integrand : array of shape (..., nrfft)
             g(f) in the above notation (the oscillatory part of the
             integrand), array whose last axis corresponds to the FFT
             frequency grid.
 
-        Return
-        ------
-        summary_weights: array of shape (..., nbin)
+        Returns
+        -------
+        summary_weights : array of shape (..., nbin)
             array shaped like `integrand` except the last axis now
             correponds to the frequency bins.
         """
@@ -182,8 +184,17 @@ class RelativeBinningSplines(utils.JSONMixin):
         *pre_shape, nrfft = integrand.shape
         shape = pre_shape + [len(self.fbin)]
         projected_integrand = np.zeros(shape, dtype=integrand.dtype)
+
         for i, arr_f in enumerate(integrand.reshape(-1, nrfft)):
             projected_integrand[np.unravel_index(i, pre_shape)] \
                 = self._basis_splines @ arr_f
+
         df = self.frequencies[1] - self.frequencies[0]
         return 4 * df * projected_integrand.dot(self._coefficients.T)
+
+    def get_init_dict(self, **kwargs):
+        """Keyword arguments to reproduce instance."""
+        if self.pn_phase_tol is not None:
+            kwargs = {'fbin': None} | kwargs
+
+        return super().get_init_dict(**kwargs)

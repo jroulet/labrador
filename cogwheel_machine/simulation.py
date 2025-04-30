@@ -35,22 +35,23 @@ def simulate_and_preprocess_sample(simulator, data_preprocessor,
     Generate a signal based on parameters, add a noise realization, find
     a reference waveform and preprocess the data by heterodyning.
 
-    Return
-    ------
-    preprocessed_data: dict
+    Returns
+    -------
+    preprocessed_data : dict
         Contains the following entries
+
             * heterodyned_data: complex array of shape (n_det, n_freq)
             * heterodyned_signal: complex array of shape (n_det, n_freq)
             * fbin: float array of shape (n_freq,)
             * coef: 1-d float array
             * processed_coef: 1-d float array
 
-    folded_sampled_params: float array of shape (n_params,)
+    folded_sampled_parameters : float array of shape (n_parameters,)
         Signal parameters expressed in the folded target space.
 
-    unfolding_label: int
+    unfolding_label : int
         Index of the region that the parameters belong to before
-        applying folding. Takes a value between [0, 2**n_folded_params).
+        applying folding. Takes a value between [0, 2**n_folded_parameters).
     """
     simulated_input = simulator.generate_data_and_reference_waveform(
         parameters)
@@ -59,16 +60,16 @@ def simulate_and_preprocess_sample(simulator, data_preprocessor,
         **simulated_input)
 
     transform = transform_class(**transform_kwargs)
-    folded_sampled_params, unfolding_label = get_folded_sampled_params(
+    folded_sampled_parameters, unfolding_label = get_folded_sampled_parameters(
         parameters, transform)
 
-    return preprocessed_data, folded_sampled_params, unfolding_label
+    return preprocessed_data, folded_sampled_parameters, unfolding_label
 
 
 def get_transform_class(config):
     """
-    Return a transform class partially instantiatied with kwargs that are
-    the same across simulations.
+    Return a transform class partially instantiatied with kwargs that
+    are the same across simulations.
     """
     return functools.partial(config.TRANSFORM_CLASS, **config.PRIOR_KWARGS)
 
@@ -79,31 +80,31 @@ def get_i_refdet(config):
         config.PRIOR_KWARGS['ref_det_name'])
 
 
-def get_folded_sampled_params(parameters, transform):
+def get_folded_sampled_parameters(parameters, transform):
     """
-    Return
-    ------
-    folded_sampled_params: float array of shape (n_params,)
+    Returns
+    -------
+    folded_sampled_parameters : float array of shape (n_parameters,)
         Signal parameters expressed in the folded target space.
 
-    unfolding_label: int
+    unfolding_label : int
         Index of the region that the parameters belong to before
         applying folding. Takes a value between [0, 2**n_folded_params).
     """
-    sampled_params = transform.inverse_transform(
+    sampled_parameters = transform.inverse_transform(
         **parameters[transform.standard_params])
 
     # Determine which region the truth would be unfolded to:
     folded_inds = transform._folded_inds
-    values = np.fromiter(sampled_params.values(), float)[folded_inds]
+    values = np.fromiter(sampled_parameters.values(), float)[folded_inds]
     midpoint = (transform.cubemin[folded_inds]
                 + transform.folded_cubesize[folded_inds])
     flags = values > midpoint
     # Convert the array of booleans to an integer
-    unfolding_label = sum(val << i for i, val in enumerate(flags))
+    unfolding_label = sum(val << i for i, val in enumerate(flags[::-1]))
 
-    folded_sampled_params = transform.fold(**sampled_params)
-    return folded_sampled_params, unfolding_label
+    folded_sampled_parameters = transform.fold(**sampled_parameters)
+    return folded_sampled_parameters, unfolding_label
 
 
 def simulate_and_preprocess_samples(simulator,
@@ -126,36 +127,37 @@ def simulate_and_preprocess_samples(simulator,
 
     Parameters
     ----------
-    simulator: Simulator
+    simulator : Simulator
 
-    data_preprocessor: DataPreprocessor
+    data_preprocessor : DataPreprocessor
 
-    simulation_parameters: pandas.DataFrame
+    simulation_parameters : pandas.DataFrame
         Columns represent different parameters, each row is a
         simulation. The columns must contain all
         ``simulator._waveform_generator.params``.
 
-    processes: int or None
+    processes : int or None
         The number of worker processes to use. If `processes` is
         `None` then the number returned by `os.cpu_count()` is used.
 
-    Return
-    ------
-    preprocessed_data: dict
-        Contains the following entries
+    Returns
+    -------
+    preprocessed_data : dict
+        Contains the following entries:
+
             * heterodyned_data: (n_sim, n_det, n_freq) complex array
             * heterodyned_signal: (n_sim, n_det, n_freq) complex array
             * fbin: (n_freq,) float array
             * coef: (n_sim, n_coef) float array
             * processed_coef: (n_sim, n_processed_coef) float array
 
-    folded_sampled_params: (n_sim, n_params) float32 array
+    folded_sampled_parameters : (n_sim, n_parameters) float32 array
         Signal parameters expressed in the folded target space.
 
-    unfolding_labels: (n_sim,) int array
+    unfolding_labels : (n_sim,) int array
         Index of the region that the parameters of each simulation
         belong to before applying folding. Takes values between
-        [0, 2**n_folded_params).
+        [0, 2**n_folded_parameters).
     """
     args_generator = ((simulator, data_preprocessor, parameters,
                        transform_class)
@@ -163,7 +165,8 @@ def simulate_and_preprocess_samples(simulator,
     results, stats = utils.multiprocessing_starmap_profiled(
         simulate_and_preprocess_sample, args_generator, processes)
 
-    preprocessed_rows, folded_sampled_params, unfolding_labels = zip(*results)
+    preprocessed_rows, folded_sampled_parameters, unfolding_labels = zip(
+        *results)
     del results
 
     # fbin should be identical across simulations, keep only one:
@@ -179,7 +182,7 @@ def simulate_and_preprocess_samples(simulator,
             count=len(preprocessed_rows))
 
     return (preprocessed_data,
-            np.array(folded_sampled_params, np.float32),
+            np.array(folded_sampled_parameters, np.float32),
             np.array(unfolding_labels),
             stats)
 
@@ -193,10 +196,10 @@ class Simulator:
         """
         Parameters
         ----------
-        event_data_kwargs: dict
+        event_data_kwargs : dict
             Keyword arguments to cogwheel.data.EventData.gaussian_noise
 
-        approximant: str
+        approximant : str
             Name of the approximant used to inject a signal.
         """
         self.event_data_kwargs = event_data_kwargs
@@ -213,17 +216,19 @@ class Simulator:
 
         Parameters
         ----------
-        parameters: dict-like
+        parameters : dict-like
             Physical parameters of the signal to simulate. Must contain
             keys for all ``._waveform_generator.params``.
 
-        Return
-        ------
-        dict: Contains the following entries
+        Returns
+        -------
+        dict : Contains the following entries:
+
             * event_data
             * frequencies
             * ref_waveform_amp
             * ref_waveform_phase
+
             These can be passed to ``DataPreprocessor.preprocess_data``.
         """
         event_data = data.EventData.gaussian_noise(**self.event_data_kwargs)
@@ -252,6 +257,16 @@ class DataPreprocessor:
 
     @classmethod
     def from_rundir(cls, rundir):
+        """
+        Constructor from a run directory.
+
+        Parameters
+        ----------
+        rundir : os.PathLike
+            Run directory, should contain a file `data_config.py` and
+            training and test directories with simulation parameters.
+        """
+
         rundir = Path(rundir)
         config = utils.load_data_config(rundir)
 
@@ -271,10 +286,10 @@ class DataPreprocessor:
         """
         Parameters
         ----------
-        waveform_model: waveform_model.PhenomenologicalWaveformGenerator
+        waveform_model : waveform_model.PhenomenologicalWaveformGenerator
             Used to generate the reference waveform.
 
-        n_coherent_segments: int
+        n_coherent_segments : int
             When maximizing the likelihood to find a reference waveform,
             the frequency range is partitioned into segments and a
             constant phase is optimized independently in each segment.
@@ -282,7 +297,7 @@ class DataPreprocessor:
             more robust to limitations in the phase model.
             ``n_coherent_segments=1`` corresponds to fully coherent.
 
-        pn_phase_tol_compression: float
+        pn_phase_tol_compression : float
             Controls the relative-binning frequency resolution used for
             compressing the data after the reference waveform has been
             found. Lower tolerance means higher resolution.
@@ -311,23 +326,23 @@ class DataPreprocessor:
 
         Parameters
         ----------
-        event_data: cogwheel.data.EventData
+        event_data : cogwheel.data.EventData
             Data containing the event.
 
-        frequencies: float array of shape (n_freq,)
+        frequencies : float array of shape (n_freq,)
             Frequency array on which the user's reference waveform is
             defined. For now, it must match
             ``event_data.frequencies[event_data.fslice]``.
 
-        ref_waveform_amp: float array of shape (n_det, n_freq)
+        ref_waveform_amp : float array of shape (n_det, n_freq)
             User-provided reference waveform amplitude.
 
-        ref_waveform_phase: float array of shape (n_det, n_freq)
+        ref_waveform_phase : float array of shape (n_det, n_freq)
             User-provided reference waveform unwrapped phase.
 
-        Return
-        ------
-        preprocessed_data: dict
+        Returns
+        -------
+        preprocessed_data : dict
             Contains the following entries
                 * heterodyned_data
                 * heterodyned_signal
@@ -335,7 +350,7 @@ class DataPreprocessor:
                 * coef
                 * processed_coef
 
-        transform_kwargs: dict
+        transform_kwargs : dict
             Contains event-dependent keyword arguments to the target-
             space coordinate transform.
         """
@@ -362,10 +377,9 @@ class DataPreprocessor:
             waveform_model=self.waveform_model,
             n_coherent_segments=self.n_coherent_segments)
 
-        coef, d_h0_semicoherent, h0_h0 = like.fit_coef(
-            frequencies,
-            ref_waveform_phase=ref_waveform_phase,
-            ref_waveform_amp=ref_waveform_amp)
+        coef, h0_h0 = like.fit_coef(frequencies,
+                                    ref_waveform_phase=ref_waveform_phase,
+                                    ref_waveform_amp=ref_waveform_amp)
 
         heterodyned_data, heterodyned_signal, fbin \
             = like.get_heterodyned_data_and_signal(
@@ -379,7 +393,6 @@ class DataPreprocessor:
             'fbin': fbin,
             'coef': coef,
             'processed_coef': processed_coef,
-            'd_h0_semicoherent': d_h0_semicoherent,
             'h0_h0': h0_h0,
             'd_h': event_data.injection['d_h'],
             'h_h': event_data.injection['h_h']}
@@ -393,7 +406,7 @@ def _check_rundir(rundir):
     datadirs = rundir/utils.TRAINING_DIR, rundir/utils.TEST_DIR
 
     new_filenames = (utils.PREPROCESSED_DATA_FILENAME,
-                     utils.FOLDED_SAMPLED_PARAMS_FILENAME,
+                     utils.FOLDED_SAMPLED_PARAMETERS_FILENAME,
                      utils.UNFOLDING_LABELS_FILENAME)
 
     # Check that there is no data already
@@ -428,11 +441,11 @@ def submit_condor(rundir,
 
     Parameters
     ----------
-    rundir: str, os.PathLike
+    rundir : os.PathLike
         Run directory, should contain a file `data_config.py` and
         training and test directories with simulation parameters.
 
-    request_cpus, request_memory, request_disk: int or str
+    request_cpus, request_memory, request_disk : int or str
         Specifications in the HTCondor submit file.
 
     **submit_kwargs
@@ -466,10 +479,10 @@ def append_to_hdf5(filename, **arrays):
 
     Parameters
     ----------
-    filename: os.PathLike
+    filename : os.PathLike
         Path to an hdf5 file. If it doesn't exist, it will be created.
 
-    **arrays:
+    **arrays
         Data to append. Keys are the groups in the hdf5.
     """
     with h5py.File(filename, "a") as h5file:
@@ -491,7 +504,7 @@ def _populate_datadir(datadir, simulator, data_preprocessor,
     stats = pstats.Stats()
 
     for chunk_start in range(0, len(simulation_parameters), chunk_size):
-        (preprocessed_data, folded_sampled_params, unfolding_labels,
+        (preprocessed_data, folded_sampled_parameters, unfolding_labels,
          chunk_stats) = simulate_and_preprocess_samples(
             simulator,
             data_preprocessor,
@@ -501,8 +514,8 @@ def _populate_datadir(datadir, simulator, data_preprocessor,
 
         append_to_hdf5(datadir/utils.PREPROCESSED_DATA_FILENAME,
                        **preprocessed_data)
-        append_to_hdf5(datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME,
-                       dataset=folded_sampled_params)
+        append_to_hdf5(datadir/utils.FOLDED_SAMPLED_PARAMETERS_FILENAME,
+                       dataset=folded_sampled_parameters)
         append_to_hdf5(datadir/utils.UNFOLDING_LABELS_FILENAME,
                        dataset=unfolding_labels)
 
@@ -515,16 +528,16 @@ def setup_simulator(rundir):
     """
     Parameters
     ----------
-    rundir: str, os.PathLike
+    rundir : str, os.PathLike
         Run directory, should contain a file `data_config.py`.
 
     Returns
     -------
-    simulator: Simulator
+    simulator : Simulator
 
-    data_preprocessor: DataPreprocessor
+    data_preprocessor : DataPreprocessor
 
-    transform_class: type
+    transform_class : type
         Read from {rundir}/config.py
     """
     rundir = Path(rundir)
@@ -543,7 +556,7 @@ def main(rundir, processes=None):
 
     simulator, data_preprocessor, transform_class = setup_simulator(rundir)
 
-    for dirname in utils.TRAINING_DIR, utils.TEST_DIR:
+    for dirname in utils.TEST_DIR, utils.TRAINING_DIR:
         _populate_datadir(rundir/dirname, simulator, data_preprocessor,
                           transform_class, processes)
 
