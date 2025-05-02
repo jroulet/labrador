@@ -6,6 +6,9 @@ from pathlib import Path
 import xgboost
 import numpy as np
 import pandas as pd
+import cogwheel.utils
+
+from scipy.optimize import differential_evolution
 
 from cogwheel.prior_ratio import PriorRatio
 
@@ -89,39 +92,68 @@ def _train_regressor_and_compute_weights(rundir,
             priordir/utils.TEST_DIR/LN_PRIOR_RATIOS_FILENAME)[mask_test]
 
         # Train (or load) regressor
-        filename = priordir/'ln-prior-ratio_regressor.ubj'
-        booster = xgboost.XGBRegressor()
-        if not recompute_existing and filename.exists():
-            print(f'Loading existing {filename}...')
-            booster.load_model(filename)
+        filename_mu = priordir/'ln-prior-ratio_regressor_mu.ubj'
+        filename_sigma = priordir/'ln-prior-ratio_regressor_sigma.ubj'
+        booster_mu = xgboost.XGBRegressor()
+        booster_sigma = xgboost.XGBRegressor()
+        if (not recompute_existing
+                and filename_mu.exists()
+                and filename_sigma.exists()):
+            print(f'Loading existing {filename_mu} and {filename_sigma}...')
+            booster_mu.load_model(filename_mu)
+            booster_sigma.load_model(filename_sigma)
         else:
-            booster.fit(compressed_data_train, ln_prior_ratios_train)
-            booster.save_model(filename)
+            booster_mu.fit(compressed_data_train, ln_prior_ratios_train)
+            booster_mu.save_model(filename_mu)
+            mu = booster_mu.predict(compressed_data_train)
+            booster_sigma.fit(
+                compressed_data_train,
+                np.sqrt(np.abs(ln_prior_ratios_train**2 - mu**2)))
+            booster_sigma.save_model(filename_sigma)
 
         # Compute weights
-        _compute_and_save_weights(booster,
+        _compute_and_save_weights(booster_mu,
+                                  booster_sigma,
                                   compressed_data_test,
                                   ln_prior_ratios_test,
                                   priordir/utils.TEST_DIR,
                                   recompute_existing)
 
-        _compute_and_save_weights(booster,
+        _compute_and_save_weights(booster_mu,
+                                  booster_sigma,
                                   compressed_data_train,
                                   ln_prior_ratios_train,
                                   priordir/utils.TRAINING_DIR,
                                   recompute_existing)
 
 
-def _compute_and_save_weights(booster, compressed_data, ln_prior_ratios,
-                              prior_datadir, recompute_existing):
+def _compute_and_save_weights(booster_mu, booster_sigma, compressed_data,
+                              ln_prior_ratios, prior_datadir,
+                              recompute_existing):
     filename = prior_datadir/utils.WEIGHTS_FILENAME
     if not recompute_existing and filename.exists():
         print(f'Skipping existing {filename}...')
         return
 
-    ln_prior_ratios_pred = booster.predict(compressed_data)
+    mu = booster_mu.predict(compressed_data)
+    sigma = booster_sigma.predict(compressed_data)
+
+    result = differential_evolution(
+        lambda x, *args: -_reweighting_efficiency(*x, *args),
+        bounds=[(0, 2), (0, 4)],
+        args=(mu, sigma, ln_prior_ratios))
+    a, b = result.x
+    ln_prior_ratios_pred = a * mu + b * sigma
     weights = np.exp(ln_prior_ratios - ln_prior_ratios_pred)
+    print(f'Achieved reweighting efficiency of {-result.fun} '
+          f'for {prior_datadir}.')
     np.save(filename, weights)
+
+
+def _reweighting_efficiency(a, b, mu, sigma, ln_prior_ratios):
+    ln_prior_ratios_pred = a * mu + b * sigma
+    weights = np.exp(ln_prior_ratios - ln_prior_ratios_pred)
+    return cogwheel.utils.n_effective(weights) / len(weights)
 
 
 def main(rundir, recompute_existing=False):
@@ -136,7 +168,9 @@ def main(rundir, recompute_existing=False):
         (physical_prior / simulation_prior) / predicted_ratio
 
     where ``predicted_ratio`` is a function of the data only (the output
-    of a regressor trained to predict physical_prior/simulation_prior).
+    of a regressor trained to predict physical_prior/simulation_prior,
+    with a variance correction that is designed to maximize the
+    reweighting efficiency).
     Weighting by the physical-to-simulation prior ratio ensures that the
     loss function is minimized when the network outputs the posterior
     under the *physical* prior. Dividing the weights by the predicted
