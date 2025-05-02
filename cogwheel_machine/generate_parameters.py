@@ -106,7 +106,6 @@ def submit_condor(rundir,
     cogwheel.utils.submit_condor(**submit_kwargs)
 
 
-
 def _write_datadir(prior, datadir, n_simulations, qmc):
     if qmc:
         simulation_parameters = _generate_qmc_samples(prior, n_simulations)
