@@ -91,7 +91,8 @@ class MassesTransform(TransformMixin, Prior):
     def get_init_dict(self):
         """Keyword arguments to reproduce the class instance."""
         return {'coef0pn': self.coef0pn,
-                'mchirp_break': self.mchirp_break}
+                'mchirp_break': self.mchirp_break,
+                'q_min': np.exp(self.range_dic['lnq'][0])}
 
     def _regularized0pn(self, mchirp):
         mchirp = np.asarray(mchirp)  # piecewise needs arrays
