@@ -93,13 +93,13 @@ class UnfoldingClassifier:
             If True, the confusion matrix will be computed using the
             test data. If False, using the training data.
         """
-        compressed_data, rescaled_params, unfolding_labels = self._load_data(
-            self.unfolderdir, use_test_data)
+        compressed_data, rescaled_params, unfolding_labels, weights = \
+            self._load_data(self.unfolderdir, use_test_data)
 
         predictions = self.predict(compressed_data, rescaled_params)
-        return self._confusion_matrix(predictions, unfolding_labels)
+        return self._confusion_matrix(predictions, unfolding_labels, weights)
 
-    def _confusion_matrix(self, predictions, true_labels):
+    def _confusion_matrix(self, predictions, true_labels, weights):
         """
         Compute the confusion matrix for the given predictions.
 
@@ -120,8 +120,9 @@ class UnfoldingClassifier:
         confusion_matrix = np.zeros((num_class, num_class))
 
         # Populate the probabilistic confusion matrix
-        for true_label, probabilities in zip(true_labels, predictions):
-            confusion_matrix[true_label] += probabilities
+        for true_label, probabilities, weight in zip(
+                true_labels, predictions, weights):
+            confusion_matrix[true_label] += weight * probabilities
 
         # Normalize rows
         confusion_matrix /= confusion_matrix.sum(axis=1, keepdims=True) + 1e-9
