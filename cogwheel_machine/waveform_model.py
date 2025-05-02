@@ -78,7 +78,7 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
             rundir/utils.TRAINING_DIR/utils.PARAMETERS_FILENAME
             )[:n_svd_examples]
 
-        waveform_model =  cls.from_waveforms(
+        waveform_model = cls.from_waveforms(
             frequencies, wht_filter, waveform_generator, simulation_parameters,
             config.PN_PHASE_TOL)
 
