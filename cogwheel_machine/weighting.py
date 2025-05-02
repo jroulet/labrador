@@ -89,7 +89,7 @@ def _train_regressor_and_compute_weights(rundir,
             priordir/utils.TEST_DIR/LN_PRIOR_RATIOS_FILENAME)[mask_test]
 
         # Train (or load) regressor
-        filename = priordir/utils.TRAINING_DIR/'ln-prior-ratio_regressor.ubj'
+        filename = priordir/'ln-prior-ratio_regressor.ubj'
         booster = xgboost.XGBRegressor()
         if not recompute_existing and filename.exists():
             print(f'Loading existing {filename}...')
@@ -100,15 +100,15 @@ def _train_regressor_and_compute_weights(rundir,
 
         # Compute weights
         _compute_and_save_weights(booster,
-                                  compressed_data_train,
-                                  ln_prior_ratios_train,
-                                  priordir/utils.TRAINING_DIR,
-                                  recompute_existing)
-
-        _compute_and_save_weights(booster,
                                   compressed_data_test,
                                   ln_prior_ratios_test,
                                   priordir/utils.TEST_DIR,
+                                  recompute_existing)
+
+        _compute_and_save_weights(booster,
+                                  compressed_data_train,
+                                  ln_prior_ratios_train,
+                                  priordir/utils.TRAINING_DIR,
                                   recompute_existing)
 
 
