@@ -330,6 +330,11 @@ class TargetSpaceTransformAlignedSpins(CombinedPrior):
 
 
 class _PNCoordinatesPrior(gw_prior.PNCoordinatesPrior):
+    range_dic = {'mu1': (-np.inf, np.inf),
+                 'mu2': (-np.inf, np.inf),
+                 'lnq': None,
+                 's2z': (-1, 1),
+                }
     def __init__(self, eigvecs=None, par_dic_0=None, **kwargs):
         # TODO; for now just put some values for par_dic_0 and eigvecs
         if eigvecs is None:
