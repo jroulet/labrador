@@ -72,7 +72,7 @@ class IntegrationTestCase(TestCase):
         # Generate training data
         rundir = utils.setup_rundir(parentdir)
         generate_parameters.main(rundir)
-        simulation.main(rundir)
+        simulation.main(rundir, processes=10)
 
         size, peak = tracemalloc.get_traced_memory()
         print(f'{size=}, {peak=}')

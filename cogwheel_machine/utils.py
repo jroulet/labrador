@@ -414,6 +414,13 @@ def multiprocessing_starmap_profiled(func, iterable, processes=None):
     stats : pstats.Stats
         Profiling statistics.
     """
+    if processes is None:
+        processes = os.cpu_count()
+    elif processes < 0:
+        processes += os.cpu_count()
+    else:
+        processes = min(os.cpu_count(), processes)
+
     with tempfile.TemporaryDirectory() as profile_dir:
         profiled_func = functools.partial(_aux_profiled_func,
                                           func=func, profile_dir=profile_dir)
