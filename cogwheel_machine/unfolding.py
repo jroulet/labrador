@@ -135,7 +135,7 @@ class UnfoldingClassifier:
         else:
             foldername = utils.TRAINING_DIR
 
-        rescalerdir, priordir, rundir = unfolderdir.parents[:3]
+        rescalerdir, priordir, rundir = unfolderdir.resolve().parents[:3]
         datadir = rundir/foldername
         rescaled_params = np.load(
             rescalerdir/foldername/utils.RESCALED_PARAMETERS_FILENAME)
