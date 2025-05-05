@@ -128,7 +128,6 @@ def generate_data_and_transform(rundir, prior_cls=None):
     transform : cogwheel_machine.transform.TransformMixin
         Instance of the transform class that corresponds to these data.
     """
-    # TODO replace similar function in tests/test_training_data.py by this one
     data_config = utils.load_data_config(rundir)
 
     if prior_cls is None:

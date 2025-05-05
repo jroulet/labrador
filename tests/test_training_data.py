@@ -1,15 +1,4 @@
-"""
-Integration test of the modules for generating data and training, i.e.:
-
-    * generate_parameters
-    * weighting
-    * simulation
-    * compression
-    * rescaling
-    * training
-    * unfolding
-
-"""
+"""Integration test."""
 import os
 os.environ['OMP_NUM_THREADS'] = '1'
 
@@ -23,6 +12,7 @@ import h5py
 
 from cogwheel_machine import (compression,
                               generate_parameters,
+                              injections,
                               postprocessing,
                               pp_plot,
                               rescaling,
@@ -140,13 +130,8 @@ class IntegrationTestCase(TestCase):
     @staticmethod
     def _event_end_to_end(sbidir, unfolderdir):
         rescalerdir, _, rundir = sbidir.parents[:3]
-        preprocessed_data, transform \
-            = generate_preprocessed_data_and_transform(rundir)
-
-        compressed_data = compression.compress_data(
-            rundir,
-            preprocessed_data['heterodyned_data'],
-            preprocessed_data['processed_coef'])
+        _, compressed_data, transform \
+            = injections.generate_data_and_transform(rundir)
 
         sbi_posterior = training.load_posterior(sbidir)
 
@@ -186,39 +171,6 @@ class IntegrationTestCase(TestCase):
         np.testing.assert_almost_equal(folded_sampled_parameters, unrescaled)
 
         self.assertEqual(lnj.shape, rescaled_parameters.shape[:-1])
-
-
-def generate_preprocessed_data_and_transform(rundir):
-    """
-    Return preprocessed data and transform for a random simulated event.
-
-    Parameters
-    ----------
-    rundir : os.PathLike
-        Path to run directory.
-
-    Returns
-    -------
-    preprocessed_data : dict
-        Contains keys 'heterodyned_data', 'processed_coef', etc.
-
-    transform : cogwheel_machine.transform.TransformMixin
-        Instance of the transform class that corresponds to these data.
-    """
-    data_config = utils.load_data_config(rundir)
-    prior = data_config.PRIOR_CLASS(**data_config.PRIOR_KWARGS)
-    parameters = prior.generate_random_samples(1).iloc[0]
-
-    simulator, data_preprocessor, transform_class \
-        = simulation.setup_simulator(rundir)
-
-    simulated_input = simulator.generate_data_and_reference_waveform(
-        parameters)
-    preprocessed_data, transform_kwargs \
-        = data_preprocessor.preprocess_data(**simulated_input)
-
-    transform = transform_class(**transform_kwargs)
-    return preprocessed_data, transform
 
 
 if __name__ == '__main__':
