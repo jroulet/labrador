@@ -38,13 +38,13 @@ def main(eventdir, sampler_cls, run_inference=True):
     """
     Create an injection, save it, and launch a ``cogwheel`` inference.
 
-    This will ::
+    This will:
 
     1. Draw parameters from the physical prior and create
-      synthetic data (constrained to satisfy the mask constraints in
-      ``rundir/data_config.py``)
+       synthetic data (constrained to satisfy the mask constraints in
+       ``rundir/data_config.py``)
     2. Save the data in `eventdir` so that they are readable by
-      ``cogwheel`` and ``cogwheel_machine``
+       ``cogwheel`` and ``cogwheel_machine``
     3. Infer the posterior using a stochastic sampler (``cogwheel``).
 
     Can be used for comparing ``cogwheel_machine`` against ``cogwheel``.
