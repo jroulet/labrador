@@ -129,23 +129,17 @@ class IntegrationTestCase(TestCase):
 
     @staticmethod
     def _event_end_to_end(sbidir, unfolderdir):
-        rescalerdir, _, rundir = sbidir.parents[:3]
-        _, compressed_data, transform \
-            = injections.generate_data_and_transform(rundir)
+        posterior = postprocessing.Posterior.from_tree(sbidir, unfolderdir)
 
-        sbi_posterior = training.load_posterior(sbidir)
+        _, compressed_data, transform = injections.generate_data_and_transform(
+            rundir=sbidir.parents[2])
 
-        unfolding_classifier = unfolding.UnfoldingClassifier(unfolderdir)
-        parameter_rescaler = rescaling.ParameterRescaler(rescalerdir)
-        postprocessor = postprocessing.PostProcessor(
-            unfolding_classifier, parameter_rescaler, transform)
+        samples, lnprob_standard = posterior.generate_samples_and_lnprob(
+            100, compressed_data, transform)
 
-        rescaled_parameters = sbi_posterior.sample([100], x=compressed_data)
-        samples, lnj = postprocessor.postprocess_samples(compressed_data,
-                                                         rescaled_parameters)
         assert set(transform.standard_params) <= set(samples)
         assert set(transform.sampled_params) <= set(samples)
-        assert len(lnj) == len(samples)
+        assert len(lnprob_standard) == len(samples)
 
     def _assert_same_training_and_testing_files(self, rundir):
         training_files = set(os.listdir(rundir/utils.TRAINING_DIR))
