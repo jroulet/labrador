@@ -13,7 +13,7 @@ import h5py
 from cogwheel_machine import (compression,
                               generate_parameters,
                               injections,
-                              postprocessing,
+                              posterior,
                               pp_plot,
                               rescaling,
                               simulation,
@@ -129,12 +129,12 @@ class IntegrationTestCase(TestCase):
 
     @staticmethod
     def _event_end_to_end(sbidir, unfolderdir):
-        posterior = postprocessing.Posterior.from_tree(sbidir, unfolderdir)
+        post = posterior.Posterior.from_tree(sbidir, unfolderdir)
 
         _, compressed_data, transform = injections.generate_data_and_transform(
             rundir=sbidir.parents[2])
 
-        samples, lnprob_standard = posterior.generate_samples_and_lnprob(
+        samples, lnprob_standard = post.generate_samples_and_lnprob(
             100, compressed_data, transform)
 
         assert set(transform.standard_params) <= set(samples)
