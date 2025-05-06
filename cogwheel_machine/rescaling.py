@@ -515,8 +515,9 @@ class ParameterRescaler:
         self._check_no_rescaled_parameter_files()
 
         kwargs = self.rescaler_config.RESCALER_TRAIN_KWARGS
-        optimizer = torch.optim.Adam(self._moments_model.parameters(),
-                                     **kwargs['optimizer_kwargs'])
+        optimizer_cls = kwargs.get('optimizer_cls', torch.optim.Adam)
+        optimizer = optimizer_cls(self._moments_model.parameters(),
+                                  **kwargs['optimizer_kwargs'])
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, **kwargs['scheduler_kwargs'])
 
