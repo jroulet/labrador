@@ -85,7 +85,7 @@ class Posterior:
 
         See Also
         --------
-        from_tree : To loads these inputs from the directory tree.
+        from_tree : To load these inputs from the directory tree.
         """
         self.parameter_rescaler = parameter_rescaler
         self.sbi_posterior = sbi_posterior
@@ -135,8 +135,9 @@ class Posterior:
             compressed_data, transform, rescaled_parameters)
 
         cogwheel.utils.update_dataframe(samples, self.fixed_par_dic)
-
-        return samples, lnp_sbi + lnj
+        # lnj := log |∂{standard} / ∂{folded_rescaled}|
+        # p(standard) = p(folded_rescaled) / |∂{standard}/∂{folded_rescaled}|
+        return samples, lnp_sbi - lnj
 
     def _postprocess_samples(self, compressed_data, transform,
                              rescaled_parameters):
@@ -165,6 +166,7 @@ class Posterior:
         lnj : (n_samples,) float array
             Logarithm of the Jacobian of the transformation from
             folded-rescaled to unfolded standard parameters.
+            log |∂{standard} / ∂{folded_rescaled}|
         """
         # Unrescale:
         with torch.no_grad():
@@ -183,9 +185,9 @@ class Posterior:
         # Transform to standard coordinates:
         transform.transform_samples(parameters)
         lnj_v = np.vectorize(transform.ln_jacobian_determinant, otypes=[float])
-        lnj_transform = lnj_v(**parameters[transform.standard_params])
+        lnj_inverse_transform = lnj_v(**parameters[transform.standard_params])
 
-        return parameters, lnj_unrescale + lnp_unfold + lnj_transform
+        return parameters, lnj_unrescale - lnp_unfold - lnj_inverse_transform
 
 
 def _unfold(transform, unfolding_probabilities,
@@ -196,8 +198,8 @@ def _unfold(transform, unfolding_probabilities,
     Parameters
     ----------
     transform : transform.TransformMixin
-        Transforms between standard parameters and coordinates
-        suitable for folding.
+        Transforms between standard parameters and coordinates suitable
+        for folding.
 
     unfolding_probabilities : (n_samples, n_unfolding) float array
         For each sample, probability of unfolding into each of the

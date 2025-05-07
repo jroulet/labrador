@@ -232,6 +232,7 @@ class ParameterRescaler:
 
         lnj : float
             Log Jacobian determinant of the unrescaling transformation.
+            log |∂{unrescaled} / ∂{rescaled}|
         """
         compressed_data = torch.as_tensor(compressed_data).to(self.device)
         parameters = torch.as_tensor(rescaled_parameters).to(self.device)
@@ -275,6 +276,11 @@ class ParameterRescaler:
     def _compactify_bounded_nonperiodic(self, parameters):
         """
         Compactify columns for ``.bounded_nonperiodic_params`` inplace.
+
+        Returns
+        -------
+        log_jacobian_determinant : float
+            log |∂{compact_value} / ∂{value}|
         """
         lnj = 0.0
         for i, par in zip(self._bounded_nonperiodic_inds,
@@ -379,7 +385,6 @@ class ParameterRescaler:
             return rescaled, np.log(np.abs(slope))
         return rescaled
 
-
     def _remove_mean(self, mean, parameters):
         """
         Remove mean of the parameters, using circular mean for the
@@ -426,6 +431,11 @@ class ParameterRescaler:
         the log Jacobian determinant.
 
         Inverse of ``._decompactify_periodic``.
+
+        Returns
+        -------
+        log_jacobian_determinant : float
+            log |∂{compact_value} / ∂{value}|
         """
         lnj = 0.0
         for i in self._periodic_inds:
@@ -811,6 +821,10 @@ def _decompactify(compact_value, a, b, eps=1e-7):
 def _compactify_log_jacobian_determinant(value, a, b):
     """
     Log of the Jacobian determinant of the ``_compactify`` function.
+
+    That is:
+
+        log |∂{compact_value} / ∂{value}|
 
     Parameters
     ----------

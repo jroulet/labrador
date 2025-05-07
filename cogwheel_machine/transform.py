@@ -135,15 +135,14 @@ class MassesTransform(TransformMixin, Prior):
         mchirp = m1 * q**.6 / (1 + q)**.2
         regularized0pn = self._regularized0pn(mchirp)
 
-        # mchirp ∝ regularized0pn ^ exponent
-        exponent_low = -3/5
-        exponent_high = 1
-        exponent = np.piecewise(mchirp,
-                                [mchirp < self.mchirp_break],
-                                [exponent_low, exponent_high])
+        if mchirp < self.mchirp_break:
+            lnj_regularized0pn_lnmchirp = np.log(np.abs(5/3*regularized0pn))
+        else:
+            lnj_regularized0pn_lnmchirp = np.log(np.abs(
+                regularized0pn
+                + 1/16 * (np.pi*self.mchirp_break*lal.MTSUN_SI)**(-5/3)))
 
-        lnj_regularized0pn_lnmchirp = np.log(np.abs(regularized0pn / exponent))
-        lnj_lnmchirplnq_m1m2 = -np.log((m1*m2)**2 * (m1 + m2)) / 5
+        lnj_lnmchirplnq_m1m2 = -np.log(m1*m2)
 
         return lnj_regularized0pn_lnmchirp + lnj_lnmchirplnq_m1m2
 
@@ -295,7 +294,7 @@ class DistanceTransform(TransformMixin, Prior):
         I.e.
             ln(|∂{relative_dhat} / ∂{d_luminosity}|)
         """
-        lnj_relativedhat_dhat = -np.log(self.amp_ref_det)
+        lnj_relativedhat_dhat = np.log(self.amp_ref_det)
 
         lnj_dhat_dluminosity \
             = self._distance_transformer.ln_jacobian_determinant(
