@@ -14,7 +14,7 @@ from cogwheel_machine import rescaling, training, unfolding, utils
 
 class Posterior:
     """
-    Turn folded rescaled parameters into unfolded standard parameters.
+    Generate samples in the space of physical parameters.
 
     This class orchestrates the different transformations that need to
     take place to turn the output of the normalizing flow (samples of
@@ -131,7 +131,7 @@ class Posterior:
         lnp_sbi = self.sbi_posterior.log_prob(rescaled_parameters,
                                               x=compressed_data)
 
-        samples, lnj = self._postprocess_samples(
+        samples, lnj = self.unrescale_unfold_transform(
             compressed_data, transform, rescaled_parameters)
 
         cogwheel.utils.update_dataframe(samples, self.fixed_par_dic)
@@ -139,8 +139,8 @@ class Posterior:
         # p(standard) = p(folded_rescaled) / |∂{standard}/∂{folded_rescaled}|
         return samples, lnp_sbi - lnj
 
-    def _postprocess_samples(self, compressed_data, transform,
-                             rescaled_parameters):
+    def unrescale_unfold_transform(self, compressed_data, transform,
+                                   rescaled_parameters):
         """
         End to end, from folded-rescaled to standard parameters.
 
@@ -187,8 +187,58 @@ class Posterior:
         lnj_v = np.vectorize(transform.ln_jacobian_determinant, otypes=[float])
         lnj_inverse_transform = lnj_v(**parameters[transform.standard_params])
 
+        # Add extra information for debugging purposes (TODO remove?)
+        rescaled_df = pd.DataFrame(
+            rescaled_parameters,
+            columns=[f'rescaled_{par}' for par in transform.sampled_params])
+        cogwheel.utils.update_dataframe(parameters, rescaled_df)
+        parameters['lnj_unrescale'] = lnj_unrescale
+        parameters['lnp_unfold'] = lnp_unfold
+        parameters['lnj_inverse_transform'] = lnj_inverse_transform
+        parameters['lnj'] = lnj_unrescale - lnp_unfold - lnj_inverse_transform
+
         return parameters, lnj_unrescale - lnp_unfold - lnj_inverse_transform
 
+    def inversetransform_fold_rescale(self, compressed_data, transform,
+                                      samples):
+        """
+        From physical parameters to folded-rescaled parameters.
+
+        Inverse of ``.unrescale_unfold_transform()`` (but note that
+        ``.unrescale_unfold_transform()`` is not the inverse of this
+        function because folding is not invertible).
+
+        Parameters
+        ----------
+        compressed_data : (n_samples, n_compressed_params) array
+            Compressed data, i.e. the output of the compression step.
+            This is the input to the normalizing flow.
+
+        transform : transform.TransformMixin
+            Transforms between standard parameters and coordinates
+            suitable for folding.
+
+        samples : pandas.DataFrame
+            Parameters in the physical space.
+
+        Returns
+        -------
+        rescaled_parameters : (n_samples, n_rescaled_params) array
+            Rescaled-folded parameters.
+        """
+        # Inverse-transform to coordinates suitable for folding:
+        samples = samples.copy()  # Leave input untouched
+        transform.inverse_transform_samples(samples)
+
+        # Fold:
+        folded = np.vectorize(
+            transform.fold,
+            signature=','.join('()' for _ in transform.sampled_params)+'->(n)'
+        )(**samples[transform.sampled_params])
+
+        # Rescale:
+        rescaled = self.parameter_rescaler.rescale(compressed_data, folded)
+        return rescaled
 
 def _unfold(transform, unfolding_probabilities,
             folded_sampled_parameters):
@@ -222,6 +272,7 @@ def _unfold(transform, unfolding_probabilities,
                             signature='(n)->(m,n)', otypes=[float])
     unfolded = unfold_v(folded_sampled_parameters)
     cumprobs = np.cumsum(unfolding_probabilities, axis=-1)
+    np.testing.assert_allclose(cumprobs[..., -1], 1, rtol=1e-5)
     n_samples = len(cumprobs)
 
     rng = np.random.default_rng()
