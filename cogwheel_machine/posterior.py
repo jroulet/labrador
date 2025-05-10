@@ -129,7 +129,7 @@ class Posterior:
             [n_samples], x=compressed_data, show_progress_bars=False)
 
         lnp_sbi = self.sbi_posterior.log_prob(rescaled_parameters,
-                                              x=compressed_data)
+                                              x=compressed_data).numpy()
 
         samples, lnj = self.unrescale_unfold_transform(
             compressed_data, transform, rescaled_parameters)
@@ -174,6 +174,7 @@ class Posterior:
                 = self.parameter_rescaler.unrescale(compressed_data,
                                                     rescaled_parameters)
         folded_sampled_parameters = folded_sampled_parameters.cpu()
+        lnj_unrescale = lnj_unrescale.cpu().numpy()
 
         # Unfold:
         unfolding_probabilities = self.unfolding_classifier.predict(

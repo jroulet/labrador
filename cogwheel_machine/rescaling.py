@@ -93,6 +93,23 @@ class ParameterRescaler:
         assert set(self.bounded_params) <= self.folded_range_dic.keys()
         assert set(self.periodic_params) <= self.folded_range_dic.keys()
 
+        compactification = getattr(
+            self.rescaler_config, 'COMPACTIFICATION', 'tanh')
+
+        if compactification == 'tanh':
+            self._compactify = _compactify
+            self._decompactify = _decompactify
+            self._compactify_log_jacobian_determinant \
+                = _compactify_log_jacobian_determinant
+        elif compactification == 'gaussian':
+            self._compactify = _compactify_gaussian
+            self._decompactify = _decompactify_gaussian
+            self._compactify_log_jacobian_determinant \
+                = _compactify_log_jacobian_determinant_gaussian
+        else:
+            raise ValueError(
+                f'Unrecognized {rescaler_config.COMPACTIFICATION=}')
+
         device = self.rescaler_config.DEVICE
         if device is None:
             device = utils.get_best_device()
@@ -241,7 +258,7 @@ class ParameterRescaler:
 
         model_outputs = self._get_model_outputs(compressed_data)
         mean, chol_inv = self._get_mean_and_chol_inv(model_outputs)
-        log_det_chol_inv = model_outputs[3].sum(dim=1).detach().cpu().numpy()
+        log_det_chol_inv = model_outputs[3].sum(dim=1).detach()
 
         return self._unrescale(compressed_data, parameters, mean, chol_inv,
                                log_det_chol_inv)
@@ -270,8 +287,8 @@ class ParameterRescaler:
         """
         for i, par in zip(self._bounded_nonperiodic_inds,
                           self.bounded_nonperiodic_params):
-            parameters[..., i] = _decompactify(parameters[..., i],
-                                               *self.folded_range_dic[par])
+            parameters[..., i] = self._decompactify(
+                parameters[..., i], *self.folded_range_dic[par])
 
     def _compactify_bounded_nonperiodic(self, parameters):
         """
@@ -285,11 +302,10 @@ class ParameterRescaler:
         lnj = 0.0
         for i, par in zip(self._bounded_nonperiodic_inds,
                           self.bounded_nonperiodic_params):
-            parameters[..., i] = _compactify(parameters[..., i],
-                                             *self.folded_range_dic[par])
-            lnj += _compactify_log_jacobian_determinant(
-                parameters[..., i].detach().cpu().numpy(),
-                *self.folded_range_dic[par])
+            parameters[..., i] = self._compactify(parameters[..., i],
+                                                  *self.folded_range_dic[par])
+            lnj += self._compactify_log_jacobian_determinant(
+                parameters[..., i].detach(), *self.folded_range_dic[par])
 
         return lnj
 
@@ -422,8 +438,8 @@ class ParameterRescaler:
         (-pi, pi), and had their circular mean subtracted.
         """
         for i in self._periodic_inds:
-            parameters[..., i] = _decompactify(parameters[..., i],
-                                               -np.pi, np.pi)
+            parameters[..., i] = self._decompactify(parameters[..., i],
+                                                    -np.pi, np.pi)
 
     def _compactify_periodic(self, parameters):
         """
@@ -439,9 +455,10 @@ class ParameterRescaler:
         """
         lnj = 0.0
         for i in self._periodic_inds:
-            parameters[..., i] = _compactify(parameters[..., i], -np.pi, np.pi)
-            lnj += _compactify_log_jacobian_determinant(
-                parameters[..., i].detach().cpu().numpy(), -np.pi, np.pi)
+            parameters[..., i] = self._compactify(
+                parameters[..., i], -np.pi, np.pi)
+            lnj += self._compactify_log_jacobian_determinant(
+                parameters[..., i].detach(), -np.pi, np.pi)
         return lnj
 
     def _remove_scale(self, chol_inv, parameters):
@@ -828,23 +845,93 @@ def _compactify_log_jacobian_determinant(value, a, b):
 
     Parameters
     ----------
-    value: float
+    value : float
         The value at which to compute the log Jacobian determinant.
 
-    a, b: float
+    a, b : float
         The bounds of the finite interval.
 
     Returns
     -------
-    float: The log of the Jacobian determinant.
+    float : The log of the Jacobian determinant.
     """
-    return np.log((b - a) / 2) - 2 * _log_cosh(value)
+    return torch.log(torch.as_tensor(b - a) / 2) - 2 * _log_cosh(value)
 
 
 def _log_cosh(x):
     """Numerically stable log(cosh(x))."""
-    abs_x = np.abs(x)
-    return abs_x + np.log1p(np.exp(-2 * abs_x)) - np.log(2)
+    abs_x = torch.abs(x)
+    return abs_x + torch.log1p(torch.exp(-2 * abs_x)) - np.log(2)
+
+
+def _decompactify_gaussian(compact_value, a, b, eps=1e-7):
+    """
+    Map a uniform variable on [a, b] to a standard Gaussian.
+
+    Parameters
+    ----------
+    compact_value : float
+        Value in the interval [a, b].
+
+    a, b : float
+        Bounds of the uniform interval.
+
+    eps : float
+        Small constant to avoid logit overflow at boundaries.
+
+    Returns
+    -------
+    float : Standard Gaussian value.
+    """
+    # Normalize to [0, 1] and clip
+    u = torch.clamp((compact_value - a) / (b - a), eps, 1 - eps)
+    return torch.distributions.Normal(0.0, 1.0).icdf(u)
+
+
+def _compactify_gaussian(value, a, b):
+    """
+    Map a standard Gaussian variable to a uniform value on [a, b]
+    using the CDF of the standard normal distribution.
+
+    Parameters
+    ----------
+    value : float
+        Standard Gaussian value.
+
+    a, b : float
+        Bounds of the target uniform interval.
+
+    Returns
+    -------
+    float : Value in [a, b].
+    """
+    u = torch.distributions.Normal(0.0, 1.0).cdf(value)
+    return a + (b - a) * u
+
+
+def _compactify_log_jacobian_determinant_gaussian(value, a, b):
+    """
+    Log of the Jacobian determinant for transforming a standard
+    Gaussian to a uniform [a, b] via CDF.
+
+    That is:
+
+        log |∂{compact_value} / ∂{value}|
+
+    Parameters
+    ----------
+    value : float
+        Standard Gaussian value.
+
+    a, b : float
+        Bounds of the uniform interval.
+
+    Returns
+    -------
+    float : Log of the Jacobian determinant.
+    """
+    log_pdf = torch.distributions.Normal(0.0, 1.0).log_prob(value)
+    return torch.log(torch.as_tensor(b - a)) + log_pdf
 
 
 class _MultiLayerPerceptron(nn.Module):
