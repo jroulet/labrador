@@ -441,7 +441,7 @@ class ParameterRescaler:
         for i in self._periodic_inds:
             parameters[..., i] = _compactify(parameters[..., i], -np.pi, np.pi)
             lnj += _compactify_log_jacobian_determinant(
-                parameters.detach()[..., i].cpu().numpy(), -np.pi, np.pi)
+                parameters[..., i].detach().cpu().numpy(), -np.pi, np.pi)
         return lnj
 
     def _remove_scale(self, chol_inv, parameters):

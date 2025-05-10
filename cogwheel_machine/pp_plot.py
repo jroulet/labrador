@@ -55,8 +55,8 @@ def pp_plot(credible_intervals, ax=None, show_legend=True,
     if ax is None:
         _, ax = plt.subplots()
 
-    weights = credible_intervals.get('weights',
-                                     np.ones(len(credible_intervals)))
+    n_injections = len(credible_intervals)
+    weights = credible_intervals.get('weights', np.ones(n_injections))
     weights = weights / weights.sum()
 
     credible_intervals = credible_intervals.drop(columns='weights',
@@ -73,16 +73,15 @@ def pp_plot(credible_intervals, ax=None, show_legend=True,
                 empirical_credible_intervals,
                 label=LATEX_LABELS[par], lw=1.2)
 
-
     if show_legend:
         ax.legend(fontsize=10, frameon=True, framealpha=.5, labelspacing=0.25,
                   loc='upper left', edgecolor='none', borderpad=0.3)
 
     for sigmas in show_sigmas:
-        plt.fill_between(*_pp_error(sigmas, len(credible_intervals)),
+        plt.fill_between(*_pp_error(sigmas, n_injections),
                          color='k', lw=1, ls=':', zorder=0, alpha=.1)
 
-    ax.set_title(f'$N = {len(credible_intervals)}$', fontsize='medium')
+    ax.set_title(f'$N = {n_injections}$', fontsize='medium')
     ax.set_xlabel('Credible interval')
     ax.set_ylabel('Fraction of injections in credible interval')
 
@@ -241,7 +240,7 @@ def main(sbidir, load=True, save=True, n_data=None, n_samples=1000,
         sbidir, load, save, n_data, n_samples, n_processes)
 
     pp_plot(credible_intervals)
-    plt.title(sbidir.name)
+    plt.title(f'Folded & rescaled; {sbidir.name}')
     plt.savefig(sbidir/'pp_plot.pdf', bbox_inches='tight')
 
 
