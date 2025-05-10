@@ -22,10 +22,12 @@ import h5py
 
 import torch
 from torch import nn
+import pandas as pd
 
 import cogwheel.utils
+from cogwheel import gw_plotting
 
-from cogwheel_machine import utils, sbi_hacks
+from cogwheel_machine import pp_plot, sbi_hacks, utils
 
 
 logger = logging.getLogger(__name__)
@@ -108,7 +110,7 @@ class ParameterRescaler:
                 = _compactify_log_jacobian_determinant_gaussian
         else:
             raise ValueError(
-                f'Unrecognized {rescaler_config.COMPACTIFICATION=}')
+                f'Unrecognized {self.rescaler_config.COMPACTIFICATION=}')
 
         device = self.rescaler_config.DEVICE
         if device is None:
@@ -1015,13 +1017,49 @@ class _MultiLayerPerceptron(nn.Module):
                 'state_dict': self.state_dict()}
 
 
+def plot_rescaled_dataset(rescalerdir, n_samples=10**5):
+    """Save a corner plot with the rescaled training and test sets."""
+    rundir = rescalerdir.parents[1]
+    params = utils.load_data_config(rundir).TRANSFORM_CLASS.sampled_params
+
+    file_train \
+        = rescalerdir/utils.TRAINING_DIR/utils.RESCALED_PARAMETERS_FILENAME
+    file_test = rescalerdir/utils.TEST_DIR/utils.RESCALED_PARAMETERS_FILENAME
+
+    # Dataframes for training set, test set and N(0,1) samples.
+    rescaled_train = pd.DataFrame(np.load(file_train)[:n_samples],
+                                  columns=params)
+    rescaled_test = pd.DataFrame(np.load(file_test)[:n_samples],
+                                 columns=params)
+    normal = pd.DataFrame(np.random.normal(size=[n_samples, len(params)]),
+                          columns=params)
+
+    mcp = gw_plotting.MultiCornerPlot(
+        (rescaled_train, rescaled_test, normal),
+        labels=['Training set', 'Test set', r'$\mathcal{N}(0, 1)$'],
+        bins=50, tail_probability=1e-4, confidence_level=0.68)
+
+    mcp.corner_plots[0].latex_labels = pp_plot.LATEX_LABELS
+    # Plotstyle for the N(0,1) set
+    normal_ps = mcp.corner_plots[-1].plotstyle
+    normal_ps.kwargs_1d.update(color='k', linestyle=':')
+    normal_ps.color_2d = 'k'
+    normal_ps.fill = 'none'
+    normal_ps.contour_kwargs.update(linestyles=':')
+    normal_ps.vfill_kwargs.update(alpha=0)
+
+    mcp.plot(title=f'Rescaled parameters ({rescalerdir.name})')
+    mcp.set_lims(**dict.fromkeys(params, (-3.99, 3.99)))
+    plt.savefig(rescalerdir/'rescaled_parameters.pdf', bbox_inches='tight')
+
+
 def main(rescalerdir):
     """
-    Fit mean and scale using a multilayer perceptron, and save rescaled
-    parameters.
+    Fit mean and scale using a multilayer perceptron, save and plot
+    rescaled parameters.
 
-    This will create files for the model in `rescalerdir` (if not
-    already present), and for the rescaled parameters in both the
+    This will create files for the model and plot in `rescalerdir` (if
+    not already present), and for the rescaled parameters in both the
     training and test directories.
     """
     rescalerdir = Path(rescalerdir)
@@ -1031,6 +1069,7 @@ def main(rescalerdir):
 
     parameter_rescaler = ParameterRescaler(rescalerdir)
     parameter_rescaler.process_rescalerdir()
+    plot_rescaled_dataset(rescalerdir)
 
 
 if __name__ == '__main__':
