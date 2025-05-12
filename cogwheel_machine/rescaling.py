@@ -359,10 +359,8 @@ class ParameterRescaler:
         ones = torch.ones((compressed_data.shape[0], 1),
                           device=compressed_data.device)
         data_augmented = torch.hstack([compressed_data, ones])
-        logger.info('About to fit coefs')
         self._coefs = torch.linalg.lstsq(data_augmented,
                                          nonperiodic).solution
-        logger.info('Done')
         fit = self._nonperiodic_fit(compressed_data)
         self._nonperiodic_residuals_scale = torch.std(nonperiodic - fit,
                                                       dim=0)
@@ -551,6 +549,8 @@ class ParameterRescaler:
             optimizer, **kwargs['scheduler_kwargs'])
 
         train_loader, val_loader = self._get_dataloaders()
+
+        logger.info('Start training...')
 
         patience_counter = 0
 
@@ -1019,6 +1019,7 @@ class _MultiLayerPerceptron(nn.Module):
 
 def plot_rescaled_dataset(rescalerdir, n_samples=10**5):
     """Save a corner plot with the rescaled training and test sets."""
+    rescalerdir = Path(rescalerdir).resolve()
     rundir = rescalerdir.parents[1]
     params = utils.load_data_config(rundir).TRANSFORM_CLASS.sampled_params
 
