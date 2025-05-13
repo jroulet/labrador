@@ -188,7 +188,7 @@ class TimeTransform(TransformMixin, UnitJacobianMixin, Prior):
     """
     Coordinate transformation for the geocenter time of arrival.
 
-    The coordiante is the arrival time at the reference detector, minus
+    The coordinate is the arrival time at the reference detector, minus
     a fiducial arrival time at the reference detector.
     """
     standard_params = ['t_geocenter']
