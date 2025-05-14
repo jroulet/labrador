@@ -182,7 +182,7 @@ class RelativeBinningSplines(hdf5_utils.HDF5Mixin, utils.JSONMixin):
         """
         # Broadcast manually
         *pre_shape, nrfft = integrand.shape
-        shape = pre_shape + [len(self.fbin)]
+        shape = (*pre_shape, len(self.fbin))
         projected_integrand = np.zeros(shape, dtype=integrand.dtype)
 
         for i, arr_f in enumerate(integrand.reshape(-1, nrfft)):

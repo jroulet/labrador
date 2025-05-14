@@ -1,15 +1,4 @@
-"""
-Integration test of the modules for generating data and training, i.e.:
-
-    * generate_parameters
-    * weighting
-    * simulation
-    * compression
-    * rescaling
-    * training
-    * unfolding
-
-"""
+"""Integration test."""
 import os
 os.environ['OMP_NUM_THREADS'] = '1'
 
@@ -23,7 +12,8 @@ import h5py
 
 from cogwheel_machine import (compression,
                               generate_parameters,
-                              postprocessing,
+                              injections,
+                              posterior,
                               pp_plot,
                               rescaling,
                               simulation,
@@ -72,7 +62,7 @@ class IntegrationTestCase(TestCase):
         # Generate training data
         rundir = utils.setup_rundir(parentdir)
         generate_parameters.main(rundir)
-        simulation.main(rundir)
+        simulation.main(rundir, processes=10)
 
         size, peak = tracemalloc.get_traced_memory()
         print(f'{size=}, {peak=}')
@@ -84,19 +74,29 @@ class IntegrationTestCase(TestCase):
 
         priordirs = utils.get_priordirs(rundir)
         for priordir in priordirs:
-            rescalerdir = utils.setup_rescalerdir(priordir)
-            rescaling.main(rescalerdir)
+            # Train rescaler for a couple epochs
+            # - gaussian
+            extra_lines = textwrap.dedent('''\
+                RESCALER_TRAIN_KWARGS.update(max_num_epochs=2)
+                ''')
+            self._train_rescaler(priordir, extra_lines)
+            # - tanh
+            extra_lines += textwrap.dedent('''\
+                COMPACTIFICATION = 'tanh'
+                ''')
+            rescalerdir = self._train_rescaler(priordir, extra_lines)
+
             self._assert_unrescale_undoes_rescale(rescalerdir)
 
             self._assert_same_training_and_testing_files(rundir)
+            self._assert_same_training_and_testing_files(priordir)
             self._assert_same_training_and_testing_files(rescalerdir)
 
-            # Train sbi for a couple epochs on the CPU
+            # Train sbi for a couple epochs
             # - Default:
             extra_lines = textwrap.dedent('''\
                 TRAIN_KWARGS.update(max_num_epochs=2,
                                     training_batch_size=10)
-                DEVICE = 'cpu'
                 ''')
 
             self._train_sbi(rescalerdir, extra_lines)
@@ -119,6 +119,19 @@ class IntegrationTestCase(TestCase):
         os.system(f'tree {parentdir}')
 
     @staticmethod
+    def _train_rescaler(priordir, extra_lines=''):
+        rescalerdir = utils.setup_rescalerdir(priordir)
+
+        print(f'Training rescaler in {rescalerdir}...')
+        with open(rescalerdir/utils.RESCALER_CONFIG_FILENAME, 'a',
+                  encoding='utf-8') as file:
+            file.write(extra_lines)
+        rescaling.main(rescalerdir)
+        print('Done.')
+
+        return rescalerdir
+
+    @staticmethod
     def _train_sbi(rescalerdir, extra_lines=''):
         sbidir = utils.setup_sbidir(rescalerdir)
 
@@ -139,28 +152,17 @@ class IntegrationTestCase(TestCase):
 
     @staticmethod
     def _event_end_to_end(sbidir, unfolderdir):
-        rescalerdir, _, rundir = sbidir.parents[:3]
-        preprocessed_data, transform \
-            = generate_preprocessed_data_and_transform(rundir)
+        post = posterior.Posterior.from_tree(sbidir, unfolderdir)
 
-        compressed_data = compression.compress_data(
-            rundir,
-            preprocessed_data['heterodyned_data'],
-            preprocessed_data['processed_coef'])
+        _, compressed_data, transform = injections.generate_data_and_transform(
+            rundir=sbidir.parents[2])
 
-        sbi_posterior = training.load_posterior(sbidir)
+        samples, lnprob_standard = post.generate_samples_and_lnprob(
+            100, compressed_data, transform)
 
-        unfolding_classifier = unfolding.UnfoldingClassifier(unfolderdir)
-        parameter_rescaler = rescaling.ParameterRescaler(rescalerdir)
-        postprocessor = postprocessing.PostProcessor(
-            unfolding_classifier, parameter_rescaler, transform)
-
-        rescaled_parameters = sbi_posterior.sample([100], x=compressed_data)
-        samples, lnj = postprocessor.postprocess_samples(compressed_data,
-                                                         rescaled_parameters)
         assert set(transform.standard_params) <= set(samples)
         assert set(transform.sampled_params) <= set(samples)
-        assert len(lnj) == len(samples)
+        assert len(lnprob_standard) == len(samples)
 
     def _assert_same_training_and_testing_files(self, rundir):
         training_files = set(os.listdir(rundir/utils.TRAINING_DIR))
@@ -186,39 +188,6 @@ class IntegrationTestCase(TestCase):
         np.testing.assert_almost_equal(folded_sampled_parameters, unrescaled)
 
         self.assertEqual(lnj.shape, rescaled_parameters.shape[:-1])
-
-
-def generate_preprocessed_data_and_transform(rundir):
-    """
-    Return preprocessed data and transform for a random simulated event.
-
-    Parameters
-    ----------
-    rundir : os.PathLike
-        Path to run directory.
-
-    Returns
-    -------
-    preprocessed_data : dict
-        Contains keys 'heterodyned_data', 'processed_coef', etc.
-
-    transform : cogwheel_machine.transform.TransformMixin
-        Instance of the transform class that corresponds to these data.
-    """
-    data_config = utils.load_data_config(rundir)
-    prior = data_config.PRIOR_CLASS(**data_config.PRIOR_KWARGS)
-    parameters = prior.generate_random_samples(1).iloc[0]
-
-    simulator, data_preprocessor, transform_class \
-        = simulation.setup_simulator(rundir)
-
-    simulated_input = simulator.generate_data_and_reference_waveform(
-        parameters)
-    preprocessed_data, transform_kwargs \
-        = data_preprocessor.preprocess_data(**simulated_input)
-
-    transform = transform_class(**transform_kwargs)
-    return preprocessed_data, transform
 
 
 if __name__ == '__main__':
