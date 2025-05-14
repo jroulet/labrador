@@ -1020,20 +1020,26 @@ class _MultiLayerPerceptron(nn.Module):
 def plot_rescaled_dataset(rescalerdir, n_samples=10**5):
     """Save a corner plot with the rescaled training and test sets."""
     rescalerdir = Path(rescalerdir).resolve()
-    rundir = rescalerdir.parents[1]
+    priordir, rundir = rescalerdir.parents[:2]
     params = utils.load_data_config(rundir).TRANSFORM_CLASS.sampled_params
 
     file_train \
         = rescalerdir/utils.TRAINING_DIR/utils.RESCALED_PARAMETERS_FILENAME
     file_test = rescalerdir/utils.TEST_DIR/utils.RESCALED_PARAMETERS_FILENAME
 
-    # Dataframes for training set, test set and N(0,1) samples.
+    # Dataframes for training set, test set and N(0,1) samples:
     rescaled_train = pd.DataFrame(np.load(file_train)[:n_samples],
                                   columns=params)
     rescaled_test = pd.DataFrame(np.load(file_test)[:n_samples],
                                  columns=params)
     normal = pd.DataFrame(np.random.normal(size=[n_samples, len(params)]),
                           columns=params)
+
+    # Weights:
+    rescaled_train['weights'] = np.load(
+        priordir/utils.TRAINING_DIR/utils.WEIGHTS_FILENAME)[:n_samples]
+    rescaled_test['weights'] = np.load(
+        priordir/utils.TEST_DIR/utils.WEIGHTS_FILENAME)[:n_samples]
 
     mcp = gw_plotting.MultiCornerPlot(
         (rescaled_train, rescaled_test, normal),
