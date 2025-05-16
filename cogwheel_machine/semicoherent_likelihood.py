@@ -123,9 +123,6 @@ class SemicoherentLikelihood:
         coef : float array
             Parameters of the best-fit phenomenological waveform.
 
-        dh_semicoherent : float array of shape (n_det,)
-            Semicoherent ⟨d|h⟩ of the best fit waveform.
-
         h_h : float array of shape (n_det,)
             ⟨h|h⟩ of the best fit waveform.
         """
@@ -179,9 +176,6 @@ class SemicoherentLikelihood:
             `shapecoef` but with additional entries for detector
             amplitudes and phases that maximize the likelihood.
             Can be passed to ``.waveform_model`` to produce a waveform.
-
-        dh_semicoherent : float array of shape (n_det,)
-            Semicoherent ⟨d|h⟩ of the best fit waveform.
 
         h_h : float array of shape (n_det,)
             ⟨h|h⟩ of the best fit waveform.
