@@ -164,8 +164,8 @@ def setup_rescalerdir(priordir, prefix='rescaler_'):
         Path in which to create the rescaler directory ``rescalerdir``.
 
     prefix : str
-        ``rescaler`` will be named as the prefix followed by a number, to
-        make it unique.
+        ``rescaler`` will be named as the prefix followed by a number,
+        to make it unique.
 
     Returns
     -------

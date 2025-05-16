@@ -538,7 +538,7 @@ def setup_simulator(rundir):
     data_preprocessor : DataPreprocessor
 
     transform_class : type
-        Read from {rundir}/config.py
+        Read from {rundir}/data_config.py
     """
     rundir = Path(rundir)
     config = utils.load_data_config(rundir)

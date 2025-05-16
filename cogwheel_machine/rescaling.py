@@ -27,7 +27,7 @@ import pandas as pd
 import cogwheel.utils
 from cogwheel import gw_plotting
 
-from cogwheel_machine import pp_plot, sbi_hacks, utils
+from cogwheel_machine import pp_plot, sbi_hacks, utils, legacy
 
 
 logger = logging.getLogger(__name__)
@@ -99,10 +99,10 @@ class ParameterRescaler:
             self.rescaler_config, 'COMPACTIFICATION', 'tanh')
 
         if compactification == 'tanh':
-            self._compactify = _compactify
-            self._decompactify = _decompactify
+            self._compactify = legacy._compactify_tanh
+            self._decompactify = legacy._decompactify_tanh
             self._compactify_log_jacobian_determinant \
-                = _compactify_log_jacobian_determinant
+                = legacy._compactify_log_jacobian_determinant_tanh
         elif compactification == 'gaussian':
             self._compactify = _compactify_gaussian
             self._decompactify = _decompactify_gaussian
@@ -792,80 +792,6 @@ class ParameterRescaler:
                 if par not in self.periodic_params]
 
 
-def _compactify(value, a, b):
-    """
-    Compactify a value from an infinite interval to a finite interval
-    [a, b] using tanh.
-
-    Parameters
-    ----------
-    value : float
-        Value to be compactified.
-
-    a, b : float
-        Bounds of the finite interval.
-
-    Returns
-    -------
-    float : Compactified value within the interval [a, b].
-    """
-    return (b - a) / 2 * torch.tanh(value) + (b + a) / 2
-
-
-def _decompactify(compact_value, a, b, eps=1e-7):
-    """
-    Decompactify a value from a finite interval [a, b] to an infinite
-    interval using arctanh.
-
-    Parameters
-    ----------
-    compact_value : float
-        Compactified value within the interval [a, b].
-
-    a, b : float
-        Bounds of the finite interval.
-
-    eps : float
-        Prevents overflow if `compact_value` is close to the edge.
-
-    Returns
-    -------
-    float : Decompactified value within the infinite interval.
-    """
-    arg = torch.clamp(2 * (compact_value - (b + a) / 2) / (b - a),
-                      -1 + eps, 1 - eps)
-    return torch.arctanh(arg)
-
-
-def _compactify_log_jacobian_determinant(value, a, b):
-    """
-    Log of the Jacobian determinant of the ``_compactify`` function.
-
-    That is:
-
-        log |∂{compact_value} / ∂{value}|
-
-    Parameters
-    ----------
-    value : float
-        The value at which to compute the log Jacobian determinant.
-
-    a, b : float
-        The bounds of the finite interval.
-
-    Returns
-    -------
-    float : The log of the Jacobian determinant.
-    """
-    return torch.log(torch.as_tensor(b - a) / 2) - 2 * _log_cosh(value)
-
-
-def _log_cosh(x):
-    """Numerically stable log(cosh(x))."""
-    abs_x = torch.abs(x)
-    return abs_x + torch.log1p(torch.exp(-2 * abs_x)) - np.log(2)
-
-
 def _decompactify_gaussian(compact_value, a, b, eps=1e-7):
     """
     Map a uniform variable on [a, b] to a standard Gaussian.
@@ -1020,20 +946,26 @@ class _MultiLayerPerceptron(nn.Module):
 def plot_rescaled_dataset(rescalerdir, n_samples=10**5):
     """Save a corner plot with the rescaled training and test sets."""
     rescalerdir = Path(rescalerdir).resolve()
-    rundir = rescalerdir.parents[1]
+    priordir, rundir = rescalerdir.parents[:2]
     params = utils.load_data_config(rundir).TRANSFORM_CLASS.sampled_params
 
     file_train \
         = rescalerdir/utils.TRAINING_DIR/utils.RESCALED_PARAMETERS_FILENAME
     file_test = rescalerdir/utils.TEST_DIR/utils.RESCALED_PARAMETERS_FILENAME
 
-    # Dataframes for training set, test set and N(0,1) samples.
+    # Dataframes for training set, test set and N(0,1) samples:
     rescaled_train = pd.DataFrame(np.load(file_train)[:n_samples],
                                   columns=params)
     rescaled_test = pd.DataFrame(np.load(file_test)[:n_samples],
                                  columns=params)
     normal = pd.DataFrame(np.random.normal(size=[n_samples, len(params)]),
                           columns=params)
+
+    # Weights:
+    rescaled_train['weights'] = np.load(
+        priordir/utils.TRAINING_DIR/utils.WEIGHTS_FILENAME)[:n_samples]
+    rescaled_test['weights'] = np.load(
+        priordir/utils.TEST_DIR/utils.WEIGHTS_FILENAME)[:n_samples]
 
     mcp = gw_plotting.MultiCornerPlot(
         (rescaled_train, rescaled_test, normal),
