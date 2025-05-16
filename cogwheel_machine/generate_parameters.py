@@ -110,8 +110,7 @@ def _write_datadir(prior, datadir, n_simulations, qmc):
     if qmc:
         simulation_parameters = _generate_qmc_samples(prior, n_simulations)
     else:
-        simulation_parameters = prior.generate_random_samples(
-            n_simulations)
+        simulation_parameters = prior.generate_random_samples(n_simulations)
 
     os.makedirs(datadir)
     simulation_parameters.to_feather(datadir/utils.PARAMETERS_FILENAME)
