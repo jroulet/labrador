@@ -5,7 +5,6 @@ approximately orthonormal (under a reference PSD).
 from collections import OrderedDict
 from pathlib import Path
 import scipy.interpolate
-import scipy.optimize
 from scipy.stats import qmc
 import numpy as np
 import pandas as pd
@@ -778,7 +777,7 @@ class PhaseModel(hdf5_utils.HDF5Mixin):
         self._phasecoef_to_dpncoef_mat = _phasecoef_to_dpncoef_mat  # nc
         self._avg_pncoef = _avg_pncoef  # n
         self._det_phase_to_detphasecoef_mat = np.linalg.inv(
-            self._phasecoef_to_dpncoef_mat[:self.n_det, :self.n_det])
+            self._phasecoef_to_dpncoef_mat[:self.n_det, :self.n_det])  # dd
 
     def __call__(self, frequencies, phasecoef):
         """
@@ -819,7 +818,7 @@ class PhaseModel(hdf5_utils.HDF5Mixin):
             Waveform phase at each detector (rad).
 
         times : (n_det,) float array
-            Arrival time at rach detector (s).
+            Arrival time at each detector (s).
         """
         pncoef = self._phasecoef_to_pncoef(phasecoef)
         phases = pncoef[: self.n_det] % (2*np.pi)
@@ -905,13 +904,15 @@ class PhaseModel(hdf5_utils.HDF5Mixin):
         """
         Basis functions of the PN expansion.
 
+        Returns
+        -------
         float array of shape (n_det, n_freq, n_pncoef).
         """
         frequencies = np.asarray(frequencies)
         cache_key = (frequencies.tobytes(), frequencies.shape,
                      frequencies.dtype, n_det)
-        if (pnphases := cls._cache.get(cache_key, None)) is not None:
-            return pnphases
+        if (cached_pnphases := cls._cache.get(cache_key, None)) is not None:
+            return cached_pnphases
 
         n_freq = len(frequencies)
         n_ext = 2 * n_det  # phase at detector, time at detector
@@ -936,6 +937,7 @@ class PhaseModel(hdf5_utils.HDF5Mixin):
     def _get_parameter_examples(mchirp_rng, q_rng, n_examples, seed):
         """
         Return dict with arrays of samples of ``m1, m2, s1z, s2z``.
+
         They are distributed uniformly in mchirp^(-5/3), eta, s1z, s2z
         according to a scrambled Halton sequence.
         """
