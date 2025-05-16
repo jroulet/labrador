@@ -74,19 +74,29 @@ class IntegrationTestCase(TestCase):
 
         priordirs = utils.get_priordirs(rundir)
         for priordir in priordirs:
-            rescalerdir = utils.setup_rescalerdir(priordir)
-            rescaling.main(rescalerdir)
+            # Train rescaler for a couple epochs
+            # - gaussian
+            extra_lines = textwrap.dedent('''\
+                RESCALER_TRAIN_KWARGS.update(max_num_epochs=2)
+                ''')
+            self._train_rescaler(priordir, extra_lines)
+            # - tanh
+            extra_lines += textwrap.dedent('''\
+                COMPACTIFICATION = 'tanh'
+                ''')
+            rescalerdir = self._train_rescaler(priordir, extra_lines)
+
             self._assert_unrescale_undoes_rescale(rescalerdir)
 
             self._assert_same_training_and_testing_files(rundir)
+            self._assert_same_training_and_testing_files(priordir)
             self._assert_same_training_and_testing_files(rescalerdir)
 
-            # Train sbi for a couple epochs on the CPU
+            # Train sbi for a couple epochs
             # - Default:
             extra_lines = textwrap.dedent('''\
                 TRAIN_KWARGS.update(max_num_epochs=2,
                                     training_batch_size=10)
-                DEVICE = 'cpu'
                 ''')
 
             self._train_sbi(rescalerdir, extra_lines)
@@ -107,6 +117,19 @@ class IntegrationTestCase(TestCase):
 
         print('Created these files:')
         os.system(f'tree {parentdir}')
+
+    @staticmethod
+    def _train_rescaler(priordir, extra_lines=''):
+        rescalerdir = utils.setup_rescalerdir(priordir)
+
+        print(f'Training rescaler in {rescalerdir}...')
+        with open(rescalerdir/utils.RESCALER_CONFIG_FILENAME, 'a',
+                  encoding='utf-8') as file:
+            file.write(extra_lines)
+        rescaling.main(rescalerdir)
+        print('Done.')
+
+        return rescalerdir
 
     @staticmethod
     def _train_sbi(rescalerdir, extra_lines=''):

@@ -200,8 +200,9 @@ class AlignedSpinSamplingPrior(RegisteredPriorMixin, CombinedPrior):
 class AlignedSpinUniformDHatTrainingPrior(RegisteredPriorMixin,
                                           CombinedPrior):
     """Intended for generating training parameters."""
-    prior_classes = cogwheel.utils.replace(AlignedSpinTrainingPrior.prior_classes,
-                                           UniformAmplitudePrior,
-                                           UniformDHatPrior)
+    prior_classes = cogwheel.utils.replace(
+        AlignedSpinTrainingPrior.prior_classes,
+        UniformAmplitudePrior,
+        UniformDHatPrior)
 
     default_transform_class = transform.TargetSpaceTransformAlignedSpins

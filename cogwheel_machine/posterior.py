@@ -129,7 +129,7 @@ class Posterior:
             [n_samples], x=compressed_data, show_progress_bars=False)
 
         lnp_sbi = self.sbi_posterior.log_prob(rescaled_parameters,
-                                              x=compressed_data)
+                                              x=compressed_data).numpy()
 
         samples, lnj = self.unrescale_unfold_transform(
             compressed_data, transform, rescaled_parameters)
@@ -168,25 +168,39 @@ class Posterior:
             folded-rescaled to unfolded standard parameters.
             log |∂{standard} / ∂{folded_rescaled}|
         """
-        # Unrescale:
+        # • Unrescale:
         with torch.no_grad():
             folded_sampled_parameters, lnj_unrescale \
                 = self.parameter_rescaler.unrescale(compressed_data,
                                                     rescaled_parameters)
         folded_sampled_parameters = folded_sampled_parameters.cpu()
+        # log |∂{folded} / ∂{folded_rescaled}|
+        lnj_unrescale = lnj_unrescale.cpu().numpy()
 
-        # Unfold:
+        # • Unfold:
         unfolding_probabilities = self.unfolding_classifier.predict(
             compressed_data, rescaled_parameters)
         parameters, lnp_unfold = _unfold(transform,
                                          unfolding_probabilities,
                                          folded_sampled_parameters)
+        # unfolded = (folded, unfold)
+        # => p(unfolded) = p(folded) p(unfold | folded)
+        # p(unfold | folded) plays the role of the "Jacobian":
+        # p(unfold | folded) = |∂{folded} / ∂{unfolded}|
 
-        # Transform to standard coordinates:
+        # • Transform to standard coordinates:
         transform.transform_samples(parameters)
         lnj_v = np.vectorize(transform.ln_jacobian_determinant, otypes=[float])
+        # log |∂{unfolded} / ∂{standard}|
         lnj_inverse_transform = lnj_v(**parameters[transform.standard_params])
 
+        # Obtain the total Jacobian as the product
+        # |∂{standard} / ∂{folded_rescaled}| = (
+        #     |∂{folded} / ∂{folded_rescaled}|
+        #     |∂{unfolded} / ∂{folded}|
+        #     |∂{standard} / ∂{unfolded}|
+        # )
+        lnj = lnj_unrescale - lnp_unfold - lnj_inverse_transform
         # Add extra information for debugging purposes (TODO remove?)
         rescaled_df = pd.DataFrame(
             rescaled_parameters,
@@ -195,9 +209,9 @@ class Posterior:
         parameters['lnj_unrescale'] = lnj_unrescale
         parameters['lnp_unfold'] = lnp_unfold
         parameters['lnj_inverse_transform'] = lnj_inverse_transform
-        parameters['lnj'] = lnj_unrescale - lnp_unfold - lnj_inverse_transform
+        parameters['lnj'] = lnj
 
-        return parameters, lnj_unrescale - lnp_unfold - lnj_inverse_transform
+        return parameters, lnj
 
     def inversetransform_fold_rescale(self, compressed_data, transform,
                                       samples):

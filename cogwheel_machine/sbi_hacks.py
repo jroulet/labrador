@@ -1,5 +1,7 @@
 """Modifications to the behavior of ``sbi``."""
 import functools
+import pickle
+from pathlib import Path
 from typing import Any, Callable, Optional, Tuple
 import numpy as np
 from torch import Tensor
@@ -332,6 +334,11 @@ class NPEFixedBatches(PosteriorEstimator):
             if hasattr(self, 'lr_scheduler'):  # *
                 self.lr_scheduler.step(self._val_loss)  # *
 
+            # Save model and summary every 100 epochs so we can inspect
+            # and/or kill without losing everything:
+            if self.epoch % 100 == 0:  # *
+                self._save_progress()  # *
+
         self._report_convergence_at_end(self.epoch, stop_after_epochs, max_num_epochs)
 
         # Update summary.
@@ -366,6 +373,19 @@ class NPEFixedBatches(PosteriorEstimator):
     ) -> Tensor:
         raise NotImplementedError(
             "Sequential posterior estimation not implemented.")
+
+
+    def _save_progress(self):
+        """Save summary and model."""
+        self._summary["epochs_trained"].append(self.epoch)
+        self._summary["best_validation_loss"].append(self._best_val_loss)
+        self._summarize(round_=self._round)
+
+        inference_filename = Path(
+            self._summary_writer.log_dir)/'inference_test.pickle'
+        with open(inference_filename, 'wb') as file:
+            pickle.dump(self, file)
+
 
 def get_train_val_batch_inds(num_simulations, training_batch_size,
                              validation_fraction):
