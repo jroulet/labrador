@@ -94,18 +94,26 @@ class IntegrationTestCase(TestCase):
 
             # Train sbi for a couple epochs
             # - Default:
-            extra_lines = textwrap.dedent('''\
+            extra_lines_0 = textwrap.dedent('''\
                 TRAIN_KWARGS.update(max_num_epochs=2,
                                     training_batch_size=10)
                 ''')
 
-            self._train_sbi(rescalerdir, extra_lines)
+            self._train_sbi(rescalerdir, extra_lines_0)
 
             # - Embedding network:
-            extra_lines += textwrap.dedent('''\
+            extra_lines_1 = textwrap.dedent('''\
                 EMBEDDING_LAYER_SIZES = [16, 8]
                 ''')
-            sbidir = self._train_sbi(rescalerdir, extra_lines)
+            sbidir = self._train_sbi(rescalerdir,
+                                     extra_lines_0 + extra_lines_1)
+
+            # - Score estimator:
+            extra_lines_2 = textwrap.dedent('''\
+                POSTERIOR_NN_KWARGS = None
+                ''')
+
+            self._train_sbi(rescalerdir, extra_lines_0 + extra_lines_2)
 
             unfolderdir = self._train_unfolding_classifier(rescalerdir)
 

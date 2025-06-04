@@ -11,6 +11,7 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 from tensorboard.backend.event_processing import event_accumulator
 
+from sbi.inference import NPSE
 from sbi.neural_nets import posterior_nn
 
 from cogwheel_machine import compression, embedding, sbi_hacks, utils
@@ -109,13 +110,21 @@ def _instantiate_inference(sbidir):
             unchanged_size=_get_n_processed_coef(rundir))
         config.POSTERIOR_NN_KWARGS['embedding_net'] = embedding_net
 
-    neural_posterior = posterior_nn(**config.POSTERIOR_NN_KWARGS)
+    if config.POSTERIOR_NN_KWARGS:
+        neural_posterior = posterior_nn(**config.POSTERIOR_NN_KWARGS)
 
-    inference = sbi_hacks.NPEFixedBatches(
-        density_estimator=neural_posterior,
-        device=device,
-        summary_writer=SummaryWriter(sbidir)
-        ).append_simulations(theta, x, weights=weights)
+        inference = sbi_hacks.NPEFixedBatches(
+            density_estimator=neural_posterior,
+            device=device,
+            summary_writer=SummaryWriter(sbidir)
+            ).append_simulations(theta, x, weights=weights)
+        
+    elif config.SCORE_NN_KWARGS:
+
+        inference = NPSE(**config.SCORE_NN_KWARGS,
+            device=device,
+            summary_writer=SummaryWriter(sbidir)
+            ).append_simulations(theta, x, weights=weights)
 
     return inference
 
