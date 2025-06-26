@@ -28,6 +28,9 @@ from . import transform
 # ----------------------------------------------------------------------
 # Modular priors:
 
+# pylint: disable=arguments-differ
+
+
 class ZeroAlignedSpinsPrior(FixedPrior):
     """Set inplane spins to zero."""
     standard_par_dic = {'s1z': 0.,
@@ -157,6 +160,8 @@ class PhasePrior(UniformPriorMixin, IdentityTransformMixin, Prior):
     # phi_ref_hat.
     range_dic = {'phi_ref': (0, 2*np.pi)}
 
+
+# pylint: enable=arguments-differ
 
 # ----------------------------------------------------------------------
 # Combine the modular priors:

@@ -6,8 +6,8 @@ import textwrap
 from pathlib import Path
 
 
-def setup_condor_sub(stem, script_or_module, submit=False, overwrite=False,
-                     **submit_kwargs):
+def setup_condor_sub(stem, script_or_module, submit=False,
+                     overwrite=False, **submit_kwargs):
     """
     Set up HTCondor submission and executable files.
 
@@ -22,10 +22,19 @@ def setup_condor_sub(stem, script_or_module, submit=False, overwrite=False,
         Either a path to a Python script (ending in '.py'), or a module
         name (e.g. 'my_package.my_module') to be executed.
 
+    submit : bool
+        If True, actually run `condor_submit` to submit the job. Else
+        (default), simply create the submission file.
+
+    overwrite : bool
+        If False (default), raise an error if the submission or
+        executable files already exist.
+
     **submit_kwargs
         Additional keyword arguments to be included in the submit file.
         These will be formatted as '{key} = {value}' pairs.
-        For example: ``arguments='arg1 --arg2', request_cpus=4``.
+        For example:
+        ``arguments='arg1 --arg2', request_cpus=4, request_disk='1G'``.
 
     Returns
     -------
@@ -42,6 +51,9 @@ def setup_condor_sub(stem, script_or_module, submit=False, overwrite=False,
     stem = Path(stem)
     submit_path = stem.with_suffix('.sub')
     executable_path = stem.with_suffix('.sh')
+
+    # Path to the conda environment's lib/ directory (for shared libraries)
+    env_lib = Path(sys.executable).resolve().parents[1]/'lib'
 
     kwarg_lines = """
         """.join(f'{key} = {value}' for key, value in submit_kwargs.items())
@@ -61,6 +73,8 @@ def setup_condor_sub(stem, script_or_module, submit=False, overwrite=False,
     executable_text = textwrap.dedent(f"""\
         #!/bin/bash
         export OMP_NUM_THREADS=1
+        export LD_LIBRARY_PATH="{env_lib}:$LD_LIBRARY_PATH"
+
         set -e
 
         {execution_line}
@@ -72,7 +86,7 @@ def setup_condor_sub(stem, script_or_module, submit=False, overwrite=False,
 
     if submit:
         subprocess.run(['condor_submit', str(submit_path)], check=True)
-        print(f"Submitted job to HTCondor: {submit_path}")
+        print(f'Submitted job to HTCondor: {submit_path}')
 
     return submit_path
 

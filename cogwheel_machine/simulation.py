@@ -476,13 +476,14 @@ def _setup_chunks(rundir, chunk_size):
     ]
 
     for dirname, n_samples in dirname_nsamples:
+        chunksdir = rundir/dirname/CHUNKS_DIRNAME
+        filepath = chunksdir/CHUNKS_FILENAME
+
         ind_pairs = [(i_start, min(i_start + chunk_size, n_samples))
                      for i_start in range(0, n_samples, chunk_size)]
 
-        chunksdir = rundir/dirname/CHUNKS_DIRNAME
         os.makedirs(chunksdir)
-        with open(chunksdir/CHUNKS_FILENAME, 'w', newline='', encoding='utf-8'
-                 ) as file:
+        with open(filepath, 'w', newline='', encoding='utf-8') as file:
             csv.writer(file).writerows(ind_pairs)
 
 
@@ -602,7 +603,7 @@ def _merge_chunks_in_datadir(datadir, delete_chunks_after_merging):
         utils.UNFOLDING_LABELS_FILENAME,
     )
     for name in names:
-        pattern = _get_chunkpath('', name, '*', '*')
+        pattern = _get_chunkpath('', name, '*', '*').name
         chunkpaths = sorted(chunksdir.glob(pattern),
                             key=_get_chunk_start_and_end)
 
@@ -615,23 +616,29 @@ def _merge_chunks_in_datadir(datadir, delete_chunks_after_merging):
             # Create datasets:
             with h5py.File(chunkpaths[0], 'r') as sample_file:
                 for key, arr in sample_file.items():
-                    merged.create_dataset(key,
-                                          shape=(n_rows, *arr.shape[1:]),
-                                          dtype=arr.dtype)
+                    if key == 'fbin':
+                        merged.create_dataset(key, data=arr)
+                    else:
+                        merged.create_dataset(key,
+                                              shape=(n_rows, *arr.shape[1:]),
+                                              dtype=arr.dtype)
 
             # Populate datasets:
             for chunkpath in chunkpaths:
                 i_start, i_end = _get_chunk_start_and_end(chunkpath)
                 with h5py.File(chunkpath, 'r') as f_in:
                     for key, arr in f_in.items():
-                        merged[key][i_start : i_end] = arr
+                        if key == 'fbin':
+                            np.testing.assert_array_equal(merged[key], arr)
+                        else:
+                            merged[key][i_start : i_end] = arr
 
         all_chunkpaths.extend(chunkpaths)
 
     # Profiling statistics:
-    pattern = _get_chunkpath('', PROFILE_FILENAME, '*', '*')
+    pattern = _get_chunkpath('', PROFILE_FILENAME, '*', '*').name
     chunkpaths = list(chunksdir.glob(pattern))
-    pstats.Stats(*chunkpaths).dump_stats(chunksdir/PROFILE_FILENAME)
+    pstats.Stats(*map(str, chunkpaths)).dump_stats(datadir/PROFILE_FILENAME)
 
     all_chunkpaths.extend(chunkpaths)
 
@@ -667,7 +674,8 @@ def _load_chunk_from_feather(feather_path: str, i_start: int,
 # ----------------------------------------------------------------------
 # HTCondor functions
 def setup_condor_sub(rundir, chunk_size,
-                     delete_chunks_after_merging=True):
+                     delete_chunks_after_merging=True,
+                     **submit_kwargs):
     """
     Set up HTCondor submission scripts to run multiple `simulate_chunk`
     and a `merge_chunks`.
@@ -683,86 +691,108 @@ def setup_condor_sub(rundir, chunk_size,
 
     Returns
     -------
-    submit_chunks_path, submit_merge_path : pathlib.Path
-        Path to the HTCondor submission scripts for simulating and
-        merging chunks.
+    submit_chunks_paths: tuple [Path, Path]
+        Paths to the HTCondor submission scripts for simulating chunks
+        for the training and test sets, respectively.
+
+    submit_merge_path : pathlib.Path
+        Path to the HTCondor submission scripts for mergining chunks.
 
     See Also
     --------
     utils.SCRIPTS_DIR/'simulation_submit_condor.py'
-        Command line interface to run these and other jobs.
+        Command line interface to run this and other jobs.
     """
     rundir = Path(rundir).resolve()
     _setup_chunks(rundir, chunk_size)
-    submit_chunks_path = _setup_condor_for_simulate_chunks(rundir)
+    submit_chunks_paths = _setup_condor_for_simulate_chunks(
+        rundir, **submit_kwargs)
     submit_merge_path = _setup_condor_for_merge_chunks(
-        rundir, delete_chunks_after_merging)
-    return submit_chunks_path, submit_merge_path
+        rundir, delete_chunks_after_merging, **submit_kwargs)
+    return submit_chunks_paths, submit_merge_path
 
 
-def _setup_condor_for_simulate_chunks(rundir):
+def _setup_condor_for_simulate_chunks(rundir,
+                                      request_memory='4G',
+                                      request_disk='1G',
+                                      **submit_kwargs):
     """
-    Set up HTCondor submission script to run `simulate_chunk` on
-    chunks of data.
+    Set up HTCondor submission scripts to run `simulate_chunk` on
+    training and test data chunks.
 
     Parameters
     ----------
     rundir : os.PathLike
-        Run directory, should contain a file `data_config.py` and
-        training and test directories with simulation parameters.
+        Run directory, should contain training and test directories
+        with simulation parameters.
 
     Returns
     -------
-    submit_path : pathlib.Path
-        Path to the HTCondor submission script.
+    tuple of pathlib.Path
+        Paths to the training and test HTCondor submission scripts.
     """
     scripts_dir = rundir/'submission_scripts'
     logdir = scripts_dir/'simulation_logs'
     os.makedirs(logdir, exist_ok=True)
-    log_stem = logdir/'simulation-$(i_min)_$(i_max)'
-    submit_path = scripts_dir/'simulation.sub'
-    executable_path = scripts_dir/'simulation.sh'
+
     traindir = rundir/utils.TRAINING_DIR
     testdir = rundir/utils.TEST_DIR
     train_chunkfile = traindir/CHUNKS_DIRNAME/CHUNKS_FILENAME
     test_chunkfile = testdir/CHUNKS_DIRNAME/CHUNKS_FILENAME
 
-    submit_text = textwrap.dedent(
-        f"""\
-        executable = {executable_path}
+    env_lib = Path(sys.executable).resolve().parents[1]/'lib'
+    executable_path = scripts_dir/'simulation.sh'
 
-        # Training set
-        arguments = $(i_min) $(i_max) {traindir}
-        output = {log_stem}_train.out
-        error = {log_stem}_train.err
-        log = {log_stem}_train.log
-        queue i_min, i_max from {train_chunkfile}
-
-        # Test set
-        arguments = $(i_min) $(i_max) {testdir}
-        output = {log_stem}_test.out
-        error = {log_stem}_test.err
-        log = {log_stem}_test.log
-        queue i_min, i_max from {test_chunkfile}
-        """)
-
+    # Write executable (common to training and test sets):
     executable_text = textwrap.dedent(
         f"""\
         #!/bin/bash
         export OMP_NUM_THREADS=1
+        export LD_LIBRARY_PATH="{env_lib}:$LD_LIBRARY_PATH"
+
         set -e
 
         {sys.executable} {utils.SCRIPTS_DIR/'simulate_chunk.py'} "$@"
         """)
 
-    # Write the executable and submit files:
-    condor_utils.write_executable(submit_path, submit_text)
     condor_utils.write_executable(executable_path, executable_text)
 
-    return submit_path
+    # Write separate submit files for the training and test sets:
+    kwarg_lines = """
+            """.join(f'{key} = {value}'
+                     for key, value in submit_kwargs.items())
+
+    submit_paths = []
+    for kind, datadir, chunkfile in [('train', traindir, train_chunkfile),
+                                     ('test', testdir, test_chunkfile)]:
+        log_stem = logdir/f"simulation-$(i_min)_$(i_max)_{kind}"
+        submit_path = scripts_dir/f"simulation_{kind}.sub"
+
+        submit_text = textwrap.dedent(
+            f"""\
+            executable = {executable_path}
+            request_memory = {request_memory}
+            request_disk = {request_disk}
+
+            {kwarg_lines}
+
+            arguments = {datadir} $(i_min) $(i_max)
+            output = {log_stem}.out
+            error = {log_stem}.err
+            log = {log_stem}.log
+            queue i_min, i_max from {chunkfile}
+            """)
+
+        condor_utils.write_executable(submit_path, submit_text)
+        submit_paths.append(submit_path)
+
+    return tuple(submit_paths)
 
 
-def _setup_condor_for_merge_chunks(rundir, delete_chunks_after_merging):
+def _setup_condor_for_merge_chunks(rundir, delete_chunks_after_merging,
+                                   request_disk='100G',
+                                   request_memory='4G',
+                                   **submit_kwargs):
     """
     Set up HTCondor submission script to run `merge_chunks` on
     chunks of data.
@@ -776,10 +806,6 @@ def _setup_condor_for_merge_chunks(rundir, delete_chunks_after_merging):
     delete_chunks_after_merging : bool
         If True, delete the chunk files after merging.
 
-    submit : bool
-        If True, submit the job to HTCondor.
-        If False, only create the submission script.
-
     Returns
     -------
     submit_path : pathlib.Path
@@ -791,8 +817,11 @@ def _setup_condor_for_merge_chunks(rundir, delete_chunks_after_merging):
     if delete_chunks_after_merging:
         arguments += ' --delete_chunks_after_merging'
 
-    return condor_utils.setup_condor_sub(stem, python_script,
-                                         arguments=arguments)
+    submit_path = condor_utils.setup_condor_sub(
+        stem, python_script, arguments=arguments, request_disk=request_disk,
+        request_memory=request_memory, **submit_kwargs)
+
+    return submit_path
 
 
 # ----------------------------------------------------------------------

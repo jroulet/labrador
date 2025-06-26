@@ -61,8 +61,8 @@ def _generate_qmc_samples(prior, n_samples, seed=None):
     return samples
 
 
-def setup_condor_sub(rundir, request_memory='8G', submit=False,
-                     **submit_kwargs):
+def setup_condor_sub(rundir, request_disk='8G', request_memory='8G',
+                     submit=False, **submit_kwargs):
     """
     Create a script to run the generate_parameters job on HTCondor.
 
@@ -94,20 +94,13 @@ def setup_condor_sub(rundir, request_memory='8G', submit=False,
     rundir = Path(rundir).resolve()
     stem = rundir/'submission_scripts'/'generate_parameters'
     module = 'cogwheel_machine.generate_parameters'
-    return condor_utils.setup_condor_sub(stem, module,
-                                         request_memory=request_memory,
-                                         submit=submit,
-                                         **submit_kwargs)
-
-
-def _write_datadir(prior, datadir, n_simulations, qmc):
-    if qmc:
-        simulation_parameters = _generate_qmc_samples(prior, n_simulations)
-    else:
-        simulation_parameters = prior.generate_random_samples(n_simulations)
-
-    os.makedirs(datadir)
-    simulation_parameters.to_feather(datadir/utils.PARAMETERS_FILENAME)
+    submit_path = condor_utils.setup_condor_sub(stem, module,
+                                                request_memory=request_memory,
+                                                request_disk=request_disk,
+                                                submit=submit,
+                                                arguments=rundir,
+                                                **submit_kwargs)
+    return submit_path
 
 
 def main(rundir):
@@ -152,6 +145,16 @@ def _check_rundir(rundir):
             raise FileExistsError(f'{parameters_file} already exists!')
 
     utils.write_version(rundir)
+
+
+def _write_datadir(prior, datadir, n_simulations, qmc):
+    if qmc:
+        simulation_parameters = _generate_qmc_samples(prior, n_simulations)
+    else:
+        simulation_parameters = prior.generate_random_samples(n_simulations)
+
+    os.makedirs(datadir, exist_ok=True)
+    simulation_parameters.to_feather(datadir/utils.PARAMETERS_FILENAME)
 
 
 if __name__ == '__main__':

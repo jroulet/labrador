@@ -322,8 +322,8 @@ class JSONStandardScaler(sklearn.preprocessing.StandardScaler):
         return Path(directory) / f'{cls.__name__}.json'
 
 
-def setup_condor_sub(rundir, request_memory='25G', submit=False,
-                     **submit_kwargs):
+def setup_condor_sub(rundir, request_memory='25G', request_disk='4G',
+                     submit=False, **submit_kwargs):
     """
     Create a script to run the compression job on HTCondor.
 
@@ -346,7 +346,9 @@ def setup_condor_sub(rundir, request_memory='25G', submit=False,
     module = 'cogwheel_machine.compression'
     return condor_utils.setup_condor_sub(stem, module,
                                          request_memory=request_memory,
+                                         request_disk=request_disk,
                                          submit=submit,
+                                         arguments=rundir,
                                          **submit_kwargs)
 
 
