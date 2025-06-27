@@ -514,12 +514,12 @@ def simulate_chunk(datadir, i_start, i_end, processes):
 
     See Also
     --------
-    utils.SCRIPTS_DIR/'simulation_submit_condor.py'
+    cli.htcondor
         Orchestrates the generation of parameters, simulation in chunks
         and merging with HTCondor.
 
-    utils.SCRIPTS_DIR/'simulate_chunk.py'
-        Command line interface to this function.
+    cli.simulation_chunks
+        Defines a command-line interface to this function.
     """
     datadir = Path(datadir).resolve()
     rundir = datadir.parent
@@ -577,7 +577,7 @@ def merge_chunks(rundir, delete_chunks_after_merging=True):
     Parameters
     ----------
     rundir : os.PathLike
-        Run directory, chunks of simulations should have been completed
+        Run directory; chunks of simulations should have been completed
         by the time this function is run.
 
     delete_chunks_after_merging : bool
@@ -691,7 +691,7 @@ def setup_condor_sub(rundir, chunk_size,
 
     Returns
     -------
-    submit_chunks_paths: tuple [Path, Path]
+    submit_chunks_paths: tuple [pathlib.Path, pathlib.Path]
         Paths to the HTCondor submission scripts for simulating chunks
         for the training and test sets, respectively.
 
@@ -700,8 +700,7 @@ def setup_condor_sub(rundir, chunk_size,
 
     See Also
     --------
-    utils.SCRIPTS_DIR/'simulation_submit_condor.py'
-        Command line interface to run this and other jobs.
+    cli.htcondor : Command-line interface to run this and other jobs.
     """
     rundir = Path(rundir).resolve()
     _setup_chunks(rundir, chunk_size)
@@ -752,7 +751,7 @@ def _setup_condor_for_simulate_chunks(rundir,
 
         set -e
 
-        {sys.executable} {utils.SCRIPTS_DIR/'simulate_chunk.py'} "$@"
+        {Path(sys.executable).resolve().parent/'lab-simulate-chunk'} "$@"
         """)
 
     condor_utils.write_executable(executable_path, executable_text)
@@ -812,13 +811,13 @@ def _setup_condor_for_merge_chunks(rundir, delete_chunks_after_merging,
         Path to the HTCondor submission script.
     """
     stem = rundir/'submission_scripts'/'merge_chunks'
-    python_script = utils.SCRIPTS_DIR/'merge_chunks.py'
+    entry = 'lab-merge-chunks'
     arguments = str(rundir)
     if delete_chunks_after_merging:
         arguments += ' --delete_chunks_after_merging'
 
     submit_path = condor_utils.setup_condor_sub(
-        stem, python_script, arguments=arguments, request_disk=request_disk,
+        stem, entry, arguments=arguments, request_disk=request_disk,
         request_memory=request_memory, **submit_kwargs)
 
     return submit_path

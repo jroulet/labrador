@@ -1,12 +1,13 @@
 """HTCondor submission utilities."""
 import os
+import shutil
 import subprocess
 import sys
 import textwrap
 from pathlib import Path
 
 
-def setup_condor_sub(stem, script_or_module, submit=False,
+def setup_condor_sub(stem, entry, submit=False,
                      overwrite=False, **submit_kwargs):
     """
     Set up HTCondor submission and executable files.
@@ -18,9 +19,10 @@ def setup_condor_sub(stem, script_or_module, submit=False,
     stem : os.PathLike
         Generated files will be of the form `stem.{sub,sh,out,err,log}`.
 
-    script_or_module : os.PathLike, str
-        Either a path to a Python script (ending in '.py'), or a module
-        name (e.g. 'my_package.my_module') to be executed.
+    entry : os.PathLike, str
+        Either a path to a Python script (ending in '.py'), a module
+        name (e.g. 'my_package.my_module') to be executed, or an entry
+        point command (see [project.scripts] in pyproject.toml).
 
     submit : bool
         If True, actually run `condor_submit` to submit the job. Else
@@ -41,12 +43,20 @@ def setup_condor_sub(stem, script_or_module, submit=False,
     pathlib.Path
         Path to the generated submit file.
     """
-    if str(script_or_module).endswith('.py'):  # script
-        if not Path(script_or_module).exists():
-            raise FileNotFoundError(f"{script_or_module} does not exist")
-        execution_line = f'{sys.executable} {script_or_module} $@'
-    else:  # module
-        execution_line = f'{sys.executable} -m {script_or_module} $@'
+    # Determine how to execute
+    if str(entry).endswith('.py'):  # script
+        if not Path(entry).exists():
+            raise FileNotFoundError(f"{entry} does not exist")
+        execution_line = f'{sys.executable} {entry} "$@"'
+    elif '.' in str(entry):  # module
+        execution_line = f'{sys.executable} -m {entry} "$@"'
+    elif shutil.which(command := Path(sys.executable).resolve().parent/entry):
+        execution_line = f'{command} "$@"'
+    else:
+        raise ValueError(
+            f'Could not determine how to run: {entry!r}. '
+            'Expected a .py file, module name, or installed command.'
+        )
 
     stem = Path(stem)
     submit_path = stem.with_suffix('.sub')
@@ -109,8 +119,7 @@ def write_executable(path, text, overwrite=False):
     """
     path = Path(path)
     if path.exists() and not overwrite:
-        raise FileExistsError(
-            f'{path} already exists, pass `overwrite=True` to overwrite')
+        raise FileExistsError(f'{path} already exists.')
 
     os.makedirs(path.parent, exist_ok=True)
 

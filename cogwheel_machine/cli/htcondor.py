@@ -1,5 +1,5 @@
 """
-Submit jobs to condor for generating a training set.
+Submit jobs to HTCondor for generating a training set.
 
 1. Generate training and test parameters.
 2. Simulate data in chunks.
@@ -7,7 +7,7 @@ Submit jobs to condor for generating a training set.
 4. Compress the merged file.
 
 This script generates a DAGMan file to organize the simulation jobs and
-submits it to condor.
+submits it to HTCondor.
 """
 import argparse
 import textwrap
@@ -17,9 +17,43 @@ from pathlib import Path
 from cogwheel_machine import compression, generate_parameters, simulation
 
 
-def main(rundir, *, chunk_size=10_000, **submit_kwargs):
+def generate_data_cli():
+    parser = argparse.ArgumentParser(
+        description=textwrap.dedent('''\
+            Submit jobs to HTCondor for generating a training set.
+
+            1. Generate training and test parameters.
+            2. Simulate data in chunks.
+            3. Merge chunks into single files.
+            4. Compress the generated data.
+            ''')
+    )
+    parser.add_argument('rundir', help='Run directory')
+    parser.add_argument('--chunk-size', type=int, default=10_000,
+                        help='Number of simulations performed by each job.')
+    parser.add_argument(
+        '--submit-arg', action='append', default=[],
+        help='Extra submit file arguments as key=value pairs. '
+             'Example: `--submit-arg accounting_group="my_acc_group"`.'
+    )
+
+    args = parser.parse_args()
+
+    # Convert --submit-arg into a dict
+    submit_kwargs = {}
+    for pair in args.submit_arg:
+        if '=' not in pair:
+            raise ValueError(f'Invalid format for --submit-arg: {pair!r}')
+        key, value = pair.split('=', 1)
+        submit_kwargs[key] = value
+
+    generate_data(rundir=args.rundir, chunk_size=args.chunk_size,
+                  **submit_kwargs)
+
+
+def generate_data(rundir, *, chunk_size=10_000, **submit_kwargs):
     """
-    Submit jobs to condor for generating a training set.
+    Submit jobs to HTCondor for generating a training set.
 
     1. Generate training and test parameters.
     2. Simulate data in chunks.
@@ -30,15 +64,17 @@ def main(rundir, *, chunk_size=10_000, **submit_kwargs):
     submit_gen_parameters_path = generate_parameters.setup_condor_sub(
         rundir, **submit_kwargs)
 
-    submit_chunks_paths, submit_merge_path = simulation.setup_condor_sub(
-        rundir, chunk_size=chunk_size, **submit_kwargs)
+    (submit_chunks_train_path, submit_chunks_test_path), submit_merge_path \
+        = simulation.setup_condor_sub(
+            rundir, chunk_size=chunk_size, **submit_kwargs)
 
     submit_compress_path = compression.setup_condor_sub(
         rundir, **submit_kwargs)
 
     # Generate DAGMan file for submitting jobs in the correct order
     dagman_path = _generate_dagman_file(submit_gen_parameters_path,
-                                        *submit_chunks_paths,
+                                        submit_chunks_train_path,
+                                        submit_chunks_test_path,
                                         submit_merge_path,
                                         submit_compress_path)
 
@@ -91,8 +127,8 @@ def _generate_dagman_file(submit_gen_parameters_path,
         PARENT submit_chunks_test CHILD submit_merge
         PARENT submit_merge CHILD compress
 
-        RETRY submit_chunks_train 2
-        RETRY submit_chunks_test 2
+        RETRY submit_chunks_train 1
+        RETRY submit_chunks_test 1
         ''')
 
     scripts_dir = Path(submit_gen_parameters_path).resolve().parent
@@ -100,36 +136,3 @@ def _generate_dagman_file(submit_gen_parameters_path,
     with open(dagman_path, 'w', encoding='utf-8') as dagman_file:
         dagman_file.write(dagman_text)
     return dagman_path
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(
-        description=textwrap.dedent('''\
-            Submit jobs to condor for generating a training set.
-
-            1. Generate training and test parameters.
-            2. Simulate data in chunks.
-            3. Merge chunks into a single file.
-            4. Compress the generated data.
-            ''')
-    )
-    parser.add_argument('rundir', help='Run directory')
-    parser.add_argument('--chunk-size', type=int, default=10_000,
-                        help='Number of simulations performed by each job.')
-    parser.add_argument(
-        '--submit-arg', action='append', default=[],
-        help='Extra submit file arguments as key=value pairs. '
-             'Example: `--submit-arg accounting_group="my_acc_group"`.'
-    )
-
-    args = parser.parse_args()
-
-    # Convert --submit-arg into a dict
-    submit_kwargs = {}
-    for pair in args.submit_arg:
-        if '=' not in pair:
-            raise ValueError(f'Invalid format for --submit-arg: {pair!r}')
-        key, value = pair.split('=', 1)
-        submit_kwargs[key] = value
-
-    main(rundir=args.rundir, chunk_size=args.chunk_size, **submit_kwargs)

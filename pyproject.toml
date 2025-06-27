@@ -20,6 +20,12 @@ readme = "README.md"
 [project.urls]
 "Source" = "https://github.com/jroulet/cogwheel-machine"
 
+[project.scripts]
+lab-setup-rundir = "cogwheel_machine.cli.utils:setup_rundir_cli"
+lab-simulate-chunk = "cogwheel_machine.cli.simulation_chunks:simulate_chunk_cli"
+lab-merge-chunks = "cogwheel_machine.cli.simulation_chunks:merge_chunks_cli"
+lab-generate-data-htcondor = "cogwheel_machine.cli.htcondor:generate_data_cli"
+
 [tool.setuptools.packages.find]
 namespaces = false
 

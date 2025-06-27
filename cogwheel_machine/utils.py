@@ -82,8 +82,6 @@ UNFOLDER_FILENAME = 'unfolding_classifier.ubj'
 WAVEFORM_MODEL_FILENAME = 'waveform_model.h5'
 WEIGHTS_FILENAME = 'weights.npy'
 
-SCRIPTS_DIR = Path(__file__).resolve().parent/'pipeline'
-
 
 def load_data_config(rundir):
     """Return module `data_config` from a run directory."""

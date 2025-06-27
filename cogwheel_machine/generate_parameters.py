@@ -74,6 +74,9 @@ def setup_condor_sub(rundir, request_disk='8G', request_memory='8G',
     rundir : os.PathLike
         Simulations directory, should contain a file `data_config.py`.
 
+    request_disk : str
+        Disk request for the HTCondor job. Default is '8G'.
+
     request_memory : str
         Memory request for the HTCondor job. Default is '8G'.
 
