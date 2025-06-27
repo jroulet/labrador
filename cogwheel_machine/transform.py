@@ -9,6 +9,8 @@ import lal
 from cogwheel.prior import Prior, CombinedPrior, UnitJacobianMixin
 from cogwheel import gw_prior
 
+# pylint: disable=arguments-differ
+
 
 class TransformMixin:
     """
