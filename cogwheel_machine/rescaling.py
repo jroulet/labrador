@@ -304,10 +304,10 @@ class ParameterRescaler:
         lnj = 0.0
         for i, par in zip(self._bounded_nonperiodic_inds,
                           self.bounded_nonperiodic_params):
-            parameters[..., i] = self._compactify(parameters[..., i],
-                                                  *self.folded_range_dic[par])
             lnj += self._compactify_log_jacobian_determinant(
                 parameters[..., i].detach(), *self.folded_range_dic[par])
+            parameters[..., i] = self._compactify(parameters[..., i],
+                                                  *self.folded_range_dic[par])
 
         return lnj
 
@@ -455,10 +455,10 @@ class ParameterRescaler:
         """
         lnj = 0.0
         for i in self._periodic_inds:
-            parameters[..., i] = self._compactify(
-                parameters[..., i], -np.pi, np.pi)
             lnj += self._compactify_log_jacobian_determinant(
                 parameters[..., i].detach(), -np.pi, np.pi)
+            parameters[..., i] = self._compactify(
+                parameters[..., i], -np.pi, np.pi)
         return lnj
 
     def _remove_scale(self, chol_inv, parameters):
