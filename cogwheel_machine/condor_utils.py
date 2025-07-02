@@ -73,7 +73,7 @@ def setup_condor_sub(stem, entry, *,
     env_lib = Path(sys.executable).resolve().parents[1]/'lib'
 
     if requirements:
-        submit_kwargs.append(requirements=requirements)
+        submit_kwargs['requirements'] = requirements
 
     kwarg_lines = """
         """.join(f'{key} = {value}' for key, value in submit_kwargs.items())

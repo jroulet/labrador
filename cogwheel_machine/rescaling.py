@@ -5,11 +5,12 @@ covariance of the posterior.
 To train a model from scratch, use ``main(rescalerdir)``.
 To fine-tune an already trained model, you can optionally edit the
 relevant rescaler_config parameters and then do:
-```
-rescaler = ParameterRescaler(rescalerdir)
-rescaler.train()
-main(rescalerdir)  # Will create the files in the training and test directory
-```
+
+.. code-block:: python
+
+    rescaler = ParameterRescaler(rescalerdir)
+    rescaler.train()
+    main(rescalerdir)  # Will create files in the training and test directory
 """
 import argparse
 import cProfile
@@ -203,6 +204,8 @@ class ParameterRescaler:
         """
         Apply rescaling to physical parameters to make them ~N(0, 1).
 
+        Parameters
+        ----------
         compressed_data : (n_samples or 1, n_data) float array
             Hint: output of
             ``compression.JSONStandardScaler.transform``, see
@@ -215,11 +218,16 @@ class ParameterRescaler:
             making the training set, where there is one piece of data
             and one true parameters).
 
-        folded_sampled_params : (n_samples, n_params) float array
+        folded_sampled_parameters : (n_samples, n_params) float array
             Physical parameter values to rescale ("sampled" refers to
             parameters in the domain of the transform, "folded" means
             that folding was applied, to prevent multimodality in the
             distribution).
+
+        double_precision : bool
+            Whether to perform the calculations in 64-bit precision. May
+            be useful for guaranteeing that rescale and unrescale are
+            inverses of each other to good accuracy.
         """
         compressed_data = torch.as_tensor(compressed_data).to(self.device)
         parameters = torch.as_tensor(folded_sampled_parameters).to(self.device)
@@ -255,12 +263,35 @@ class ParameterRescaler:
         """
         Map rescaled parameters from ~N(0, 1) to their physical range.
 
-        Inverse of ``.rescale``.
+        Inverse of ``.rescale``, also returns log Jacobian determinant.
+
+        Parameters
+        ----------
+        compressed_data : (n_samples or 1, n_data) float array
+            Hint: output of
+            ``compression.JSONStandardScaler.transform``, see
+            ``compression._save_compressed_data``. # TODO improve docs
+            If it contains 1 row, it will broadcast over samples (this
+            situation arises in parameter estimation where we have many
+            samples for the same data).
+            It may also contain a number of rows equal to the number of
+            samples, then each sample will use different data (for
+            making the training set, where there is one piece of data
+            and one true parameters).
+
+        rescaled_parameters : (n_samples, n_params) float array
+            Parameters in the rescaled space, i.e. where SBI is run.
+            These should resemble N(0,1).
+
+        double_precision : bool
+            Whether to perform the calculations in 64-bit precision. May
+            be useful for guaranteeing that rescale and unrescale are
+            inverses of each other to good accuracy.
 
         Returns
         -------
         parameters : (n_samples, n_params) torch tensor
-            Physical parameter values.
+            Parameter values (in the folded-sampled space).
 
         lnj : float
             Log Jacobian determinant of the unrescaling transformation.
@@ -395,6 +426,10 @@ class ParameterRescaler:
         range inplace, return the log Jacobian determinant.
 
         Inverse of ``._periodic_to_angle``.
+
+        Return
+        ------
+            float : log|∂{periodic} / ∂{angle}|
         """
         lnj = 0.0
         for i, par in zip(self._periodic_inds, self.periodic_params):
@@ -608,6 +643,7 @@ class ParameterRescaler:
                 print(f'Epoch {epoch} | Validation Loss: {val_loss:.3f}',
                       end='\r')
             print()
+            logger.info('Done training.')
         except KeyboardInterrupt:
             print('\nTraining interrupted.')
 
@@ -725,8 +761,9 @@ class ParameterRescaler:
 
     def _get_mean_and_chol_inv(self, model_outputs):
         """
-        Predict mean of the parameters, using circular mean for the
-        periodic ones.
+        Predict mean and Cholesky(inverse covariance) of the parameters.
+
+        We use circular mean for the periodic parameters.
         """
         (mean_nonperiodic, mean_sin_periodic, mean_cos_periodic,
          log_diag_chol_inv, offdiagonal_chol_inv) = model_outputs
