@@ -22,6 +22,7 @@ readme = "README.md"
 
 [project.scripts]
 lab-setup-rundir = "cogwheel_machine.cli.utils:setup_rundir_cli"
+lab-setup-rescalerdir = "cogwheel_machine.cli.utils:setup_rescalerdir_cli"
 lab-simulate-chunk = "cogwheel_machine.cli.simulation_chunks:simulate_chunk_cli"
 lab-merge-chunks = "cogwheel_machine.cli.simulation_chunks:merge_chunks_cli"
 lab-generate-data-htcondor = "cogwheel_machine.cli.htcondor:generate_data_cli"

@@ -17,3 +17,17 @@ def setup_rundir_cli():
     args = parser.parse_args()
     rundir = utils.setup_rundir(**vars(args))
     print(f'rundir: {rundir}')
+
+
+def setup_rescalerdir_cli():
+    """CLI to :py:func:`~cogwheel_machine.utils.setup_rescalerdir`."""
+    parser = argparse.ArgumentParser(
+        description='Create a new rescaler directory under a given priordir.')
+    parser.add_argument('priordir', type=Path, help='Physical-prior directory')
+    parser.add_argument(
+        '--prefix', type=str, default='rescaler_',
+        help='Prefix for the rescaler directory (default: rescaler_)')
+
+    args = parser.parse_args()
+    rescalerdir = utils.setup_rescalerdir(**vars(args))
+    print(f'rescalerdir: {rescalerdir}')
