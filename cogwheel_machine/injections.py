@@ -186,7 +186,7 @@ def _add_snr_to_summary(summary, preprocessed_data):
 def submit_condor(priordir,
                   sampler_cls,
                   request_cpus=1,
-                  request_memory='1G',
+                  request_memory='2G',
                   request_disk='1G',
                   **submit_kwargs):
     """

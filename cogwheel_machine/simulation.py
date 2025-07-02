@@ -712,7 +712,7 @@ def setup_condor_sub(rundir, chunk_size,
 
 
 def _setup_condor_for_simulate_chunks(rundir,
-                                      request_memory='4G',
+                                      request_memory='6G',
                                       request_disk='1G',
                                       **submit_kwargs):
     """
@@ -790,7 +790,7 @@ def _setup_condor_for_simulate_chunks(rundir,
 
 def _setup_condor_for_merge_chunks(rundir, delete_chunks_after_merging,
                                    request_disk='100G',
-                                   request_memory='4G',
+                                   request_memory='1G',
                                    **submit_kwargs):
     """
     Set up HTCondor submission script to run `merge_chunks` on

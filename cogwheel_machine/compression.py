@@ -322,7 +322,7 @@ class JSONStandardScaler(sklearn.preprocessing.StandardScaler):
         return Path(directory) / f'{cls.__name__}.json'
 
 
-def setup_condor_sub(rundir, request_memory='25G', request_disk='4G',
+def setup_condor_sub(rundir, request_memory='8G', request_disk='4G',
                      submit=False, **submit_kwargs):
     """
     Create a script to run the compression job on HTCondor.

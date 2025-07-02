@@ -7,8 +7,9 @@ import textwrap
 from pathlib import Path
 
 
-def setup_condor_sub(stem, entry, submit=False,
-                     overwrite=False, **submit_kwargs):
+def setup_condor_sub(stem, entry, *,
+                     requirements='(TARGET.CpuFamily != 16)',
+                     submit=False, overwrite=False, **submit_kwargs):
     """
     Set up HTCondor submission and executable files.
 
@@ -23,6 +24,12 @@ def setup_condor_sub(stem, entry, submit=False,
         Either a path to a Python script (ending in '.py'), a module
         name (e.g. 'my_package.my_module') to be executed, or an entry
         point command (see [project.scripts] in pyproject.toml).
+
+    requirements : str, optional
+        Requirements in the submit file. Defaults to
+        `(TARGET.CpuFamily != 16)` because those nodes were found to
+        produce crashes in the LIGO data grid. Pass `requirements=None`
+        to omit.
 
     submit : bool
         If True, actually run `condor_submit` to submit the job. Else
@@ -64,6 +71,9 @@ def setup_condor_sub(stem, entry, submit=False,
 
     # Path to the conda environment's lib/ directory (for shared libraries)
     env_lib = Path(sys.executable).resolve().parents[1]/'lib'
+
+    if requirements:
+        submit_kwargs.append(requirements=requirements)
 
     kwarg_lines = """
         """.join(f'{key} = {value}' for key, value in submit_kwargs.items())
