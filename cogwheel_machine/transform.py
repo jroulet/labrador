@@ -337,14 +337,14 @@ class _PNCoordinatesPrior(gw_prior.PNCoordinatesPrior):
                  'lnq': None,
                  's2z': (-1, 1),
                 }
-    def __init__(self, eigvecs=None, par_dic_0=None, **kwargs):
+    def __init__(self, eigvecs=None, **kwargs):
         # TODO; for now just put some values for par_dic_0 and eigvecs
         if eigvecs is None:
             eigvecs = np.array([[-1.57616411, -0.04111396],
                                 [-0.54265283,  0.08432735],
                                 [-0.27537869,  0.06914793]])
-        if par_dic_0 is None:
-            par_dic_0 = dict.fromkeys(['m1', 'm2', 's1z', 's2z'], 1.0)
+
+        par_dic_0 = dict.fromkeys(['m1', 'm2', 's1z', 's2z'], 1.0)
 
         super().__init__(eigvecs=eigvecs, par_dic_0=par_dic_0, **kwargs)
 
@@ -359,6 +359,13 @@ class _PNCoordinatesPrior(gw_prior.PNCoordinatesPrior):
         self.cubesize = cubemax - self.cubemin
         self.folded_cubesize = self.cubesize.copy()
         self.folded_cubesize[self._folded_inds] /= 2
+
+    def get_init_dict(self):
+        """Return kwargs to reproduce this class instance."""
+        # We don't want to pollute the .json with the dummy par_dic_0
+        init_dict = super().get_init_dict()
+        del init_dict['par_dic_0']
+        return init_dict
 
 
 class TargetSpaceTransformAlignedSpinsPN(CombinedPrior):
