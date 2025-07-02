@@ -160,10 +160,17 @@ class ParameterRescaler:
         return [par for par in self.bounded_params
                 if par not in self.periodic_params]
 
-    def process_rescalerdir(self):
+    def process_rescalerdir(self, chunk_size=10_000):
         """
         Rescale and save parameters in training and test directories.
+
+        Parameters
+        ----------
+        chunk_size : int
+            Controls the memory usage, useful especially for processing
+            a large training set on a GPU.
         """
+        logger.info('About to rescale training and test sets...')
         rundir = self.rescalerdir.parents[1]
 
         for datadir in rundir/utils.TRAINING_DIR, rundir/utils.TEST_DIR:
@@ -176,14 +183,20 @@ class ParameterRescaler:
                 # The [:] makes it faster
                 folded_sampled_parameters = h5file["dataset"][:][mask]
 
-            rescaled_parameters = self.rescale(compressed_data,
-                                               folded_sampled_parameters)
+            slices = (slice(i, i+chunk_size)
+                      for i in range(0, len(compressed_data), chunk_size))
+
+            rescaled_parameters = np.concatenate([
+                self.rescale(compressed_data[slice_],
+                             folded_sampled_parameters[slice_]
+                            ).detach().cpu().numpy()
+                for slice_ in slices])
 
             rescaled_datadir = self.rescalerdir/datadir.name
             os.makedirs(rescaled_datadir)
 
             np.save(rescaled_datadir/utils.RESCALED_PARAMETERS_FILENAME,
-                    rescaled_parameters.detach().cpu().numpy())
+                    rescaled_parameters)
 
     def rescale(self, compressed_data, folded_sampled_parameters,
                 double_precision=True):
