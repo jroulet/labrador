@@ -21,13 +21,9 @@ def get_unwrapped_phase(frequencies, signal, mchirp):
     return np.unwrap(np.angle(dechirped)) + phase_0
 
 
-def _get_differential_evolution_initial_population(bounds):
-    dim = len(bounds)
-    pop_size = 15 * dim
-
-    sampler = qmc.Halton(d=dim, scramble=True)
-    halton_samples = sampler.random(n=pop_size)
-    return qmc.scale(halton_samples, *zip(*bounds))
+def _get_differential_evolution_initial_population(bounds, popsize=15):
+    n_dim = len(bounds)
+    return qmc.scale(qmc.Halton(n_dim).random(popsize * n_dim), *zip(*bounds))
 
 
 class SemicoherentLikelihood:

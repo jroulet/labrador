@@ -242,16 +242,21 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
         Returns
         -------
         float32 array
-            A concatenation of the following quantities:
-            * amp_rms                                         1
-            * amp_ratios                                  n_det
-            * cos(phase_differences)      n_det * (n_det-1) / 2
-            * sin(phase_differences)      n_det * (n_det-1) / 2
-            * time_differences            n_det * (n_det-1) / 2
-            * intrinsic                                       3
-            * cos(ref_det_phase)                              1
-            * sin(ref_det_phase)                              1
-            * ref_det_time                                    1
+            Concatenation of the following quantities:
+
+            ============================  ============================
+            Quantity                      Shape
+            ============================  ============================
+            amp_rms                       1
+            amp_ratios                    n_det
+            cos(phase_differences)        n_det * (n_det - 1) / 2
+            sin(phase_differences)        n_det * (n_det - 1) / 2
+            time_differences              n_det * (n_det - 1) / 2
+            intrinsic                     n_shapeampcoef + n_phasecoef
+            cos(ref_det_phase)            1
+            sin(ref_det_phase)            1
+            ref_det_time                  1
+            ============================  ============================
         """
         ampcoef, phasecoef = self.split_amp_phase_coef(coef)
         amp_rms, amp_ratios \
@@ -279,12 +284,15 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
 
     def get_transform_kwargs(self, coef, i_refdet, f_ref):
         """
-        Return dictionary with the following kwargs, useful to
-        instantiate the coordinate transformation:
-            * coef0pn
-            * phase_refdet_0
-            * amp_ref_det
-            * t0_refdet
+        Return dictionary with kwargs useful to instantiate the
+        coordinate transformation.
+
+        Namely:
+
+        * coef0pn
+        * phase_refdet_0
+        * amp_ref_det
+        * t0_refdet
         """
         ampcoef, phasecoef = self.split_amp_phase_coef(coef)
         coef0pn = self.phase_model.get_coef0pn(phasecoef)
@@ -347,8 +355,10 @@ class AmplitudeModel(hdf5_utils.HDF5Mixin):
             Evaluation frequencies (Hz).
 
         ampcoef : float array of shape (n_det+1,)
-            ampcoef[:n_det] = Amplitude at detector (physical units).
-            ampcoef[-1] = Cutoff frequency (Hz).
+            Amplitude coefficients and cutoff frequency:
+
+            * ampcoef[:n_det] : Amplitudes at each detector (physical units).
+            * ampcoef[-1]     : Cutoff frequency in Hz.
 
         apply_tapering : bool
             Whether to model the merger or let the amplitude profile be
@@ -378,16 +388,18 @@ class AmplitudeModel(hdf5_utils.HDF5Mixin):
         Parameters
         ----------
         ampcoef : float array of shape (n_det+1,)
-            ampcoef[:n_det] = Amplitude at detector (physical units).
-            ampcoef[-1] = Cutoff frequency (Hz).
+            Amplitude coefficients and cutoff frequency:
+
+            * ampcoef[:n_det] : Amplitudes at each detector (physical units).
+            * ampcoef[-1]     : Cutoff frequency in Hz.
 
         Returns
         -------
         amp_rms : float
-            Root-mean-square amplitude over detectors.
+            Root-mean-square amplitude across detectors.
 
-        amp_ratios : float array of shape (n_det,)
-            amp_det / amp_rms
+        amp_ratios : ndarray of shape (n_det,)
+            Detector amplitudes normalized by amp_rms.
         """
         det_amp = ampcoef[:self.n_det]
         amp_rms = np.linalg.norm(det_amp)
@@ -643,15 +655,16 @@ class PhaseModel(hdf5_utils.HDF5Mixin):
     ----------------------------
     pncoef : array of coefficients with physical meaning
         They have analytical expressions.
+
         * pncoef[:n_det] = phase at each detector
         * pncoef[n_det : 2*n_det] = 2*pi*time at each detector (s)
         * pncoef[2*n_det:] = 0PN, 1PN, 1.5PN prefactors before
-            (f/Hz)**pn_exponent
+            (f/Hz)^pn_exponent
 
     phasecoef : array of coefficients in an orthonormal basis
         Obtained with a mixture of QR (phase & time part) and SVD
         (intrinsic part). Can be connected to `pncoef` via matrix
-        algebra, see `._phasecoef_to_pncoef().
+        algebra, see `._phasecoef_to_pncoef()`.
 
         * phasecoef[:n_det] only affect phase at each detector.
         * phasecoef[n_det : 2*n_det] only affect time and phase at each
@@ -676,7 +689,7 @@ class PhaseModel(hdf5_utils.HDF5Mixin):
     def from_scratch(cls,
                      frequencies,
                      fiducial_wht_filter,
-                     n_phasecoef=2,
+                     n_intphasecoef=2,
                      mchirp_rng=(1.0, 50.0),
                      q_rng=(0.05, 1.0),
                      n_examples=10**4,
@@ -695,7 +708,7 @@ class PhaseModel(hdf5_utils.HDF5Mixin):
             at which it equals 0 like so:
             `event_data.wht_filter[:, event_data.fslice]`.
 
-        n_phasecoef : int
+        n_intphasecoef : int
             How many dimensions to use for describing the intrinsic
             parameter space. Increasing this allows more freedom in the
             model.
@@ -749,7 +762,7 @@ class PhaseModel(hdf5_utils.HDF5Mixin):
                                avg_weighted_phase)  # n
         umat = cls._get_umat(
             weighted_phase_examples - avg_weighted_phase[..., np.newaxis],
-            n_phasecoef)  # dfc
+            n_intphasecoef)  # dfc
 
         weighted_dphase_basis = np.concatenate(
             [qmat[..., :n_ext], umat], axis=2)  # dfc
