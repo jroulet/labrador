@@ -329,3 +329,51 @@ class TargetSpaceTransformAlignedSpins(CombinedPrior):
     prior_classes = [*TargetSpaceTransformNoSpins.prior_classes,
                      gw_prior.UniformEffectiveSpinPrior,
                      ]
+
+
+class _PNCoordinatesPrior(gw_prior.PNCoordinatesPrior):
+    range_dic = {'mu1': (-np.inf, np.inf),
+                 'mu2': (-np.inf, np.inf),
+                 'lnq': None,
+                 's2z': (-1, 1),
+                }
+    def __init__(self, eigvecs=None, **kwargs):
+        # TODO; for now just put some values for par_dic_0 and eigvecs
+        if eigvecs is None:
+            eigvecs = np.array([[-1.57616411, -0.04111396],
+                                [-0.54265283,  0.08432735],
+                                [-0.27537869,  0.06914793]])
+
+        par_dic_0 = dict.fromkeys(['m1', 'm2', 's1z', 's2z'], 1.0)
+
+        super().__init__(eigvecs=eigvecs, par_dic_0=par_dic_0, **kwargs)
+
+        # The parent class tries to be smart about the range_dic, undo.
+        # TODO change cogwheel.gw_prior.PNCoordinatesPrior, perhaps allow
+        # par_dic_0 = None
+        # Perhaps make a base class with abstract standard_lnprior
+        self.range_dic.update(mu1=(-np.inf, np.inf),
+                              mu2=(-np.inf, np.inf))
+        self.cubemin = np.array([rng[0] for rng in self.range_dic.values()])
+        cubemax = np.array([rng[1] for rng in self.range_dic.values()])
+        self.cubesize = cubemax - self.cubemin
+        self.folded_cubesize = self.cubesize.copy()
+        self.folded_cubesize[self._folded_inds] /= 2
+
+    def get_init_dict(self):
+        """Return kwargs to reproduce this class instance."""
+        # We don't want to pollute the .json with the dummy par_dic_0
+        init_dict = super().get_init_dict()
+        del init_dict['par_dic_0']
+        return init_dict
+
+
+class TargetSpaceTransformAlignedSpinsPN(CombinedPrior):
+    prior_classes = [_PNCoordinatesPrior,
+                     gw_prior.IsotropicInclinationPrior,
+                     gw_prior.UniformPolarizationPrior,
+                     gw_prior.IsotropicSkyLocationPrior,
+                     TimeTransform,
+                     PhaseTransform,
+                     DistanceTransform,
+                     ]
