@@ -11,22 +11,48 @@ DataPreprocessor:
     Compress data by heterodyning against a reference waveform.
 """
 import argparse
+import csv
 import functools
 import os
-import pstats
 from pathlib import Path
+import pstats
+import sys
+import textwrap
+
+import h5py
+import pyarrow.feather
 import numpy as np
 import pandas as pd
-import h5py
 
-from cogwheel import data
-from cogwheel import gw_utils
-from cogwheel import waveform
-import cogwheel.utils
+from cogwheel import data, gw_utils, waveform
 
-from . import semicoherent_likelihood
+from . import condor_utils, semicoherent_likelihood, utils
 from .waveform_model import PhenomenologicalWaveformGenerator
-from . import utils
+
+
+def setup_simulator(rundir):
+    """
+    Parameters
+    ----------
+    rundir : str, os.PathLike
+        Run directory, should contain a file `data_config.py`.
+
+    Returns
+    -------
+    simulator : Simulator
+
+    data_preprocessor : DataPreprocessor
+
+    transform_class : type
+        Read from {rundir}/data_config.py
+    """
+    rundir = Path(rundir)
+    config = utils.load_data_config(rundir)
+
+    simulator = Simulator(config.EVENT_DATA_KWARGS, config.APPROXIMANT)
+    data_preprocessor = DataPreprocessor.from_rundir(rundir)
+    transform_class = _get_transform_class(config)
+    return simulator, data_preprocessor, transform_class
 
 
 def simulate_and_preprocess_sample(simulator, data_preprocessor,
@@ -51,7 +77,8 @@ def simulate_and_preprocess_sample(simulator, data_preprocessor,
 
     unfolding_label : int
         Index of the region that the parameters belong to before
-        applying folding. Takes a value between [0, 2**n_folded_parameters).
+        applying folding. Takes a value between
+        [0, 2**n_folded_parameters).
     """
     simulated_input = simulator.generate_data_and_reference_waveform(
         parameters)
@@ -66,7 +93,7 @@ def simulate_and_preprocess_sample(simulator, data_preprocessor,
     return preprocessed_data, folded_sampled_parameters, unfolding_label
 
 
-def get_transform_class(config):
+def _get_transform_class(config):
     """
     Return a transform class partially instantiatied with kwargs that
     are the same across simulations.
@@ -74,7 +101,7 @@ def get_transform_class(config):
     return functools.partial(config.TRANSFORM_CLASS, **config.PRIOR_KWARGS)
 
 
-def get_i_refdet(config):
+def _get_i_refdet(config):
     """Return index of the reference detector."""
     return config.EVENT_DATA_KWARGS['detector_names'].index(
         config.PRIOR_KWARGS['ref_det_name'])
@@ -113,15 +140,17 @@ def simulate_and_preprocess_samples(simulator,
                                     transform_class,
                                     processes):
     """
-    Run ``simulate_and_preprocess_sample()`` on a set of simulation
+    Run :py:func:`simulate_and_preprocess_sample` on a set of simulation
     parameter samples in parallel using ``multiprocessing``.
 
     Note: For best results you may want to ensure that each process runs
     a single thread, by running
-    ```
-    import os
-    os.environ["OMP_NUM_THREADS"] = "1"
-    ```
+
+    .. code-block:: python
+
+        import os
+        os.environ["OMP_NUM_THREADS"] = "1"
+
     at the very start of your Python session (in particular, before
     importing ``numpy`` or any module that imports it).
 
@@ -159,9 +188,11 @@ def simulate_and_preprocess_samples(simulator,
         belong to before applying folding. Takes values between
         [0, 2**n_folded_parameters).
     """
-    args_generator = ((simulator, data_preprocessor, parameters,
-                       transform_class)
-                      for _, parameters in simulation_parameters.iterrows())
+    args_generator = (
+        (simulator, data_preprocessor, parameters, transform_class)
+        for _, parameters in simulation_parameters.iterrows()
+    )
+
     results, stats = utils.multiprocessing_starmap_profiled(
         simulate_and_preprocess_sample, args_generator, processes)
 
@@ -272,7 +303,7 @@ class DataPreprocessor:
 
         waveform_model = PhenomenologicalWaveformGenerator.from_rundir(rundir)
         return cls(waveform_model,
-                   i_refdet=get_i_refdet(config),
+                   i_refdet=_get_i_refdet(config),
                    f_ref=config.PRIOR_KWARGS['f_ref'],
                    n_coherent_segments=config.N_COHERENT_SEGMENTS,
                    pn_phase_tol_compression=config.PN_PHASE_TOL_COMPRESSION)
@@ -428,16 +459,226 @@ def _check_rundir(rundir):
                 f'Missing {parameters_file}, run `generate_parameters.py`.')
 
 
-def submit_condor(rundir,
-                  request_cpus,
-                  request_memory='5G',
-                  request_disk='1G',
-                  **submit_kwargs):
-    """
-    Submit an HTCondor job to simulate training data.
+# ----------------------------------------------------------------------
+# Chunking functions
+CHUNKS_DIRNAME = 'chunks'
+CHUNKS_FILENAME = 'chunks.csv'
+PROFILE_FILENAME = 'simulation.profile'
 
-    This will generate the following files:
-        {submission_scripts}/simulation.{sub,sh,out,err,log}
+
+def _setup_chunks(rundir, chunk_size):
+    rundir = Path(rundir)
+    data_config = utils.load_data_config(rundir)
+
+    dirname_nsamples = [
+        (utils.TEST_DIR, data_config.N_TEST_SIMULATIONS),
+        (utils.TRAINING_DIR, data_config.N_TRAINING_SIMULATIONS),
+    ]
+
+    for dirname, n_samples in dirname_nsamples:
+        chunksdir = rundir/dirname/CHUNKS_DIRNAME
+        filepath = chunksdir/CHUNKS_FILENAME
+
+        ind_pairs = [(i_start, min(i_start + chunk_size, n_samples))
+                     for i_start in range(0, n_samples, chunk_size)]
+
+        os.makedirs(chunksdir)
+        with open(filepath, 'w', newline='', encoding='utf-8') as file:
+            csv.writer(file).writerows(ind_pairs)
+
+
+def _validate_chunkpaths(chunkpaths):
+    # Validate that all chunks are there
+    ind_pairs = [_get_chunk_start_and_end(path) for path in chunkpaths]
+    for current, following in zip(ind_pairs, ind_pairs[1:]):
+        if current[1] != following[0]:
+            raise RuntimeError(
+                'Missing chunk(s) between {current}, {following}')
+    assert ind_pairs[0][0] == 0
+
+
+def simulate_chunk(datadir, i_start, i_end, processes):
+    """
+    Simulate data for a chunk of simulation parameters.
+
+    Parameters
+    ----------
+    datadir : os.PathLike
+        Path to the directory containing the simulation parameters.
+
+    i_start, i_end : int
+        Start (inclusive) and end (exclusive) indices for the chunk.
+
+    processes : int
+        Number of processes to use for parallelization.
+
+    See Also
+    --------
+    cli.htcondor
+        Orchestrates the generation of parameters, simulation in chunks
+        and merging with HTCondor.
+
+    cli.simulation_chunks
+        Defines a command-line interface to this function.
+    """
+    datadir = Path(datadir).resolve()
+    rundir = datadir.parent
+    chunksdir = datadir/CHUNKS_DIRNAME
+    if not chunksdir.exists():
+        raise FileNotFoundError(f'{chunksdir} missing, set up chunks first!')
+
+    names = (
+        utils.PREPROCESSED_DATA_FILENAME,
+        utils.FOLDED_SAMPLED_PARAMETERS_FILENAME,
+        utils.UNFOLDING_LABELS_FILENAME,
+    )
+    chunkpaths = [_get_chunkpath(chunksdir, name, i_start, i_end)
+                  for name in names]
+
+    if all(path.exists() for path in chunkpaths):
+        print(f'Skipping existing chunk {i_start}..{i_end}')
+        return
+
+    simulator, data_preprocessor, transform_class = setup_simulator(rundir)
+
+    parameters_chunk = _load_chunk_from_feather(
+        datadir/utils.PARAMETERS_FILENAME, i_start, i_end)
+
+    (
+        preprocessed_data,
+        folded_sampled_parameters,
+        unfolding_labels,
+        chunk_stats,
+    ) = simulate_and_preprocess_samples(simulator,
+                                        data_preprocessor,
+                                        parameters_chunk,
+                                        transform_class=transform_class,
+                                        processes=processes)
+
+    datasets = (
+        preprocessed_data,
+        {'dataset': folded_sampled_parameters},
+        {'dataset': unfolding_labels},
+    )  # Order must be the same as that of `chunkpaths`
+
+    for path, dataset in zip(chunkpaths, datasets):
+        with h5py.File(path, 'w') as file:
+            for key, arr in dataset.items():
+                file.create_dataset(key, data=arr)
+
+    chunk_stats.dump_stats(
+        _get_chunkpath(chunksdir, PROFILE_FILENAME, i_start, i_end))
+
+
+def merge_chunks(rundir, delete_chunks_after_merging=True):
+    """
+    Merge chunks of simulations into single files.
+
+    Parameters
+    ----------
+    rundir : os.PathLike
+        Run directory; chunks of simulations should have been completed
+        by the time this function is run.
+
+    delete_chunks_after_merging : bool
+        If True, delete the chunk files after merging.
+
+    See Also
+    --------
+    simulate_chunk
+    """
+    rundir = Path(rundir)
+    for dirname in utils.TEST_DIR, utils.TRAINING_DIR:
+        _merge_chunks_in_datadir(rundir/dirname, delete_chunks_after_merging)
+
+
+def _merge_chunks_in_datadir(datadir, delete_chunks_after_merging):
+    chunksdir = datadir/CHUNKS_DIRNAME
+    all_chunkpaths = []
+
+    # HDF5 files:
+    names = (
+        utils.PREPROCESSED_DATA_FILENAME,
+        utils.FOLDED_SAMPLED_PARAMETERS_FILENAME,
+        utils.UNFOLDING_LABELS_FILENAME,
+    )
+    for name in names:
+        pattern = _get_chunkpath('', name, '*', '*').name
+        chunkpaths = sorted(chunksdir.glob(pattern),
+                            key=_get_chunk_start_and_end)
+
+        _validate_chunkpaths(chunkpaths)
+
+        _, n_rows = _get_chunk_start_and_end(chunkpaths[-1])
+
+        # Create the merged output file:
+        with h5py.File(datadir/name, 'w') as merged:
+            # Create datasets:
+            with h5py.File(chunkpaths[0], 'r') as sample_file:
+                for key, arr in sample_file.items():
+                    if key == 'fbin':
+                        merged.create_dataset(key, data=arr)
+                    else:
+                        merged.create_dataset(key,
+                                              shape=(n_rows, *arr.shape[1:]),
+                                              dtype=arr.dtype)
+
+            # Populate datasets:
+            for chunkpath in chunkpaths:
+                i_start, i_end = _get_chunk_start_and_end(chunkpath)
+                with h5py.File(chunkpath, 'r') as f_in:
+                    for key, arr in f_in.items():
+                        if key == 'fbin':
+                            np.testing.assert_array_equal(merged[key], arr)
+                        else:
+                            merged[key][i_start : i_end] = arr
+
+        all_chunkpaths.extend(chunkpaths)
+
+    # Profiling statistics:
+    pattern = _get_chunkpath('', PROFILE_FILENAME, '*', '*').name
+    chunkpaths = list(chunksdir.glob(pattern))
+    pstats.Stats(*map(str, chunkpaths)).dump_stats(datadir/PROFILE_FILENAME)
+
+    all_chunkpaths.extend(chunkpaths)
+
+    # Delete chunk files:
+    if delete_chunks_after_merging:
+        for chunkpath in all_chunkpaths:
+            chunkpath.unlink()
+        (chunksdir/CHUNKS_FILENAME).unlink()
+        # Delete the chunks directory if empty:
+        if not any(chunksdir.iterdir()):
+            chunksdir.rmdir()
+
+    print(f'Merged {len(all_chunkpaths)} chunk files into {datadir}.')
+
+
+def _get_chunkpath(chunksdir, name, i_start, i_end):
+    auxpath = Path(chunksdir)/name
+    return auxpath.with_stem(f'{auxpath.stem}-{i_start}_{i_end}')
+
+
+def _get_chunk_start_and_end(chunkpath) -> tuple[int, int]:
+    i_start, i_end = map(int, chunkpath.stem.split('-')[-1].split('_'))
+    return i_start, i_end
+
+
+def _load_chunk_from_feather(feather_path: str, i_start: int,
+                             i_end: int) -> pd.DataFrame:
+    table = pyarrow.feather.read_table(feather_path, memory_map=True)
+    chunk = table.slice(offset=i_start, length=i_end-i_start)
+    return chunk.to_pandas()
+
+
+# ----------------------------------------------------------------------
+# HTCondor functions
+def setup_condor_sub(rundir, chunk_size,
+                     delete_chunks_after_merging=True,
+                     **submit_kwargs):
+    """
+    Set up HTCondor submission scripts to run multiple `simulate_chunk`
+    and a `merge_chunks`.
 
     Parameters
     ----------
@@ -445,35 +686,190 @@ def submit_condor(rundir,
         Run directory, should contain a file `data_config.py` and
         training and test directories with simulation parameters.
 
-    request_cpus, request_memory, request_disk : int or str
-        Specifications in the HTCondor submit file.
+    delete_chunks_after_merging : bool
+        If True, delete the chunk files after merging.
 
-    **submit_kwargs
-        Further options to include in the HTCondor submit file. Do not
-        pass `executable`, `output`, `error`, `log`, `args`, `queue`,
-        which will be dealt with automatically.
+    Returns
+    -------
+    submit_chunks_paths: tuple [pathlib.Path, pathlib.Path]
+        Paths to the HTCondor submission scripts for simulating chunks
+        for the training and test sets, respectively.
+
+    submit_merge_path : pathlib.Path
+        Path to the HTCondor submission scripts for mergining chunks.
+
+    See Also
+    --------
+    cli.htcondor : Command-line interface to run this and other jobs.
     """
     rundir = Path(rundir).resolve()
-    _check_rundir(rundir)
+    _setup_chunks(rundir, chunk_size)
+    submit_chunks_paths = _setup_condor_for_simulate_chunks(
+        rundir, **submit_kwargs)
+    submit_merge_path = _setup_condor_for_merge_chunks(
+        rundir, delete_chunks_after_merging, **submit_kwargs)
+    return submit_chunks_paths, submit_merge_path
+
+
+def _setup_condor_for_simulate_chunks(rundir,
+                                      request_memory='6G',
+                                      request_disk='1G',
+                                      **submit_kwargs):
+    """
+    Set up HTCondor submission scripts to run `simulate_chunk` on
+    training and test data chunks.
+
+    Parameters
+    ----------
+    rundir : os.PathLike
+        Run directory, should contain training and test directories
+        with simulation parameters.
+
+    Returns
+    -------
+    tuple of pathlib.Path
+        Paths to the training and test HTCondor submission scripts.
+    """
     scripts_dir = rundir/'submission_scripts'
-    os.makedirs(scripts_dir, exist_ok=True)
+    logdir = scripts_dir/'simulation_logs'
+    os.makedirs(logdir, exist_ok=True)
 
-    submit_kwargs = {
-        'submit_path': scripts_dir/'simulation.sub',
-        'executable': scripts_dir/'simulation.sh',
-        'output': scripts_dir/'simulation.out',
-        'error': scripts_dir/'simulation.err',
-        'log': scripts_dir/'simulation.log',
-        'args': f'{rundir} --processes {request_cpus}',
-        'request_cpus': request_cpus,
-        'request_memory': request_memory,
-        'request_disk': request_disk,
-        } | submit_kwargs
+    traindir = rundir/utils.TRAINING_DIR
+    testdir = rundir/utils.TEST_DIR
+    train_chunkfile = traindir/CHUNKS_DIRNAME/CHUNKS_FILENAME
+    test_chunkfile = testdir/CHUNKS_DIRNAME/CHUNKS_FILENAME
 
-    cogwheel.utils.submit_condor(**submit_kwargs)
+    env_lib = Path(sys.executable).resolve().parents[1]/'lib'
+    executable_path = scripts_dir/'simulation.sh'
+
+    # Write executable (common to training and test sets):
+    executable_text = textwrap.dedent(
+        f"""\
+        #!/bin/bash
+        export OMP_NUM_THREADS=1
+        export LD_LIBRARY_PATH="{env_lib}:$LD_LIBRARY_PATH"
+
+        set -e
+
+        {Path(sys.executable).resolve().parent/'lab-simulate-chunk'} "$@"
+        """)
+
+    condor_utils.write_executable(executable_path, executable_text)
+
+    # Write separate submit files for the training and test sets:
+    kwarg_lines = """
+            """.join(f'{key} = {value}'
+                     for key, value in submit_kwargs.items())
+
+    submit_paths = []
+    for kind, datadir, chunkfile in [('train', traindir, train_chunkfile),
+                                     ('test', testdir, test_chunkfile)]:
+        log_stem = logdir/f"simulation-$(i_min)_$(i_max)_{kind}"
+        submit_path = scripts_dir/f"simulation_{kind}.sub"
+
+        submit_text = textwrap.dedent(
+            f"""\
+            executable = {executable_path}
+            request_memory = {request_memory}
+            request_disk = {request_disk}
+
+            {kwarg_lines}
+
+            arguments = {datadir} $(i_min) $(i_max)
+            output = {log_stem}.out
+            error = {log_stem}.err
+            log = {log_stem}.log
+            queue i_min, i_max from {chunkfile}
+            """)
+
+        condor_utils.write_executable(submit_path, submit_text)
+        submit_paths.append(submit_path)
+
+    return tuple(submit_paths)
 
 
-def append_to_hdf5(filename, **arrays):
+def _setup_condor_for_merge_chunks(rundir, delete_chunks_after_merging,
+                                   request_disk='100G',
+                                   request_memory='1G',
+                                   **submit_kwargs):
+    """
+    Set up HTCondor submission script to run `merge_chunks` on
+    chunks of data.
+
+    Parameters
+    ----------
+    rundir : os.PathLike
+        Run directory, chunks of simulations should have been completed
+        by the time this function is run.
+
+    delete_chunks_after_merging : bool
+        If True, delete the chunk files after merging.
+
+    Returns
+    -------
+    submit_path : pathlib.Path
+        Path to the HTCondor submission script.
+    """
+    stem = rundir/'submission_scripts'/'merge_chunks'
+    entry = 'lab-merge-chunks'
+    arguments = str(rundir)
+    if delete_chunks_after_merging:
+        arguments += ' --delete_chunks_after_merging'
+
+    submit_path = condor_utils.setup_condor_sub(
+        stem, entry, arguments=arguments, request_disk=request_disk,
+        request_memory=request_memory, **submit_kwargs)
+
+    return submit_path
+
+
+# ----------------------------------------------------------------------
+# Functions to simulate data in the local computer
+def main(rundir, processes=None):
+    """Generate and preprocess training and test data."""
+    rundir = Path(rundir)
+    _check_rundir(rundir)
+
+    simulator, data_preprocessor, transform_class = setup_simulator(rundir)
+
+    for dirname in utils.TEST_DIR, utils.TRAINING_DIR:
+        _populate_datadir(rundir/dirname, simulator, data_preprocessor,
+                          transform_class, processes)
+
+
+def _populate_datadir(datadir, simulator, data_preprocessor,
+                      transform_class, processes, chunk_size=10_000):
+    simulation_parameters = pd.read_feather(datadir/utils.PARAMETERS_FILENAME)
+
+    stats = pstats.Stats()
+
+    for chunk_start in range(0, len(simulation_parameters), chunk_size):
+        (
+            preprocessed_data,
+            folded_sampled_parameters,
+            unfolding_labels,
+            chunk_stats
+        ) = simulate_and_preprocess_samples(
+            simulator,
+            data_preprocessor,
+            simulation_parameters[chunk_start : chunk_start + chunk_size],
+            transform_class=transform_class,
+            processes=processes
+        )
+
+        _append_to_hdf5(datadir/utils.PREPROCESSED_DATA_FILENAME,
+                        **preprocessed_data)
+        _append_to_hdf5(datadir/utils.FOLDED_SAMPLED_PARAMETERS_FILENAME,
+                        dataset=folded_sampled_parameters)
+        _append_to_hdf5(datadir/utils.UNFOLDING_LABELS_FILENAME,
+                        dataset=unfolding_labels)
+
+        stats.add(chunk_stats)
+
+    stats.dump_stats(datadir/'simulation_profiling')
+
+
+def _append_to_hdf5(filename, **arrays):
     """
     Append arrays to an hdf5 file.
 
@@ -495,70 +891,6 @@ def append_to_hdf5(filename, **arrays):
             else:
                 h5file.create_dataset(key, data=array,
                                       maxshape=(None, *array.shape[1:]))
-
-
-def _populate_datadir(datadir, simulator, data_preprocessor,
-                      transform_class, processes, chunk_size=10_000):
-    simulation_parameters = pd.read_feather(datadir/utils.PARAMETERS_FILENAME)
-
-    stats = pstats.Stats()
-
-    for chunk_start in range(0, len(simulation_parameters), chunk_size):
-        (preprocessed_data, folded_sampled_parameters, unfolding_labels,
-         chunk_stats) = simulate_and_preprocess_samples(
-            simulator,
-            data_preprocessor,
-            simulation_parameters[chunk_start : chunk_start + chunk_size],
-            transform_class=transform_class,
-            processes=processes)
-
-        append_to_hdf5(datadir/utils.PREPROCESSED_DATA_FILENAME,
-                       **preprocessed_data)
-        append_to_hdf5(datadir/utils.FOLDED_SAMPLED_PARAMETERS_FILENAME,
-                       dataset=folded_sampled_parameters)
-        append_to_hdf5(datadir/utils.UNFOLDING_LABELS_FILENAME,
-                       dataset=unfolding_labels)
-
-        stats.add(chunk_stats)
-
-    stats.dump_stats(datadir/'simulation_profiling')
-
-
-def setup_simulator(rundir):
-    """
-    Parameters
-    ----------
-    rundir : str, os.PathLike
-        Run directory, should contain a file `data_config.py`.
-
-    Returns
-    -------
-    simulator : Simulator
-
-    data_preprocessor : DataPreprocessor
-
-    transform_class : type
-        Read from {rundir}/data_config.py
-    """
-    rundir = Path(rundir)
-    config = utils.load_data_config(rundir)
-
-    simulator = Simulator(config.EVENT_DATA_KWARGS, config.APPROXIMANT)
-    data_preprocessor = DataPreprocessor.from_rundir(rundir)
-    transform_class = get_transform_class(config)
-    return simulator, data_preprocessor, transform_class
-
-
-def main(rundir, processes=None):
-    """Generate and preprocess training and test data."""
-    rundir = Path(rundir)
-    _check_rundir(rundir)
-
-    simulator, data_preprocessor, transform_class = setup_simulator(rundir)
-
-    for dirname in utils.TEST_DIR, utils.TRAINING_DIR:
-        _populate_datadir(rundir/dirname, simulator, data_preprocessor,
-                          transform_class, processes)
 
 
 if __name__ == '__main__':

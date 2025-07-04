@@ -5,6 +5,7 @@ It uses a phenomenological waveform model with few, uncorrelated
 parameters.
 """
 from scipy import interpolate, optimize
+from scipy.stats import qmc
 import numpy as np
 
 import lal
@@ -18,6 +19,11 @@ def get_unwrapped_phase(frequencies, signal, mchirp):
     phase_0 = -3/128 * (np.pi * mchirp * lal.MTSUN_SI * frequencies) ** (-5/3)
     dechirped = signal * np.exp(-1j*phase_0)
     return np.unwrap(np.angle(dechirped)) + phase_0
+
+
+def _get_differential_evolution_initial_population(bounds, popsize=15):
+    n_dim = len(bounds)
+    return qmc.scale(qmc.Halton(n_dim).random(popsize * n_dim), *zip(*bounds))
 
 
 class SemicoherentLikelihood:
@@ -128,16 +134,8 @@ class SemicoherentLikelihood:
         """
         assert np.array_equal(frequencies, self.frequencies)
 
-        # TODO promote to kwargs, put in config
-        boxsize = 3.0
-        optimizer = 'differential_evolution'
-        optimizer_kwargs = {'init': 'halton',}
-
-        if optimizer_kwargs is None:
-            optimizer_kwargs = {}
-
-        if isinstance(optimizer, str):
-            optimizer = getattr(optimize, optimizer)
+        big_boxsize = 20.0  # Hard bounds for optimization
+        small_boxsize = 2.5  # Initial bounds for population
 
         shapecoef_guess = self.waveform_model.guess_shapecoef(
             frequencies,
@@ -147,16 +145,23 @@ class SemicoherentLikelihood:
 
         shapeampcoef_bounds = self.waveform_model.amplitude_model \
             .amplitude_tapering.shapeampcoef_bounds
-        shapephasecoef_bounds = (
-            shapecoef_guess[len(shapeampcoef_bounds):, np.newaxis]
-            + (-boxsize, boxsize))
-        shapecoef_bounds = np.concatenate(
-            [shapeampcoef_bounds, shapephasecoef_bounds], axis=0)
 
-        shapecoef = optimizer(
+        def get_bounds(boxsize):
+            shapephasecoef_bounds = (
+                shapecoef_guess[len(shapeampcoef_bounds):, np.newaxis]
+                + (-boxsize, boxsize))
+            return [*shapeampcoef_bounds, *shapephasecoef_bounds]
+
+        small_bounds = get_bounds(small_boxsize)
+        big_bounds = get_bounds(big_boxsize)
+
+        init_pop = _get_differential_evolution_initial_population(small_bounds)
+
+        shapecoef = optimize.differential_evolution(
             lambda shapecoef: -self.semicoherent_lnlike(shapecoef),
-            bounds=list(shapecoef_bounds), **optimizer_kwargs
-            ).x
+            bounds=big_bounds,
+            init=init_pop,
+        ).x
 
         return self._fit_amp_phase(shapecoef)
 

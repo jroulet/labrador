@@ -56,6 +56,7 @@ class UnfoldingClassifier:
 
     def predict(self, compressed_data, rescaled_params):
         """Make predictions from the trained XGBoost model."""
+        # Accept same `compressed_data` for many `rescaled_params`:
         compressed_data = np.broadcast_to(
             compressed_data,
             (rescaled_params.shape[0], compressed_data.shape[-1]))

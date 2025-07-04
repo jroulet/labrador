@@ -3,8 +3,8 @@ Example configuration file with parameters for the multilayer perceptron
 that learns mean and covariance of the posterior, to rescale the
 parameters before passing them to sbi
 
-This file may be copied into ``rescalerdir`` and edited before training the
-network.
+This file may be copied into ``rescalerdir`` and edited before training
+the network.
 """
 import torch
 

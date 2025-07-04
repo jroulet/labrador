@@ -81,7 +81,7 @@ class Posterior:
 
         fixed_par_dic : dict
             Contains parameter values that are fixed in all the samples
-            (e.g. reference frequency, tidal deformabilities, ...)
+            (e.g. reference frequency, tidal deformabilities, ...).
 
         See Also
         --------
@@ -93,7 +93,7 @@ class Posterior:
         self.fixed_par_dic = fixed_par_dic or {}
 
     def generate_samples_and_lnprob(self, n_samples, compressed_data,
-                                    transform):
+                                    transform, dropna=True):
         """
         Generate samples and their probablilty density in the space
         of standard parameters.
@@ -101,7 +101,7 @@ class Posterior:
         Parameters
         ----------
         n_samples : int
-            How many samples to generate
+            How many samples to generate.
 
         compressed_data : (n_samples, n_compressed_params) array
             Compressed data, i.e. the output of the compression step.
@@ -111,19 +111,23 @@ class Posterior:
             Transforms between standard parameters and coordinates
             suitable for folding.
 
+        dropna : bool
+            Discard SBI samples that produce unphysical parameters.
+            (This may reduce the number of samples from `n_samples`.)
+
         Returns
         -------
         samples : pd.DataFrame
             Columns contain `transform.standard_params` and
-            `transform.sampled_params`
+            `transform.sampled_params`.
 
         lnprob_standard : float array
             Log probability density in the space of standard parameters
             (`transform.standard_params`).
             It is supposed to resemble the log posterior to the extent
             that the model is well trained, but it is guaranteed to
-            describe the distribution of the samples including the
-            normalization.
+            describe the distribution of the samples (including the
+            normalization).
         """
         rescaled_parameters = self.sbi_posterior.sample(
             [n_samples], x=compressed_data, show_progress_bars=False)
@@ -135,8 +139,20 @@ class Posterior:
             compressed_data, transform, rescaled_parameters)
 
         cogwheel.utils.update_dataframe(samples, self.fixed_par_dic)
-        # lnj := log |∂{standard} / ∂{folded_rescaled}|
-        # p(standard) = p(folded_rescaled) / |∂{standard}/∂{folded_rescaled}|
+
+        if dropna:
+            valid = samples.notna().all(axis=1)
+
+            if not all(valid):
+                print('Dropping unphysical samples '
+                      f'({(~valid).mean():.3g} of the total).')
+
+            samples = samples[valid].reset_index(drop=True)
+            lnp_sbi = lnp_sbi[valid]
+            lnj = lnj[valid]
+
+        # lnj := log |∂{standard} / ∂{rescaled}|
+        # p(standard) = p(rescaled) / |∂{standard}/∂{rescaled}|
         return samples, lnp_sbi - lnj
 
     def unrescale_unfold_transform(self, compressed_data, transform,
@@ -174,7 +190,7 @@ class Posterior:
                 = self.parameter_rescaler.unrescale(compressed_data,
                                                     rescaled_parameters)
         folded_sampled_parameters = folded_sampled_parameters.cpu()
-        # log |∂{folded} / ∂{folded_rescaled}|
+        # log |∂{folded} / ∂{rescaled}|
         lnj_unrescale = lnj_unrescale.cpu().numpy()
 
         # • Unfold:
@@ -186,7 +202,7 @@ class Posterior:
         # unfolded = (folded, unfold)
         # => p(unfolded) = p(folded) p(unfold | folded)
         # p(unfold | folded) plays the role of the "Jacobian":
-        # p(unfold | folded) = |∂{folded} / ∂{unfolded}|
+        # p(unfold | folded) ≡ |∂{folded} / ∂{unfolded}|
 
         # • Transform to standard coordinates:
         transform.transform_samples(parameters)
@@ -195,8 +211,8 @@ class Posterior:
         lnj_inverse_transform = lnj_v(**parameters[transform.standard_params])
 
         # Obtain the total Jacobian as the product
-        # |∂{standard} / ∂{folded_rescaled}| = (
-        #     |∂{folded} / ∂{folded_rescaled}|
+        # |∂{standard} / ∂{rescaled}| = (
+        #     |∂{folded} / ∂{rescaled}|
         #     |∂{unfolded} / ∂{folded}|
         #     |∂{standard} / ∂{unfolded}|
         # )
