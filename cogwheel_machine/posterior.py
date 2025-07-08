@@ -1,10 +1,11 @@
 """
-Generate samples and their probability density in standard coordinates.
+Generate amortized samples, and reweight using likelihood evaluations.
 """
 from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
+from scipy.special import logsumexp
 
 import cogwheel.prior
 import cogwheel.utils
@@ -93,10 +94,10 @@ class Posterior:
         self.fixed_par_dic = fixed_par_dic or {}
 
     def generate_samples_and_lnprob(self, n_samples, compressed_data,
-                                    transform, dropna=True):
+                                    transform, dropna=True, verbose=True):
         """
-        Generate samples and their probablilty density in the space
-        of standard parameters.
+        Generate samples and their probablilty density in the space of
+        standard parameters.
 
         Parameters
         ----------
@@ -121,7 +122,7 @@ class Posterior:
             Columns contain `transform.standard_params` and
             `transform.sampled_params`.
 
-        lnprob_standard : float array
+        standard_lnprob : float array
             Log probability density in the space of standard parameters
             (`transform.standard_params`).
             It is supposed to resemble the log posterior to the extent
@@ -143,7 +144,7 @@ class Posterior:
         if dropna:
             valid = samples.notna().all(axis=1)
 
-            if not all(valid):
+            if verbose and not all(valid):
                 print('Dropping unphysical samples '
                       f'({(~valid).mean():.3g} of the total).')
 
@@ -171,7 +172,7 @@ class Posterior:
             suitable for folding.
 
         rescaled_parameters : (n_samples, n_rescaled_params) array
-            Rescaled parameters, i.e. the output of the normalizing flow.
+            Rescaled parameters, i.e. output of the normalizing flow.
             This is the input to the postprocessor.
 
         Returns
@@ -222,10 +223,6 @@ class Posterior:
             rescaled_parameters,
             columns=[f'rescaled_{par}' for par in transform.sampled_params])
         cogwheel.utils.update_dataframe(parameters, rescaled_df)
-        parameters['lnj_unrescale'] = lnj_unrescale
-        parameters['lnp_unfold'] = lnp_unfold
-        parameters['lnj_inverse_transform'] = lnj_inverse_transform
-        parameters['lnj'] = lnj
 
         return parameters, lnj
 
@@ -345,3 +342,66 @@ def _fixed_par_dics(prior):
     elif isinstance(prior, cogwheel.prior.CombinedPrior):
         for subprior in prior.subpriors:
             yield from _fixed_par_dics(subprior)
+
+
+class ImportancePosterior:
+    """Generate importance-weighted samples for a specific event."""
+    def __init__(self, labrador_posterior, compressed_data, transform,
+                 cogwheel_posterior):
+        """
+        Parameters
+        ----------
+        labrador_posterior : Posterior
+            Amortized likelihood-free posterior estimator.
+
+        compressed_data : array
+            See :py:func:`compression.compress_data`.
+
+        transform : transform.TransformMixin
+            Maps folded_sampled_parameters to standard_parameters.
+
+        cogwheel_posterior : cogwheel.posterior.Posterior
+            Evaluates the (likelihood-based) posterior density in the
+            space of standard parameters.
+        """
+        if (set(transform.standard_params)
+                | labrador_posterior.fixed_par_dic.keys()
+                != set(cogwheel_posterior.prior.standard_params)):
+            raise ValueError('`transform` and `cogwheel_posterior` have '
+                             'different `standard_params`.')
+
+        self.labrador_posterior = labrador_posterior
+        self.compressed_data = np.atleast_2d(compressed_data)
+        self.transform = transform
+        self.cogwheel_posterior = cogwheel_posterior
+
+        self._standard_lnposterior = np.vectorize(
+            self.cogwheel_posterior.standard_lnposterior, otypes=[float])
+
+    def get_weighted_samples_and_lnz(
+            self, target_n_eff=1000, max_n_samples=100_000):
+        """Generate SBI samples, compute weights and log evidence."""
+        n_chunk = target_n_eff
+        n_eff = 0.0
+        samples = pd.DataFrame()
+
+        while (n_eff < target_n_eff) and (len(samples) < max_n_samples):
+            n_chunk = min(n_chunk, max_n_samples - len(samples))
+            chunk, standard_lnprob \
+                = self.labrador_posterior.generate_samples_and_lnprob(
+                    n_chunk, self.compressed_data, self.transform,
+                    verbose=False)
+            chunk['standard_lnprob'] = standard_lnprob
+            chunk['standard_lnpost'] = self._standard_lnposterior(
+                **chunk[self.cogwheel_posterior.prior.standard_params])
+            chunk['ln_weights'] = chunk['standard_lnpost'] - standard_lnprob
+
+            samples = pd.concat([samples, chunk], ignore_index=True)
+
+            n_eff = cogwheel.utils.n_effective(
+                np.exp(samples['ln_weights'] - samples['ln_weights'].max()))
+
+        # Z = ∫ π L = ⟨π L / p⟩_p
+        lnz = logsumexp(samples['ln_weights']) - np.log(len(samples))
+        samples['weights'] = np.exp(samples['ln_weights'] - lnz)
+        return samples, lnz
