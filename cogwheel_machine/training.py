@@ -25,7 +25,11 @@ def load_posterior(sbidir, device='cpu'):
     posterior = torch.load(sbidir/utils.POSTERIOR_FILENAME,
                            map_location=torch.device(device),
                            weights_only=False)
-    posterior._device = device
+    if hasattr(posterior, '_device'):
+        posterior._device = device
+    if hasattr(posterior, 'device'):
+        posterior.device = device
+
     return posterior
 
 

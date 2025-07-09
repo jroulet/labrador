@@ -131,7 +131,8 @@ class Posterior:
             normalization).
         """
         rescaled_parameters = self.sbi_posterior.sample(
-            [n_samples], x=compressed_data, show_progress_bars=False)
+            torch.Size([n_samples]), x=compressed_data,
+            show_progress_bars=False)
 
         lnp_sbi = self.sbi_posterior.log_prob(rescaled_parameters,
                                               x=compressed_data).numpy()
