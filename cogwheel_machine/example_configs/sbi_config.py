@@ -10,7 +10,10 @@ POSTERIOR_NN_KWARGS = {'model': 'nsf',
                        'hidden_features': 64}
 
 # kwargs to score estimator
-SCORE_NN_KWARGS = {'sde_type': 've'}
+SCORE_NN_KWARGS = {'sde_type': 've',
+                   'score_net_type': 'mlp',
+                   't_embedding_dim': 16,
+                   'hidden_features': 64}
 
 # Embedding network
 EMBEDDING_LAYER_SIZES = None  # list of ints (optional)

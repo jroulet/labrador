@@ -12,7 +12,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tensorboard.backend.event_processing import event_accumulator
 
 from sbi.inference import NPSE
-from sbi.neural_nets import posterior_nn
+from sbi.neural_nets import posterior_nn, posterior_score_nn
 
 from cogwheel_machine import compression, embedding, sbi_hacks, utils
 
@@ -124,8 +124,10 @@ def _instantiate_inference(sbidir):
             ).append_simulations(theta, x, weights=weights)
         
     elif config.SCORE_NN_KWARGS:
+        density_estimator = posterior_score_nn(**config.SCORE_NN_KWARGS)
 
-        inference = NPSE(**config.SCORE_NN_KWARGS,
+        inference = NPSE(
+            score_estimator=density_estimator,
             device=device,
             summary_writer=SummaryWriter(sbidir)
             ).append_simulations(theta, x, weights=weights)
