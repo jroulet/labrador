@@ -12,7 +12,7 @@ from scipy.optimize import differential_evolution
 
 from cogwheel.prior_ratio import PriorRatio
 
-from cogwheel_machine import utils
+from . import utils
 
 
 LN_PRIOR_RATIOS_FILENAME = 'ln_prior_ratios.npy'

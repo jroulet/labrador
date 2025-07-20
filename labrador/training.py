@@ -13,7 +13,7 @@ from tensorboard.backend.event_processing import event_accumulator
 
 from sbi.neural_nets import posterior_nn
 
-from cogwheel_machine import compression, embedding, sbi_hacks, utils
+from . import compression, embedding, sbi_hacks, utils
 
 
 logger = logging.getLogger(__name__)

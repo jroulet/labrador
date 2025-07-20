@@ -10,7 +10,7 @@ from scipy.special import logsumexp
 import cogwheel.prior
 import cogwheel.utils
 
-from cogwheel_machine import rescaling, training, unfolding, utils
+from . import rescaling, training, unfolding, utils
 
 
 class Posterior:

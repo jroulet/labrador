@@ -4,7 +4,7 @@ shared across modules.
 """
 import numpy as np
 import cogwheel
-from cogwheel_machine import training_priors
+from labrador import training_priors
 
 
 # Fiducial reference time, not the time of any actual event.

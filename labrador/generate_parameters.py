@@ -96,7 +96,7 @@ def setup_condor_sub(rundir, request_disk='8G', request_memory='8G',
     """
     rundir = Path(rundir).resolve()
     stem = rundir/'submission_scripts'/'generate_parameters'
-    module = 'cogwheel_machine.generate_parameters'
+    module = 'labrador.generate_parameters'
     submit_path = condor_utils.setup_condor_sub(stem, module,
                                                 request_memory=request_memory,
                                                 request_disk=request_disk,
@@ -113,8 +113,7 @@ def main(rundir):
     rundir : PathLike
         Path to a directory, should contain a file `data_config.py` with
         analysis choices.
-        See ``cogwheel_machine/example_configs/data_config.py`` for
-        an example.
+        See ``labrador/example_configs/data_config.py`` for an example.
 
     See Also
     --------

@@ -343,7 +343,7 @@ def setup_condor_sub(rundir, request_memory='8G', request_disk='4G',
     """
     rundir = Path(rundir).resolve()
     stem = rundir/'submission_scripts'/'compression'
-    module = 'cogwheel_machine.compression'
+    module = 'labrador.compression'
     return condor_utils.setup_condor_sub(stem, module,
                                          request_memory=request_memory,
                                          request_disk=request_disk,
