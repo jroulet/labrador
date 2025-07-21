@@ -6,10 +6,9 @@ from pathlib import Path
 import pandas as pd
 import scipy.stats.qmc
 
-import cogwheel.utils
 from cogwheel.prior import FixedPrior, UniformPriorMixin, CombinedPrior
 
-from . import utils
+from . import condor_utils, utils
 
 
 def _is_uniform_prior(cls):
@@ -62,59 +61,49 @@ def _generate_qmc_samples(prior, n_samples, seed=None):
     return samples
 
 
-def submit_condor(rundir,
-                  request_cpus=1,
-                  request_memory='1G',
-                  request_disk='1G',
-                  **submit_kwargs):
+def setup_condor_sub(rundir, request_disk='8G', request_memory='8G',
+                     submit=False, **submit_kwargs):
     """
-    Submit an HTCondor job to generate simulation parameters.
+    Create a script to run the generate_parameters job on HTCondor.
 
     This will generate the following files:
-        {submission_scripts}/generate_parameters.{sub,sh,out,err,log}
+        {rundir}/submission_scripts/generate_parameters.{sub,sh}
 
     Parameters
     ----------
-    rundir : str, os.PathLike
-        Simulations directory, should contain a file `data_config.py`
+    rundir : os.PathLike
+        Simulations directory, should contain a file `data_config.py`.
 
-    request_cpus, request_memory, request_disk : int or str
-        Specifications in the HTCondor submit file.
+    request_disk : str
+        Disk request for the HTCondor job. Default is '8G'.
+
+    request_memory : str
+        Memory request for the HTCondor job. Default is '8G'.
+
+    submit : bool
+        If True, submit the job to HTCondor. Otherwise just create the
+        submission and executable files.
 
     **submit_kwargs
         Further options to include in the HTCondor submit file. Do
-        not pass `executable`, `output`, `error`, `log`, `args`,
+        not pass `executable`, `output`, `error`, `log`, `arguments`,
         `queue`, which will be dealt with automatically.
+
+    Returns
+    -------
+    pathlib.Path
+        Path to the HTCondor submit file.
     """
     rundir = Path(rundir).resolve()
-    _check_rundir(rundir)
-    scripts_dir = rundir/'submission_scripts'
-    os.makedirs(scripts_dir, exist_ok=True)
-
-    submit_kwargs = {
-        'submit_path': scripts_dir/'generate_parameters.sub',
-        'executable': scripts_dir/'generate_parameters.sh',
-        'output': scripts_dir/'generate_parameters.out',
-        'error': scripts_dir/'generate_parameters.err',
-        'log': scripts_dir/'generate_parameters.log',
-        'args': str(rundir),
-        'request_cpus': request_cpus,
-        'request_memory': request_memory,
-        'request_disk': request_disk,
-        } | submit_kwargs
-
-    cogwheel.utils.submit_condor(**submit_kwargs)
-
-
-
-def _write_datadir(prior, datadir, n_simulations, qmc):
-    if qmc:
-        simulation_parameters = _generate_qmc_samples(prior, n_simulations)
-    else:
-        simulation_parameters = prior.generate_random_samples(n_simulations)
-
-    os.makedirs(datadir)
-    simulation_parameters.to_feather(datadir/utils.PARAMETERS_FILENAME)
+    stem = rundir/'submission_scripts'/'generate_parameters'
+    module = 'labrador.generate_parameters'
+    submit_path = condor_utils.setup_condor_sub(stem, module,
+                                                request_memory=request_memory,
+                                                request_disk=request_disk,
+                                                submit=submit,
+                                                arguments=rundir,
+                                                **submit_kwargs)
+    return submit_path
 
 
 def main(rundir):
@@ -124,8 +113,7 @@ def main(rundir):
     rundir : PathLike
         Path to a directory, should contain a file `data_config.py` with
         analysis choices.
-        See ``cogwheel_machine/example_configs/data_config.py`` for
-        an example.
+        See ``labrador/example_configs/data_config.py`` for an example.
 
     See Also
     --------
@@ -138,18 +126,18 @@ def main(rundir):
 
     prior = config.PRIOR_CLASS(**config.PRIOR_KWARGS)
 
-    # Training set:
-    _write_datadir(prior,
-                   rundir/utils.TRAINING_DIR,
-                   config.N_TRAINING_SIMULATIONS,
-                   qmc=config.QMC)
-
     # Test set:
     _write_datadir(prior,
                    rundir/utils.TEST_DIR,
                    config.N_TEST_SIMULATIONS,
                    qmc=False)  # Two different quasirandom sequences can
                                # have weird correlations.
+
+    # Training set:
+    _write_datadir(prior,
+                   rundir/utils.TRAINING_DIR,
+                   config.N_TRAINING_SIMULATIONS,
+                   qmc=config.QMC)
 
 
 def _check_rundir(rundir):
@@ -159,6 +147,16 @@ def _check_rundir(rundir):
             raise FileExistsError(f'{parameters_file} already exists!')
 
     utils.write_version(rundir)
+
+
+def _write_datadir(prior, datadir, n_simulations, qmc):
+    if qmc:
+        simulation_parameters = _generate_qmc_samples(prior, n_simulations)
+    else:
+        simulation_parameters = prior.generate_random_samples(n_simulations)
+
+    os.makedirs(datadir, exist_ok=True)
+    simulation_parameters.to_feather(datadir/utils.PARAMETERS_FILENAME)
 
 
 if __name__ == '__main__':

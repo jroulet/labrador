@@ -5,13 +5,15 @@ covariance of the posterior.
 To train a model from scratch, use ``main(rescalerdir)``.
 To fine-tune an already trained model, you can optionally edit the
 relevant rescaler_config parameters and then do:
-```
-rescaler = ParameterRescaler(rescalerdir)
-rescaler.train()
-main(rescalerdir)  # Will create the files in the training and test directory
-```
+
+.. code-block:: python
+
+    rescaler = ParameterRescaler(rescalerdir)
+    rescaler.train()
+    main(rescalerdir)  # Will create files in the training and test directory
 """
 import argparse
+import cProfile
 import logging
 from pathlib import Path
 import os
@@ -21,29 +23,51 @@ import h5py
 
 import torch
 from torch import nn
+import pandas as pd
 
 import cogwheel.utils
+from cogwheel import gw_plotting
 
-from cogwheel_machine import utils, sbi_hacks
+from . import pp_plot, sbi_hacks, utils, legacy
 
+
+logger = logging.getLogger(__name__)
 
 PARAMETER_RESCALER_TRAINING_FILENAME = 'parameter_rescaler_training.pth'
 PARAMETER_RESCALER_FILENAME = 'parameter_rescaler.pth'
 
 
-def plot_loss(rescalerdir):
-    """Plot loss function of the rescaling model vs. training epoch."""
+def plot_loss(rescalerdir, ax=None):
+    """
+    Plot loss function of the rescaling model vs. training epoch.
+
+    Parameters
+    ----------
+    rescalerdir : os.PathLike
+        Path to rescaler directory.
+
+    ax : matplotlib.axes.Axes
+        Axes where to draw the figure, optional.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+    """
     rescalerdir = Path(rescalerdir)
     training_info = torch.load(
         rescalerdir/PARAMETER_RESCALER_TRAINING_FILENAME, weights_only=True)
 
-    plt.figure()
-    plt.plot(training_info['train_losses'], label='Training')
-    plt.plot(training_info['val_losses'], label='Validation')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.grid(linestyle=':')
+    if ax is None:
+        _, ax = plt.subplots()
+
+    ax.plot(training_info['train_losses'], label='Training')
+    ax.plot(training_info['val_losses'], label='Validation')
+    ax.set_xlabel('Epoch')
+    ax.set_ylabel('Loss')
+    ax.legend()
+    ax.grid(linestyle=':')
+
+    return ax
 
 
 class ParameterRescaler:
@@ -61,9 +85,10 @@ class ParameterRescaler:
     """
 
     def __init__(self, rescalerdir):
-        self.rescalerdir = Path(rescalerdir)
+        self.rescalerdir = Path(rescalerdir).resolve()
         self.rescaler_config = utils.load_rescaler_config(self.rescalerdir)
-        self.data_config = utils.load_data_config(self.rescalerdir.parent)
+        rundir = self.rescalerdir.parents[1]
+        self.data_config = utils.load_data_config(rundir)
 
         self.folded_range_dic = self._get_folded_range_dic()
         self.bounded_params = self._get_bounded_params()
@@ -71,9 +96,29 @@ class ParameterRescaler:
         assert set(self.bounded_params) <= self.folded_range_dic.keys()
         assert set(self.periodic_params) <= self.folded_range_dic.keys()
 
-        self.device = torch.device(
-            self.rescaler_config.DEVICE
-            or ('cuda' if torch.cuda.is_available() else 'cpu'))
+        compactification = getattr(
+            self.rescaler_config, 'COMPACTIFICATION', 'tanh')
+
+        if compactification == 'tanh':
+            self._compactify = legacy._compactify_tanh
+            self._decompactify = legacy._decompactify_tanh
+            self._compactify_log_jacobian_determinant \
+                = legacy._compactify_log_jacobian_determinant_tanh
+        elif compactification == 'gaussian':
+            self._compactify = _compactify_gaussian
+            self._decompactify = _decompactify_gaussian
+            self._compactify_log_jacobian_determinant \
+                = _compactify_log_jacobian_determinant_gaussian
+        else:
+            raise ValueError(
+                f'Unrecognized {self.rescaler_config.COMPACTIFICATION=}')
+
+        device = self.rescaler_config.DEVICE
+        if device is None:
+            device = utils.get_best_device()
+        logger.info(f'Using {device=}')
+
+        self.device = torch.device(device)
 
         params = list(self.folded_range_dic)
         self._periodic_inds = [
@@ -87,13 +132,18 @@ class ParameterRescaler:
 
         self._coefs = None  # Set by ._{load|fit}_model
         self._nonperiodic_residuals_scale = None  # Set by ._{load|fit}_model
+        self._lnj_scale = None  # Set by ._{load|fit}_model
         self._moments_model = None  # Set by ._{load|fit}_model
         self._training_info = None  # Set by ._{load|fit}_model
         try:
             self._load_model()
         except FileNotFoundError:  # Models have not been trained yet
-            self._setup_model()
-            self.train()
+            logger.info('Did not find existing rescaler, will train one...')
+
+            with cProfile.Profile() as profile:
+                self._setup_model()
+                self.train()
+                profile.dump_stats(self.rescalerdir/'rescaling.profile')
 
     @property
     def n_parameters(self):
@@ -111,11 +161,18 @@ class ParameterRescaler:
         return [par for par in self.bounded_params
                 if par not in self.periodic_params]
 
-    def process_rescalerdir(self):
+    def process_rescalerdir(self, chunk_size=10_000):
         """
         Rescale and save parameters in training and test directories.
+
+        Parameters
+        ----------
+        chunk_size : int
+            Controls the memory usage, useful especially for processing
+            a large training set on a GPU.
         """
-        rundir = self.rescalerdir.parent
+        logger.info('About to rescale training and test sets...')
+        rundir = self.rescalerdir.parents[1]
 
         for datadir in rundir/utils.TRAINING_DIR, rundir/utils.TEST_DIR:
             mask = np.load(datadir/utils.MASK_FILENAME)
@@ -124,22 +181,31 @@ class ParameterRescaler:
 
             with h5py.File(datadir/utils.FOLDED_SAMPLED_PARAMETERS_FILENAME,
                            "r") as h5file:
-                folded_sampled_parameters = h5file["dataset"][mask]
+                # The [:] makes it faster
+                folded_sampled_parameters = h5file["dataset"][:][mask]
 
-            rescaled_parameters = self.rescale(compressed_data,
-                                               folded_sampled_parameters)
+            slices = (slice(i, i+chunk_size)
+                      for i in range(0, len(compressed_data), chunk_size))
+
+            rescaled_parameters = np.concatenate([
+                self.rescale(compressed_data[slice_],
+                             folded_sampled_parameters[slice_]
+                            ).detach().cpu().numpy()
+                for slice_ in slices])
 
             rescaled_datadir = self.rescalerdir/datadir.name
             os.makedirs(rescaled_datadir)
 
             np.save(rescaled_datadir/utils.RESCALED_PARAMETERS_FILENAME,
-                    rescaled_parameters.detach().cpu().numpy())
+                    rescaled_parameters)
 
     def rescale(self, compressed_data, folded_sampled_parameters,
                 double_precision=True):
         """
         Apply rescaling to physical parameters to make them ~N(0, 1).
 
+        Parameters
+        ----------
         compressed_data : (n_samples or 1, n_data) float array
             Hint: output of
             ``compression.JSONStandardScaler.transform``, see
@@ -152,11 +218,16 @@ class ParameterRescaler:
             making the training set, where there is one piece of data
             and one true parameters).
 
-        folded_sampled_params : (n_samples, n_params) float array
+        folded_sampled_parameters : (n_samples, n_params) float array
             Physical parameter values to rescale ("sampled" refers to
             parameters in the domain of the transform, "folded" means
             that folding was applied, to prevent multimodality in the
             distribution).
+
+        double_precision : bool
+            Whether to perform the calculations in 64-bit precision. May
+            be useful for guaranteeing that rescale and unrescale are
+            inverses of each other to good accuracy.
         """
         compressed_data = torch.as_tensor(compressed_data).to(self.device)
         parameters = torch.as_tensor(folded_sampled_parameters).to(self.device)
@@ -166,24 +237,65 @@ class ParameterRescaler:
         model_outputs = self._get_model_outputs(compressed_data)
         mean, chol_inv = self._get_mean_and_chol_inv(model_outputs)
 
-        return self._rescale(compressed_data, parameters, mean, chol_inv)
+        preconditioned = self._precondition(compressed_data, parameters)
+        return self._rescale(preconditioned, mean, chol_inv)
 
-    def _rescale(self, compressed_data, parameters, mean, chol_inv):
-        parameters = parameters.clone()
+    def _precondition(self, compressed_data, parameters):
+        """
+        Part of rescaling that does not depend on trainable parameters.
+        """
+        parameters = parameters.clone().detach()
         self._decompactify_bounded_nonperiodic(parameters)
         self._standardize_nonperiodic(compressed_data, parameters)
         self._periodic_to_angle(parameters)
-        self._remove_mean(mean, parameters)
-        self._decompactify_periodic(parameters)
-        parameters = self._remove_scale(chol_inv, parameters)
         return parameters
+
+    def _rescale(self, preconditioned, mean, chol_inv):
+        """Part of rescaling that depends on trainable parameters."""
+        preconditioned = preconditioned.clone()
+        self._remove_mean(mean, preconditioned)
+        self._decompactify_periodic(preconditioned)
+        rescaled = self._remove_scale(chol_inv, preconditioned)
+        return rescaled
 
     def unrescale(self, compressed_data, rescaled_parameters,
                   double_precision=True):
         """
         Map rescaled parameters from ~N(0, 1) to their physical range.
 
-        Inverse of ``.rescale``.
+        Inverse of ``.rescale``, also returns log Jacobian determinant.
+
+        Parameters
+        ----------
+        compressed_data : (n_samples or 1, n_data) float array
+            Hint: output of
+            ``compression.JSONStandardScaler.transform``, see
+            ``compression._save_compressed_data``. # TODO improve docs
+            If it contains 1 row, it will broadcast over samples (this
+            situation arises in parameter estimation where we have many
+            samples for the same data).
+            It may also contain a number of rows equal to the number of
+            samples, then each sample will use different data (for
+            making the training set, where there is one piece of data
+            and one true parameters).
+
+        rescaled_parameters : (n_samples, n_params) float array
+            Parameters in the rescaled space, i.e. where SBI is run.
+            These should resemble N(0,1).
+
+        double_precision : bool
+            Whether to perform the calculations in 64-bit precision. May
+            be useful for guaranteeing that rescale and unrescale are
+            inverses of each other to good accuracy.
+
+        Returns
+        -------
+        parameters : (n_samples, n_params) torch tensor
+            Parameter values (in the folded-sampled space).
+
+        lnj : float
+            Log Jacobian determinant of the unrescaling transformation.
+            log |∂{unrescaled} / ∂{rescaled}|
         """
         compressed_data = torch.as_tensor(compressed_data).to(self.device)
         parameters = torch.as_tensor(rescaled_parameters).to(self.device)
@@ -192,19 +304,27 @@ class ParameterRescaler:
 
         model_outputs = self._get_model_outputs(compressed_data)
         mean, chol_inv = self._get_mean_and_chol_inv(model_outputs)
+        log_det_chol_inv = model_outputs[3].sum(dim=1).detach()
 
-        return self._unrescale(compressed_data, parameters, mean, chol_inv)
+        return self._unrescale(compressed_data, parameters, mean, chol_inv,
+                               log_det_chol_inv)
 
-    def _unrescale(self, compressed_data, parameters, mean, chol_inv):
-        parameters = parameters.clone()
+    def _unrescale(self, compressed_data, parameters, mean, chol_inv,
+                   log_det_chol_inv):
         parameters = self._add_scale(chol_inv, parameters)
-        self._compactify_periodic(parameters)
-        self._add_mean(mean, parameters)
-        self._angle_to_periodic(parameters)
-        self._unstandardize_nonperiodic(compressed_data, parameters)
-        self._compactify_bounded_nonperiodic(parameters)
+        lnj = -log_det_chol_inv
 
-        return parameters
+        lnj = lnj + self._compactify_periodic(parameters)
+
+        self._add_mean(mean, parameters)
+
+        lnj += self._angle_to_periodic(parameters)
+
+        lnj += self._unstandardize_nonperiodic(compressed_data, parameters)
+
+        lnj += self._compactify_bounded_nonperiodic(parameters)
+
+        return parameters, lnj
 
     def _decompactify_bounded_nonperiodic(self, parameters):
         """
@@ -213,17 +333,27 @@ class ParameterRescaler:
         """
         for i, par in zip(self._bounded_nonperiodic_inds,
                           self.bounded_nonperiodic_params):
-            parameters[..., i] = _decompactify(parameters[..., i],
-                                               *self.folded_range_dic[par])
+            parameters[..., i] = self._decompactify(
+                parameters[..., i], *self.folded_range_dic[par])
 
     def _compactify_bounded_nonperiodic(self, parameters):
         """
         Compactify columns for ``.bounded_nonperiodic_params`` inplace.
+
+        Returns
+        -------
+        log_jacobian_determinant : float
+            log |∂{compact_value} / ∂{value}|
         """
+        lnj = 0.0
         for i, par in zip(self._bounded_nonperiodic_inds,
                           self.bounded_nonperiodic_params):
-            parameters[..., i] = _compactify(parameters[..., i],
-                                             *self.folded_range_dic[par])
+            lnj += self._compactify_log_jacobian_determinant(
+                parameters[..., i].detach(), *self.folded_range_dic[par])
+            parameters[..., i] = self._compactify(parameters[..., i],
+                                                  *self.folded_range_dic[par])
+
+        return lnj
 
     def _standardize_nonperiodic(self, compressed_data, parameters):
         """
@@ -238,13 +368,16 @@ class ParameterRescaler:
 
     def _unstandardize_nonperiodic(self, compressed_data, parameters):
         """
-        Add a fit and scale inplace to the nonperiodic parameters.
+        Add a fit and scale inplace to the nonperiodic parameters, and
+        return the log Jacobian determinant.
         """
         parameters[..., self._nonperiodic_inds] \
             *= self._nonperiodic_residuals_scale
 
         parameters[..., self._nonperiodic_inds] \
             += self._nonperiodic_fit(compressed_data)
+
+        return self._lnj_scale
 
     def _fit_standardization(self, compressed_data, parameters):
         """
@@ -270,9 +403,11 @@ class ParameterRescaler:
         ones = torch.ones((compressed_data.shape[0], 1),
                           device=compressed_data.device)
         data_augmented = torch.hstack([compressed_data, ones])
-        self._coefs = torch.linalg.lstsq(data_augmented, nonperiodic).solution
+        self._coefs = torch.linalg.lstsq(data_augmented,
+                                         nonperiodic).solution
         fit = self._nonperiodic_fit(compressed_data)
-        self._nonperiodic_residuals_scale = torch.std(nonperiodic - fit, dim=0)
+        self._nonperiodic_residuals_scale = torch.std(nonperiodic - fit,
+                                                      dim=0)
 
     def _nonperiodic_fit(self, compressed_data):
         return compressed_data @ self._coefs[:-1] + self._coefs[-1]
@@ -288,19 +423,31 @@ class ParameterRescaler:
     def _angle_to_periodic(self, parameters):
         """
         Map the periodic parameters from (-pi, pi) to their physical
-        range inplace.
+        range inplace, return the log Jacobian determinant.
+
         Inverse of ``._periodic_to_angle``.
+
+        Return
+        ------
+            float : log|∂{periodic} / ∂{angle}|
         """
+        lnj = 0.0
         for i, par in zip(self._periodic_inds, self.periodic_params):
-            parameters[..., i] = self._linear_rescale(
+            parameters[..., i], log_abs_slope = self._linear_rescale(
                 parameters[..., i],
                 (-np.pi, np.pi),
-                self.folded_range_dic[par])
+                self.folded_range_dic[par],
+                return_lnj=True)
+            lnj += log_abs_slope
+        return lnj
 
     @staticmethod
-    def _linear_rescale(x, x_rng, y_rng):
+    def _linear_rescale(x, x_rng, y_rng, return_lnj=False):
         slope = (y_rng[1] - y_rng[0]) / (x_rng[1] - x_rng[0])
-        return y_rng[0] + (x - x_rng[0]) * slope
+        rescaled = y_rng[0] + (x - x_rng[0]) * slope
+        if return_lnj:
+            return rescaled, np.log(np.abs(slope))
+        return rescaled
 
     def _remove_mean(self, mean, parameters):
         """
@@ -339,21 +486,35 @@ class ParameterRescaler:
         (-pi, pi), and had their circular mean subtracted.
         """
         for i in self._periodic_inds:
-            parameters[..., i] = _decompactify(parameters[..., i],
-                                               -np.pi, np.pi)
+            parameters[..., i] = self._decompactify(parameters[..., i],
+                                                    -np.pi, np.pi)
 
     def _compactify_periodic(self, parameters):
         """
-        Compactify columns for ``.periodic_params`` inplace.
+        Compactify columns for ``.periodic_params`` inplace and return
+        the log Jacobian determinant.
+
         Inverse of ``._decompactify_periodic``.
+
+        Returns
+        -------
+        log_jacobian_determinant : float
+            log |∂{compact_value} / ∂{value}|
         """
+        lnj = 0.0
         for i in self._periodic_inds:
-            parameters[..., i] = _compactify(parameters[..., i], -np.pi, np.pi)
+            lnj += self._compactify_log_jacobian_determinant(
+                parameters[..., i].detach(), -np.pi, np.pi)
+            parameters[..., i] = self._compactify(
+                parameters[..., i], -np.pi, np.pi)
+        return lnj
 
     def _remove_scale(self, chol_inv, parameters):
         """Divide parameters by their predicted scale."""
         chol_inv = chol_inv.to(parameters.dtype)
-        return torch.einsum('...j,...jk', parameters, chol_inv)
+        # Same but matmul is faster
+        # return torch.einsum('...j,...jk', parameters, chol_inv)
+        return torch.matmul(parameters.unsqueeze(-2), chol_inv).squeeze(-2)
 
     def _add_scale(self, chol_inv, parameters):
         """Multiply parameters by their predicted scale."""
@@ -374,6 +535,8 @@ class ParameterRescaler:
 
         self._nonperiodic_residuals_scale \
             = model_config['nonperiodic_residuals_scale']
+        self._lnj_scale = np.sum(
+            np.log(self._nonperiodic_residuals_scale.detach().cpu().numpy()))
 
         self._moments_model = _MultiLayerPerceptron.from_dict(
             model_config['_MultiLayerPerceptron']).to(self.device)
@@ -396,7 +559,7 @@ class ParameterRescaler:
         by measuring them from the dataset, and ``_moments_model`` by
         training a neural network.
         """
-        compressed_data, parameters = self._load_data()
+        compressed_data, parameters, _ = self._load_data()
 
         n_inputs = compressed_data.shape[1]
 
@@ -427,12 +590,15 @@ class ParameterRescaler:
         self._check_no_rescaled_parameter_files()
 
         kwargs = self.rescaler_config.RESCALER_TRAIN_KWARGS
-        optimizer = torch.optim.Adam(self._moments_model.parameters(),
-                                     **kwargs['optimizer_kwargs'])
+        optimizer_cls = kwargs.get('optimizer_cls', torch.optim.Adam)
+        optimizer = optimizer_cls(self._moments_model.parameters(),
+                                  **kwargs['optimizer_kwargs'])
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, **kwargs['scheduler_kwargs'])
 
         train_loader, val_loader = self._get_dataloaders()
+
+        logger.info('Start training...')
 
         patience_counter = 0
 
@@ -477,6 +643,7 @@ class ParameterRescaler:
                 print(f'Epoch {epoch} | Validation Loss: {val_loss:.3f}',
                       end='\r')
             print()
+            logger.info('Done training.')
         except KeyboardInterrupt:
             print('\nTraining interrupted.')
 
@@ -515,14 +682,15 @@ class ParameterRescaler:
     def _get_dataloaders(self):
         kwargs = self.rescaler_config.RESCALER_TRAIN_KWARGS
 
-        compressed_data, parameters = self._load_data()
+        compressed_data, parameters, weights = self._load_data()
+        preconditioned = self._precondition(compressed_data, parameters)
         sin, cos = self._get_sin_cos_periodic_parameters(parameters)
         dataset = torch.utils.data.TensorDataset(
-            compressed_data, parameters, sin, cos)
+            compressed_data, preconditioned, sin, cos, weights)
 
         training_batch_size = kwargs['training_batch_size']
         if training_batch_size > (max_size := len(compressed_data) // 10):
-            logging.warning('Rescaler batch size too large, reducing it.')
+            logger.warning('Rescaler batch size too large, reducing it.')
             training_batch_size = max_size
 
         train_ind_batches, val_ind_batches \
@@ -539,18 +707,29 @@ class ParameterRescaler:
         return train_loader, val_loader
 
     def _load_data(self):
-        rundir = self.rescalerdir.parent
+        priordir, rundir = self.rescalerdir.parents[:2]
         datadir = rundir/utils.TRAINING_DIR
 
         mask = np.load(datadir/utils.MASK_FILENAME)
-        compressed_data = torch.from_numpy(
-            np.load(datadir/utils.COMPRESSED_DATA_FILENAME)[mask]
-            ).to(self.device)
+
+        logger.info('Loading compressed data...')
+        compressed_data = torch.as_tensor(
+            np.load(datadir/utils.COMPRESSED_DATA_FILENAME)[mask],
+            device=self.device)
+
+        logger.info('Loading folded sampled parameters...')
         with h5py.File(datadir/utils.FOLDED_SAMPLED_PARAMETERS_FILENAME, "r"
                       ) as h5file:
-            parameters = torch.tensor(h5file["dataset"][mask]).to(self.device)
+            # The [:] makes it faster
+            parameters = torch.as_tensor(h5file["dataset"][:][mask],
+                                         device=self.device)
 
-        return compressed_data, parameters
+        weights = torch.as_tensor(
+            np.load(priordir/utils.TRAINING_DIR/utils.WEIGHTS_FILENAME),
+            device=self.device)
+
+        logger.info('Done')
+        return compressed_data, parameters, weights
 
     def _get_sin_cos_periodic_parameters(self, parameters):
         parameters = parameters.clone().detach()
@@ -562,13 +741,13 @@ class ParameterRescaler:
         """
         Returns
         -------
-        torch tensors:
-        * mean_nonperiodic (n_samples, n_nonperiodic)
-        * mean_sin_periodic (n_samples, n_periodic)
-        * mean_cos_periodic (n_samples, n_periodic)
-        * log_diag_chol_inv (n_samples, n_parameters)
-        * offdiagonal_chol_inv (n_samples,
-                                n_parameters*(n_parameters-1)//2)
+        torch tensors
+            * mean_nonperiodic (n_samples, n_nonperiodic)
+            * mean_sin_periodic (n_samples, n_periodic)
+            * mean_cos_periodic (n_samples, n_periodic)
+            * log_diag_chol_inv (n_samples, n_parameters)
+            * offdiagonal_chol_inv (n_samples,
+                                    n_parameters*(n_parameters-1)//2)
         """
         output = self._moments_model(compressed_data)
 
@@ -582,8 +761,9 @@ class ParameterRescaler:
 
     def _get_mean_and_chol_inv(self, model_outputs):
         """
-        Predict mean of the parameters, using circular mean for the
-        periodic ones.
+        Predict mean and Cholesky(inverse covariance) of the parameters.
+
+        We use circular mean for the periodic parameters.
         """
         (mean_nonperiodic, mean_sin_periodic, mean_cos_periodic,
          log_diag_chol_inv, offdiagonal_chol_inv) = model_outputs
@@ -609,13 +789,14 @@ class ParameterRescaler:
 
         return mean, chol_inv
 
-    def _loss_function(self, compressed_data, parameters, sin, cos):
+    def _loss_function(self, compressed_data, preconditioned, sin, cos,
+                       weights):
         model_outputs = self._get_model_outputs(compressed_data)
         _, mean_sin_periodic, mean_cos_periodic, log_diag_chol_inv, _ \
             = model_outputs
 
         mean, chol_inv = self._get_mean_and_chol_inv(model_outputs)
-        rescaled = self._rescale(compressed_data, parameters, mean, chol_inv)
+        rescaled = self._rescale(preconditioned.detach(), mean, chol_inv)
         chi_squared = (rescaled**2).sum(dim=1)
 
         log_det_chol_inv = log_diag_chol_inv.sum(dim=1)
@@ -625,10 +806,11 @@ class ParameterRescaler:
         # ratio and have arbitrary norm). It's not derived from a KL
         # divergence, but it should have a similar optimum.
         circular_term = ((sin - mean_sin_periodic) ** 2
-                          + (cos - mean_cos_periodic) ** 2
-                         ).sum(dim=1)
+                         + (cos - mean_cos_periodic) ** 2
+                        ).sum(dim=1)
 
-        return torch.mean(chi_squared/2 - log_det_chol_inv + circular_term)
+        return torch.mean(
+            weights * (chi_squared/2 - log_det_chol_inv + circular_term))
 
     def _get_folded_range_dic(self):
         """
@@ -660,49 +842,74 @@ class ParameterRescaler:
                 if par not in self.periodic_params]
 
 
-def _compactify(value, a, b):
+def _decompactify_gaussian(compact_value, a, b, eps=1e-7):
     """
-    Compactify a value from an infinite interval to a finite interval
-    [a, b] using tanh.
-
-    Parameters
-    ----------
-    value : float
-        Value to be compactified.
-
-    a, b : float
-        Bounds of the finite interval.
-
-    Returns
-    -------
-    float : Compactified value within the interval [a, b].
-    """
-    return (b - a) / 2 * torch.tanh(value) + (b + a) / 2
-
-
-def _decompactify(compact_value, a, b, eps=1e-7):
-    """
-    Decompactify a value from a finite interval [a, b] to an infinite
-    interval using arctanh.
+    Map a uniform variable on [a, b] to a standard Gaussian.
 
     Parameters
     ----------
     compact_value : float
-        Compactified value within the interval [a, b].
+        Value in the interval [a, b].
 
     a, b : float
-        Bounds of the finite interval.
+        Bounds of the uniform interval.
 
     eps : float
-        Prevents overflow if `compact_value` is close to the edge.
+        Small constant to avoid logit overflow at boundaries.
 
     Returns
     -------
-    float : Decompactified value within the infinite interval.
+    float : Standard Gaussian value.
     """
-    arg = torch.clamp(2 * (compact_value - (b + a) / 2) / (b - a),
-                      -1 + eps, 1 - eps)
-    return torch.arctanh(arg)
+    # Normalize to [0, 1] and clip
+    u = torch.clamp((compact_value - a) / (b - a), eps, 1 - eps)
+    return torch.distributions.Normal(0.0, 1.0).icdf(u)
+
+
+def _compactify_gaussian(value, a, b):
+    """
+    Map a standard Gaussian variable to a uniform value on [a, b]
+    using the CDF of the standard normal distribution.
+
+    Parameters
+    ----------
+    value : float
+        Standard Gaussian value.
+
+    a, b : float
+        Bounds of the target uniform interval.
+
+    Returns
+    -------
+    float : Value in [a, b].
+    """
+    u = torch.distributions.Normal(0.0, 1.0).cdf(value)
+    return a + (b - a) * u
+
+
+def _compactify_log_jacobian_determinant_gaussian(value, a, b):
+    """
+    Log of the Jacobian determinant for transforming a standard
+    Gaussian to a uniform [a, b] via CDF.
+
+    That is:
+
+        log |∂{compact_value} / ∂{value}|
+
+    Parameters
+    ----------
+    value : float
+        Standard Gaussian value.
+
+    a, b : float
+        Bounds of the uniform interval.
+
+    Returns
+    -------
+    float : Log of the Jacobian determinant.
+    """
+    log_pdf = torch.distributions.Normal(0.0, 1.0).log_prob(value)
+    return torch.log(torch.as_tensor(b - a)) + log_pdf
 
 
 class _MultiLayerPerceptron(nn.Module):
@@ -786,17 +993,66 @@ class _MultiLayerPerceptron(nn.Module):
                 'state_dict': self.state_dict()}
 
 
+def plot_rescaled_dataset(rescalerdir, n_samples=10**5):
+    """Save a corner plot with the rescaled training and test sets."""
+    rescalerdir = Path(rescalerdir).resolve()
+    priordir, rundir = rescalerdir.parents[:2]
+    params = utils.load_data_config(rundir).TRANSFORM_CLASS.sampled_params
+
+    file_train \
+        = rescalerdir/utils.TRAINING_DIR/utils.RESCALED_PARAMETERS_FILENAME
+    file_test = rescalerdir/utils.TEST_DIR/utils.RESCALED_PARAMETERS_FILENAME
+
+    # Dataframes for training set, test set and N(0,1) samples:
+    rescaled_train = pd.DataFrame(np.load(file_train)[:n_samples],
+                                  columns=params)
+    rescaled_test = pd.DataFrame(np.load(file_test)[:n_samples],
+                                 columns=params)
+    normal = pd.DataFrame(np.random.normal(size=[n_samples, len(params)]),
+                          columns=params)
+
+    # Weights:
+    rescaled_train['weights'] = np.load(
+        priordir/utils.TRAINING_DIR/utils.WEIGHTS_FILENAME)[:n_samples]
+    rescaled_test['weights'] = np.load(
+        priordir/utils.TEST_DIR/utils.WEIGHTS_FILENAME)[:n_samples]
+
+    mcp = gw_plotting.MultiCornerPlot(
+        (rescaled_train, rescaled_test, normal),
+        labels=['Training set', 'Test set', r'$\mathcal{N}(0, 1)$'],
+        bins=50, tail_probability=1e-4, confidence_level=0.68)
+
+    mcp.corner_plots[0].latex_labels = pp_plot.LATEX_LABELS
+    # Plotstyle for the N(0,1) set
+    normal_ps = mcp.corner_plots[-1].plotstyle
+    normal_ps.kwargs_1d.update(color='k', linestyle=':')
+    normal_ps.color_2d = 'k'
+    normal_ps.fill = 'none'
+    normal_ps.contour_kwargs.update(linestyles=':')
+    normal_ps.vfill_kwargs.update(alpha=0)
+
+    mcp.plot(title=f'Rescaled parameters ({rescalerdir.name})')
+    mcp.set_lims(**dict.fromkeys(params, (-3.99, 3.99)))
+    plt.savefig(rescalerdir/'rescaled_parameters.pdf', bbox_inches='tight')
+
+
 def main(rescalerdir):
     """
-    Fit mean and scale using a multilayer perceptron, and save rescaled
-    parameters.
+    Fit mean and scale using a multilayer perceptron, save and plot
+    rescaled parameters.
 
-    This will create files for the model in `rescalerdir` (if not
-    already present), and for the rescaled parameters in both the
+    This will create files for the model and plot in `rescalerdir` (if
+    not already present), and for the rescaled parameters in both the
     training and test directories.
     """
+    rescalerdir = Path(rescalerdir)
+    logging.basicConfig(filename=rescalerdir/'rescaling.log', encoding='utf-8',
+                        level=logging.DEBUG)
+    logger.info('Running rescaling')
+
     parameter_rescaler = ParameterRescaler(rescalerdir)
     parameter_rescaler.process_rescalerdir()
+    plot_rescaled_dataset(rescalerdir)
 
 
 if __name__ == '__main__':

@@ -21,4 +21,9 @@ TRAIN_KWARGS = {'training_batch_size': 65536,
 
 MAX_TRAINING_EXAMPLES = None  # int
 
+# kwargs to ``torch.optim.lr_scheduler.ReduceLROnPlateau``
+# (set to ``None`` to not use the scheduler).
+LR_SCHEDULER_KWARGS = {'factor': 0.3,
+                       'patience': 100}
+
 DEVICE = None  # ``None`` will try to use 'cuda' or fall back to 'cpu'.

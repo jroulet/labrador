@@ -1,27 +1,28 @@
 """
-Define ``TargetSpaceTransform``, a class that implements a
-coordinate transformation that gives a first approximation to the
-normalizing flow.
+Define ``TargetSpaceTransform``, a class that implements a coordinate
+transformation that gives a first approximation to the normalizing flow.
 """
 import numpy as np
 
 import lal
 
-from cogwheel.prior import Prior, CombinedPrior
+from cogwheel.prior import Prior, CombinedPrior, UnitJacobianMixin
 from cogwheel import gw_prior
+
+# pylint: disable=arguments-differ
 
 
 class TransformMixin:
     """
-    Indicates that a `Prior` object is intended to be used only for
-    its ``transform`` and ``inverse_transform`` methods.
+    Indicates that a `Prior` object is intended to be used only for its
+    ``transform`` and ``inverse_transform`` methods.
     """
     def lnprior(self, *args, **kwargs):
         """Intentionally not implemented."""
         del self, args, kwargs
         raise NotImplementedError(
-            'This class is intended to be used for its `transform` '
-            'and `inverse_transform` only.')
+            'This class is intended to be used for its `transform` and '
+            '`inverse_transform` only.')
 
 
 class MassesTransform(TransformMixin, Prior):
@@ -92,7 +93,8 @@ class MassesTransform(TransformMixin, Prior):
     def get_init_dict(self):
         """Keyword arguments to reproduce the class instance."""
         return {'coef0pn': self.coef0pn,
-                'mchirp_break': self.mchirp_break}
+                'mchirp_break': self.mchirp_break,
+                'q_min': np.exp(self.range_dic['lnq'][0])}
 
     def _regularized0pn(self, mchirp):
         mchirp = np.asarray(mchirp)  # piecewise needs arrays
@@ -123,33 +125,34 @@ class MassesTransform(TransformMixin, Prior):
             128*(np.pi*lal.MTSUN_SI*self.mchirp_break)**(5/3) * regularized0pn
             + 8)
 
-    def lnmchirp_log_jacobian_determinant(self, diff_regularized0pn):
+    def ln_jacobian_determinant(self, m1, m2):
         """
-        Return log of the Jacobian determinant between
-        `diff_regularized0pn` and `lnmchirp`.
+        Return log of the Jacobian determinant between sampled and
+        standard parameters.
 
         I.e.
-            ln(|∂{diff_regularized0pn} / ∂{lnmchirp}|)
+            ln(|∂{diff_regularized0pn, lnq} / ∂{m1, m2}|)
         """
-        regularized0pn = self.coef0pn + np.asarray(diff_regularized0pn)
-        boundary = self._regularized0pn(self.mchirp_break)
-        mchirp = self._mchirp(regularized0pn)
+        q = m2 / m1
+        mchirp = m1 * q**.6 / (1 + q)**.2
+        regularized0pn = self._regularized0pn(mchirp)
 
-        # mchirp ∝ regularized0pn ^ exponent
-        exponent_low = -3/5
-        exponent_high = 1
-        exponent = np.piecewise(regularized0pn,
-                                [regularized0pn < boundary],
-                                [exponent_low, exponent_high])
+        if mchirp < self.mchirp_break:
+            lnj_regularized0pn_lnmchirp = np.log(np.abs(5/3*regularized0pn))
+        else:
+            lnj_regularized0pn_lnmchirp = np.log(np.abs(
+                regularized0pn
+                + 1/16 * (np.pi*self.mchirp_break*lal.MTSUN_SI)**(-5/3)))
 
-        jacobian_regularized0pn_mchirp = exponent * mchirp / regularized0pn
+        lnj_lnmchirplnq_m1m2 = -np.log(m1*m2)
 
-        return np.log(np.abs(jacobian_regularized0pn_mchirp)) - np.log(mchirp)
+        return lnj_regularized0pn_lnmchirp + lnj_lnmchirplnq_m1m2
 
 
 class PhaseTransform(TransformMixin, gw_prior.UniformPhasePrior):
     """
     Coordinate transformation for the orbital phase.
+
     The coordinate is cogwheel's ``phi_ref_hat`` except the baseline
     phase ``phi_refdet_0` is passed by the user.
     """
@@ -183,10 +186,11 @@ class PhaseTransform(TransformMixin, gw_prior.UniformPhasePrior):
         return init_dict
 
 
-class TimeTransform(TransformMixin, Prior):
+class TimeTransform(TransformMixin, UnitJacobianMixin, Prior):
     """
     Coordinate transformation for the geocenter time of arrival.
-    The coordiante is the arrival time at the reference detector, minus
+
+    The coordinate is the arrival time at the reference detector, minus
     a fiducial arrival time at the reference detector.
     """
     standard_params = ['t_geocenter']
@@ -239,6 +243,7 @@ class TimeTransform(TransformMixin, Prior):
 class DistanceTransform(TransformMixin, Prior):
     """
     Coordinate transformation for the distance.
+
     The coordinate is `relative_dhat`, i.e. cogwheel's d_hat divided by
     a fiducial d_hat.
     """
@@ -282,22 +287,29 @@ class DistanceTransform(TransformMixin, Prior):
             d_luminosity, ra, dec, psi, iota, m1, m2)['d_hat']
         return {'relative_dhat': d_hat * self.amp_ref_det}
 
+    def ln_jacobian_determinant(self, d_luminosity, ra, dec, psi, iota,
+                                m1, m2):
+        """
+        Return log of the Jacobian determinant between sampled and
+        standard parameters.
+
+        I.e.
+            ln(|∂{relative_dhat} / ∂{d_luminosity}|)
+        """
+        lnj_relativedhat_dhat = np.log(self.amp_ref_det)
+
+        lnj_dhat_dluminosity \
+            = self._distance_transformer.ln_jacobian_determinant(
+                d_luminosity, ra, dec, psi, iota, m1, m2)
+
+        return lnj_relativedhat_dhat + lnj_dhat_dluminosity
+
     def get_init_dict(self):
         """Keyword arguments to reproduce the class instance."""
         init_dict = self._distance_transformer.get_init_dict()
         return {'tgps': init_dict['tgps'],
                 'ref_det_name': init_dict['ref_det_name'],
                 'amp_ref_det': self.amp_ref_det}
-
-    def dhat_log_jacobian_determinant(self):
-        """
-        Log of the Jacobian determinant between ``relative_dhat`` and
-        ``d_hat``.
-
-        I.e.
-            ln(|∂{relative_dhat} / ∂{d_hat}|)
-        """
-        return -np.log(self.amp_ref_det)
 
 
 class TargetSpaceTransformNoSpins(CombinedPrior):
@@ -319,35 +331,49 @@ class TargetSpaceTransformAlignedSpins(CombinedPrior):
                      ]
 
 
-def log_det_jacobian(transform, training_prior, diff_regularized0pn):
-    """
-    log Jacobian determinant between
-    ``TargetSpaceTransformNoSpins.sampled_params`` and
-    ``training_priors.NoSpinTrainingPrior.sampled_params``;
-    or between ``TargetSpaceTransformAlignedSpins.sampled_params`` and
-    ``training_priors.AlignedSpinTrainingPrior.sampled_params``
-    (these Jacobians are the same).
+class _PNCoordinatesPrior(gw_prior.PNCoordinatesPrior):
+    range_dic = {'mu1': (-np.inf, np.inf),
+                 'mu2': (-np.inf, np.inf),
+                 'lnq': None,
+                 's2z': (-1, 1),
+                }
+    def __init__(self, eigvecs=None, **kwargs):
+        # TODO; for now just put some values for par_dic_0 and eigvecs
+        if eigvecs is None:
+            eigvecs = np.array([[-1.57616411, -0.04111396],
+                                [-0.54265283,  0.08432735],
+                                [-0.27537869,  0.06914793]])
 
-    This function may change in the future to make this choice flexible.
-    """
-    from . import training_priors
-    assert ((isinstance(transform, TargetSpaceTransformNoSpins)
-             and isinstance(training_prior,
-                            training_priors.NoSpinTrainingPrior))
-            or (isinstance(transform, TargetSpaceTransformAlignedSpins)
-                and isinstance(training_prior,
-                               training_priors.AlignedSpinTrainingPrior)))
+        par_dic_0 = dict.fromkeys(['m1', 'm2', 's1z', 's2z'], 1.0)
 
-    # Mass
-    mass_transform = transform.subpriors[
-        transform.prior_classes.index(MassesTransform)]
+        super().__init__(eigvecs=eigvecs, par_dic_0=par_dic_0, **kwargs)
 
-    log_det_jac_mass = mass_transform.lnmchirp_log_jacobian_determinant(
-        diff_regularized0pn)
+        # The parent class tries to be smart about the range_dic, undo.
+        # TODO change cogwheel.gw_prior.PNCoordinatesPrior, perhaps allow
+        # par_dic_0 = None
+        # Perhaps make a base class with abstract standard_lnprior
+        self.range_dic.update(mu1=(-np.inf, np.inf),
+                              mu2=(-np.inf, np.inf))
+        self.cubemin = np.array([rng[0] for rng in self.range_dic.values()])
+        cubemax = np.array([rng[1] for rng in self.range_dic.values()])
+        self.cubesize = cubemax - self.cubemin
+        self.folded_cubesize = self.cubesize.copy()
+        self.folded_cubesize[self._folded_inds] /= 2
 
-    # Distance
-    distance_transform = transform.subpriors[
-        transform.prior_classes.index(DistanceTransform)]
-    log_det_jac_distance = distance_transform.dhat_log_jacobian_determinant()
+    def get_init_dict(self):
+        """Return kwargs to reproduce this class instance."""
+        # We don't want to pollute the .json with the dummy par_dic_0
+        init_dict = super().get_init_dict()
+        del init_dict['par_dic_0']
+        return init_dict
 
-    return log_det_jac_mass + log_det_jac_distance
+
+class TargetSpaceTransformAlignedSpinsPN(CombinedPrior):
+    prior_classes = [_PNCoordinatesPrior,
+                     gw_prior.IsotropicInclinationPrior,
+                     gw_prior.UniformPolarizationPrior,
+                     gw_prior.IsotropicSkyLocationPrior,
+                     TimeTransform,
+                     PhaseTransform,
+                     DistanceTransform,
+                     ]

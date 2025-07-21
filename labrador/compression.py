@@ -4,17 +4,16 @@ mask to select a subset of the simulations.
 """
 import argparse
 import json
-import os
 from pathlib import Path
-import numpy as np
 import h5py
 import torch
 import sklearn.preprocessing
 from sklearn.utils.extmath import randomized_svd
+import numpy as np
 
 import cogwheel.utils
 
-from . import utils
+from . import condor_utils, utils
 
 
 def create_mask(rundir):
@@ -323,56 +322,44 @@ class JSONStandardScaler(sklearn.preprocessing.StandardScaler):
         return Path(directory) / f'{cls.__name__}.json'
 
 
-def submit_condor(rundir,
-                  request_cpus=1,
-                  request_memory='25G',
-                  request_disk='1G',
-                  **submit_kwargs):
+def setup_condor_sub(rundir, request_memory='8G', request_disk='4G',
+                     submit=False, **submit_kwargs):
     """
-    Submit an HTCondor job to compress data.
+    Create a script to run the compression job on HTCondor.
 
     This will generate the following files:
-        {rundir}/submission_scripts/compression.{sub,sh,out,err,log}
+        {rundir}/submission_scripts/compression.{sub,sh}
 
     Parameters
     ----------
-    rundir : str, os.PathLike
+    rundir : os.PathLike
         Simulations directory, on which `simulation` has already
         been run.
 
-    request_cpus, request_memory, request_disk : int or str
-        Specifications in the HTCondor submit file.
-
-    **submit_kwargs
-        Further options to include in the HTCondor submit file. Do
-        not pass `executable`, `output`, `error`, `log`, `args`,
-        `queue`, which will be dealt with automatically.
+    Returns
+    -------
+    pathlib.Path
+        Path to the HTCondor submit file.
     """
     rundir = Path(rundir).resolve()
-    scripts_dir = rundir/'submission_scripts'
-    os.makedirs(scripts_dir, exist_ok=True)
-
-    submit_kwargs = {
-        'submit_path': scripts_dir/'compression.sub',
-        'executable': scripts_dir/'compression.sh',
-        'output': scripts_dir/'compression.out',
-        'error': scripts_dir/'compression.err',
-        'log': scripts_dir/'compression.log',
-        'args': str(rundir),
-        'request_cpus': request_cpus,
-        'request_memory': request_memory,
-        'request_disk': request_disk,
-        } | submit_kwargs
-
-    cogwheel.utils.submit_condor(**submit_kwargs)
+    stem = rundir/'submission_scripts'/'compression'
+    module = 'labrador.compression'
+    return condor_utils.setup_condor_sub(stem, module,
+                                         request_memory=request_memory,
+                                         request_disk=request_disk,
+                                         submit=submit,
+                                         arguments=rundir,
+                                         **submit_kwargs)
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Compress data.')
+    parser = argparse.ArgumentParser(
+        description='Create mask and compress data.')
 
     parser.add_argument('rundir',
                         help='''Simulation directory path, on which
                                 `simulation` has already been run.''')
 
     args = parser.parse_args()
+    create_mask(args.rundir)
     svd_compression(args.rundir)

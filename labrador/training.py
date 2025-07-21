@@ -1,5 +1,6 @@
 """Functions for training neural posterior estimators."""
 import argparse
+import logging
 import pickle
 from pathlib import Path
 from cProfile import Profile
@@ -12,7 +13,10 @@ from tensorboard.backend.event_processing import event_accumulator
 
 from sbi.neural_nets import posterior_nn
 
-from cogwheel_machine import compression, embedding, sbi_hacks, utils
+from . import compression, embedding, sbi_hacks, utils
+
+
+logger = logging.getLogger(__name__)
 
 
 def load_posterior(sbidir, device='cpu'):
@@ -71,24 +75,32 @@ def plot_loss(sbidir, save=True):
 
 
 def _instantiate_inference(sbidir):
-    rescalerdir = sbidir.parent
-    rundir = rescalerdir.parent
+    rescalerdir, priordir, rundir = sbidir.resolve().parents[:3]
     datadir = rundir/utils.TRAINING_DIR
     rescaled_datadir = rescalerdir/utils.TRAINING_DIR
     config = utils.load_sbi_config(sbidir)
 
+    device = config.DEVICE
+    if device is None:
+        device = utils.get_best_device()
+        logger.info(f'Using {device=}')
+
     mask = np.load(datadir/utils.MASK_FILENAME)
 
-    simulation_parameters = np.load(
+    rescaled_parameters = np.load(
         rescaled_datadir/utils.RESCALED_PARAMETERS_FILENAME
         )[:config.MAX_TRAINING_EXAMPLES]
 
     simulation_data = np.load(datadir/utils.COMPRESSED_DATA_FILENAME
                              )[mask][:config.MAX_TRAINING_EXAMPLES]
 
-    theta = torch.tensor(simulation_parameters, dtype=torch.float32
-                        ).to(config.DEVICE)
-    x = torch.tensor(simulation_data, dtype=torch.float32).to(config.DEVICE)
+    simulation_weights = np.load(
+        priordir/utils.TRAINING_DIR/utils.WEIGHTS_FILENAME
+        )[:config.MAX_TRAINING_EXAMPLES]
+
+    theta = torch.tensor(rescaled_parameters, dtype=torch.float32).to(device)
+    x = torch.tensor(simulation_data, dtype=torch.float32).to(device)
+    weights = torch.tensor(simulation_weights, dtype=torch.float32).to(device)
 
     if config.EMBEDDING_LAYER_SIZES:
         embedding_net = embedding.BlockMatrixEmbeddingNetwork(
@@ -101,9 +113,10 @@ def _instantiate_inference(sbidir):
 
     inference = sbi_hacks.NPEFixedBatches(
         density_estimator=neural_posterior,
-        device=config.DEVICE,
+        device=device,
         summary_writer=SummaryWriter(sbidir)
-        ).append_simulations(theta, x)
+        ).append_simulations(theta, x, weights=weights)
+
     return inference
 
 
@@ -130,6 +143,11 @@ def main(sbidir):
     utils.setup_sbidir
     """
     sbidir = Path(sbidir)
+
+    logging.basicConfig(filename=sbidir/'training.log', encoding='utf-8',
+                        level=logging.DEBUG)
+    logger.info('Running training')
+
     config = utils.load_sbi_config(sbidir)
 
     inference_filename = sbidir/utils.INFERENCE_FILENAME
@@ -144,9 +162,10 @@ def main(sbidir):
         density_estimator = inference.train(
             **config.TRAIN_KWARGS,
             resume_training=resume_training,
-            force_first_round_loss=resume_training)
+            force_first_round_loss=resume_training,
+            lr_scheduler_kwargs=config.LR_SCHEDULER_KWARGS)
 
-    profiler.dump_stats(sbidir/'profiling')
+    profiler.dump_stats(sbidir/'training.profile')
 
     with open(inference_filename, 'wb') as file:
         pickle.dump(inference, file)

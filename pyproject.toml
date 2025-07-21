@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "setuptools_scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cogwheel-machine"
+name = "labrador-gw"
 dynamic = ["version"]
 
 dependencies = [
@@ -18,7 +18,14 @@ maintainers = [
 readme = "README.md"
 
 [project.urls]
-"Source" = "https://github.com/jroulet/cogwheel-machine"
+"Source" = "https://github.com/jroulet/labrador"
+
+[project.scripts]
+lab-setup-rundir = "labrador.cli.utils:setup_rundir_cli"
+lab-setup-rescalerdir = "labrador.cli.utils:setup_rescalerdir_cli"
+lab-simulate-chunk = "labrador.cli.simulation_chunks:simulate_chunk_cli"
+lab-merge-chunks = "labrador.cli.simulation_chunks:merge_chunks_cli"
+lab-generate-data-htcondor = "labrador.cli.htcondor:generate_data_cli"
 
 [tool.setuptools.packages.find]
 namespaces = false

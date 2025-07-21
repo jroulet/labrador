@@ -4,8 +4,8 @@ Utility functions and constants.
 File structure:
 The final file structure of a trained model should look as below.
 The user only edits the files `data_config.py`, `rescaler_config.py`,
-`sbi_config.py` and `unfolding_config.py` by hand,
-all the rest are created by the various modules of the code.
+`sbi_config.py` and `unfolding_config.py` by hand, all the rest are
+created by the various modules of the code.
 
 {parentdir}/                                   # E.g. 'coghweel-machine/data/'
 └── {rundir}/                                  # E.g. 'run_0'
@@ -15,24 +15,29 @@ all the rest are created by the various modules of the code.
     ├── version.txt
     ├── {datadir}/                             # 'training_data' or 'test_data'
     │   ├── compressed_data.npy
-    │   ├── folded_sampled_parameters.h5
+    │   ├── folded_sampled_params.h5
     │   ├── mask.npy
     │   ├── preprocessed_data.h5
     │   ├── simulation_parameters.feather
     │   ├── simulation_profiling
     │   └── unfolding_labels.h5
-    └── {rescalerdir}/                         # E.g. 'rescaler_0'
-        ├── parameter_rescaler.pth
-        ├── parameter_rescaler_training.pth
-        ├── rescaler_config.py
-        ├── {rescaled_datadir}/                # 'training_data' or 'test_data'
-        │   └── rescaled_parameters.npy
-        ├── {sbidir}/                          # E.g. 'sbi_0'
-        │   ├── posterior.pt
-        │   └── sbi_config.py
-        └── {unfolderdir}/                     # E.g. 'unfolder_0'
-            ├── unfolder_classifier.ubj
-            └── unfolder_config.py
+    └── {priordir}/                            # Name of physical-prior class
+        ├── {datadir}/                         # 'training_data' or 'test_data'
+        │   ├── ln_prior_ratios.npy
+        │   └── weights.npy
+        └── {rescalerdir}/                     # E.g. 'rescaler_0'
+            ├── parameter_rescaler.pth
+            ├── parameter_rescaler_training.pth
+            ├── rescaler_config.py
+            ├── {datadir}/                     # 'training_data' or 'test_data'
+            │   └── rescaled_params.npy
+            ├── {sbidir}/                      # E.g. 'sbi_0'
+            │   ├── posterior.pt
+            │   └── sbi_config.py
+            └── {unfolderdir}/                 # E.g. 'unfolder_0'
+                ├── unfolding_classifier.ubj
+                └── unfolding_config.py
+
 """
 
 import functools
@@ -41,9 +46,11 @@ import multiprocessing
 import os
 import pstats
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 from cProfile import Profile
+import torch
 import numpy as np
 import pandas as pd
 import h5py
@@ -51,7 +58,7 @@ import h5py
 import cogwheel.utils
 import cogwheel.validation
 
-from cogwheel_machine import __version__
+from . import __version__
 
 
 EXAMPLE_CONFIGS_DIR = Path(__file__).parent/'example_configs'
@@ -73,6 +80,7 @@ INFERENCE_FILENAME = 'inference.pickle'
 POSTERIOR_FILENAME = 'posterior.pt'
 UNFOLDER_FILENAME = 'unfolding_classifier.ubj'
 WAVEFORM_MODEL_FILENAME = 'waveform_model.h5'
+WEIGHTS_FILENAME = 'weights.npy'
 
 
 def load_data_config(rundir):
@@ -146,25 +154,25 @@ def setup_rundir(parentdir, prefix='run_'):
     return rundir
 
 
-def setup_rescalerdir(rundir, prefix='rescaler_'):
+def setup_rescalerdir(priordir, prefix='rescaler_'):
     """
     Set up a rescaler directory with an example rescaler_config.py file.
 
     Parameters
     ----------
-    rundir : os.PathLike
+    priordir : os.PathLike
         Path in which to create the rescaler directory ``rescalerdir``.
 
     prefix : str
-        ``rescaler`` will be named as the prefix followed by a number, to
-        make it unique.
+        ``rescaler`` will be named as the prefix followed by a number,
+        to make it unique.
 
     Returns
     -------
     rescalerdir : os.PathLike
         Path to the newly created rescaler directory.
     """
-    rescalerdir = make_unique_dir(rundir, prefix)
+    rescalerdir = make_unique_dir(priordir, prefix)
 
     source = EXAMPLE_CONFIGS_DIR/RESCALER_CONFIG_FILENAME
     destination = (rescalerdir/RESCALER_CONFIG_FILENAME).resolve()
@@ -173,6 +181,28 @@ def setup_rescalerdir(rundir, prefix='rescaler_'):
     print(f'Created a new rescaler config file at {destination}.',
           'Edit it as needed.')
     return rescalerdir
+
+
+def get_priordirs(rundir):
+    """
+    Get directories for physical priors inside a `rundir`.
+
+    Does not create the directories or check whether they exist.
+
+    Parameters
+    ----------
+    rundir : os.PathLike
+        Path in which to create the prior directories.
+
+    Returns
+    -------
+    priordirs : list of pathlib.Path
+    """
+    rundir = Path(rundir)
+    data_config = load_data_config(rundir)
+
+    return [rundir/prior_cls.__name__
+            for prior_cls in data_config.PHYSICAL_PRIOR_CLASSES]
 
 
 def setup_sbidir(rescalerdir, prefix='sbi_'):
@@ -206,7 +236,7 @@ def setup_sbidir(rescalerdir, prefix='sbi_'):
 
 def setup_unfolderdir(rescalerdir, prefix='unfolder_'):
     """
-    Set up an unfolder directory with an example unfolder_config.py file.
+    Setup an unfolder directory with an example unfolder_config.py file.
 
     Parameters
     ----------
@@ -214,8 +244,8 @@ def setup_unfolderdir(rescalerdir, prefix='unfolder_'):
         Path in which to create the unfolder directory ``unfolderdir``.
 
     prefix : str
-        ``unfolder`` will be named as the prefix followed by a number, to
-        make it unique.
+        ``unfolderdir`` will be named as the prefix followed by a
+        number, to make it unique.
 
     Returns
     -------
@@ -324,11 +354,11 @@ def get_preprocessed_data(datadir, apply_mask=True,
 
 def check_version(rundir):
     """
-    Check that the version of cogwheel_machine recorded in `rundir`
-    matches the current one.
+    Check that the package version recorded in `rundir` matches the
+    current one.
 
-    Issue a warning if not. Raise ``FileNotFoundError`` if `rundir`
-    does not contain a version file.
+    Issue a warning if not. Raise ``FileNotFoundError`` if `rundir` does
+    not contain a version file.
     """
     rundir = Path(rundir)
     with open(rundir/VERSION_FILENAME, encoding='utf-8') as file:
@@ -336,12 +366,12 @@ def check_version(rundir):
 
     if version != __version__:
         logging.warning(f'{rundir} was populated using a different version of'
-                        f' `cogwheel_machine`, {version!r}. '
+                        f' `labrador`, {version!r}. '
                         f'The current version is {__version__!r}.')
 
 
 def write_version(rundir):
-    """Write the version of cogwheel_machine to a file in `rundir`."""
+    """Write the version of labrador to a file in `rundir`."""
     rundir = Path(rundir)
     with open(rundir/VERSION_FILENAME, 'w', encoding='utf-8') as file:
         file.write(__version__)
@@ -384,6 +414,13 @@ def multiprocessing_starmap_profiled(func, iterable, processes=None):
     stats : pstats.Stats
         Profiling statistics.
     """
+    if processes is None:
+        processes = os.cpu_count()
+    elif processes < 0:
+        processes += os.cpu_count()
+    else:
+        processes = min(os.cpu_count(), processes)
+
     with tempfile.TemporaryDirectory() as profile_dir:
         profiled_func = functools.partial(_aux_profiled_func,
                                           func=func, profile_dir=profile_dir)
@@ -413,3 +450,48 @@ def _aux_profiled_func(args, func, profile_dir):
     profiler.dump_stats(Path(profile_dir)/f'{process_id}.prof')
 
     return result
+
+
+def get_best_device(by='utilization'):
+    """
+    Get the GPU with the best utilization or memory usage.
+
+    If there are no GPUs available, return the CPU.
+    If `nvidia-smi` is not available, return the default GPU.
+
+    Parameters
+    ----------
+    by : str
+        Either 'utilization' or 'memory'.
+
+    Returns
+    -------
+    torch.device
+    """
+    if not torch.cuda.is_available():
+        return torch.device('cpu')
+
+    if not shutil.which('nvidia-smi'):
+        return torch.device('cuda')
+
+    def query_gpu(query):
+        result = subprocess.check_output(
+            ['nvidia-smi', f'--query-gpu={query}',
+             '--format=csv,noheader,nounits'],
+            encoding='utf-8')
+        return [int(x) for x in result.strip().split('\n')]
+
+    memory = query_gpu('memory.free')
+    utilization = query_gpu('utilization.gpu')
+
+    if by == 'utilization':
+        def key(i):
+            return utilization[i], -memory[i]
+    elif by == 'memory':
+        def key(i):
+            return -memory[i], utilization[i]
+    else:
+        raise ValueError("`by` should be 'utilization' or 'memory'.")
+
+    gpu_id = min(range(len(memory)), key=key)
+    return torch.device(f'cuda:{gpu_id}')

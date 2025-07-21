@@ -24,7 +24,7 @@ class UnfoldingClassifier:
     """
     def __init__(self, unfolderdir):
         self.unfolderdir = Path(unfolderdir)
-        rundir = self.unfolderdir.resolve().parents[1]
+        rundir = self.unfolderdir.resolve().parents[2]
         data_config = utils.load_data_config(rundir)
 
         # Setup booster
@@ -44,18 +44,19 @@ class UnfoldingClassifier:
     def train(self):
         """Train the XGBoost model and save it in `unfolderdir`."""
         # Load training data
-        compressed_data, rescaled_params, unfolding_labels = self._load_data(
-            self.unfolderdir, use_test_data=False)
+        compressed_data, rescaled_params, unfolding_labels, weights \
+            = self._load_data(self.unfolderdir, use_test_data=False)
         data = np.hstack([compressed_data, rescaled_params])
 
         # Fit
         print('Training XGBoost model...')
-        self.booster.fit(data, unfolding_labels)
+        self.booster.fit(data, unfolding_labels, sample_weight=weights)
         print('Done.')
         self.booster.save_model(self.unfolderdir/utils.UNFOLDER_FILENAME)
 
     def predict(self, compressed_data, rescaled_params):
         """Make predictions from the trained XGBoost model."""
+        # Accept same `compressed_data` for many `rescaled_params`:
         compressed_data = np.broadcast_to(
             compressed_data,
             (rescaled_params.shape[0], compressed_data.shape[-1]))
@@ -93,13 +94,13 @@ class UnfoldingClassifier:
             If True, the confusion matrix will be computed using the
             test data. If False, using the training data.
         """
-        compressed_data, rescaled_params, unfolding_labels = self._load_data(
-            self.unfolderdir, use_test_data)
+        compressed_data, rescaled_params, unfolding_labels, weights = \
+            self._load_data(self.unfolderdir, use_test_data)
 
         predictions = self.predict(compressed_data, rescaled_params)
-        return self._confusion_matrix(predictions, unfolding_labels)
+        return self._confusion_matrix(predictions, unfolding_labels, weights)
 
-    def _confusion_matrix(self, predictions, true_labels):
+    def _confusion_matrix(self, predictions, true_labels, weights):
         """
         Compute the confusion matrix for the given predictions.
 
@@ -120,8 +121,9 @@ class UnfoldingClassifier:
         confusion_matrix = np.zeros((num_class, num_class))
 
         # Populate the probabilistic confusion matrix
-        for true_label, probabilities in zip(true_labels, predictions):
-            confusion_matrix[true_label] += probabilities
+        for true_label, probabilities, weight in zip(
+                true_labels, predictions, weights):
+            confusion_matrix[true_label] += weight * probabilities
 
         # Normalize rows
         confusion_matrix /= confusion_matrix.sum(axis=1, keepdims=True) + 1e-9
@@ -134,17 +136,19 @@ class UnfoldingClassifier:
         else:
             foldername = utils.TRAINING_DIR
 
-        rescalerdir = unfolderdir.parent
-        datadir = rescalerdir.parent/foldername
+        rescalerdir, priordir, rundir = unfolderdir.resolve().parents[:3]
+        datadir = rundir/foldername
         rescaled_params = np.load(
             rescalerdir/foldername/utils.RESCALED_PARAMETERS_FILENAME)
         mask = np.load(datadir/utils.MASK_FILENAME)
         compressed_data = np.load(datadir/utils.COMPRESSED_DATA_FILENAME)[mask]
 
         with h5py.File(datadir/utils.UNFOLDING_LABELS_FILENAME) as file:
-            unfolding_labels = file['dataset'][mask]
+            unfolding_labels = file['dataset'][:][mask]  # [:] makes it faster
 
-        return compressed_data, rescaled_params, unfolding_labels
+        weights = np.load(priordir/foldername/utils.WEIGHTS_FILENAME)
+
+        return compressed_data, rescaled_params, unfolding_labels, weights
 
 
 def main(unfolderdir):
