@@ -14,7 +14,7 @@ import textwrap
 import subprocess
 from pathlib import Path
 
-from cogwheel_machine import compression, generate_parameters, simulation
+from .. import compression, generate_parameters, simulation
 
 
 def generate_data_cli():

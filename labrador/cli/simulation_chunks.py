@@ -4,11 +4,11 @@ Command-line interfaces for simulating the training set in chunks.
 See entry points in the pyproject.toml file under [project.scripts].
 """
 import argparse
-from cogwheel_machine import simulation
+from .. import simulation
 
 
 def simulate_chunk_cli():
-    """CLI to :py:func:`~cogwheel_machine.simulation.simulate_chunk`."""
+    """CLI to :py:func:`~labrador.simulation.simulate_chunk`."""
     parser = argparse.ArgumentParser(description='Simulate a chunk of data.')
     parser.add_argument('datadir', type=str, help='Train or test directory')
     parser.add_argument('i_start', type=int, help='Start index for simulation')
@@ -20,7 +20,7 @@ def simulate_chunk_cli():
 
 
 def merge_chunks_cli():
-    """CLI to :py:func:`~cogwheel_machine.simulation.merge_chunks`."""
+    """CLI to :py:func:`~labrador.simulation.merge_chunks`."""
     parser = argparse.ArgumentParser(description='Merge chunks of data.')
     parser.add_argument('rundir', type=str, help='Run directory')
     parser.add_argument('--delete_chunks_after_merging', action='store_true',

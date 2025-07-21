@@ -1,13 +1,13 @@
 """
-Command-line interface to some functions in :py:mod:`~cogwheel_machine.utils`.
+Command-line interface to some functions in :py:mod:`~labrador.utils`.
 """
 import argparse
 from pathlib import Path
-from cogwheel_machine import utils
+from . import utils
 
 
 def setup_rundir_cli():
-    """CLI to :py:func:`~cogwheel_machine.utils.setup_rundir`."""
+    """CLI to :py:func:`~labrador.utils.setup_rundir`."""
     parser = argparse.ArgumentParser(
         description='Create a new run directory under the given parent.')
     parser.add_argument('parentdir', type=Path, help='Parent directory')
@@ -20,7 +20,7 @@ def setup_rundir_cli():
 
 
 def setup_rescalerdir_cli():
-    """CLI to :py:func:`~cogwheel_machine.utils.setup_rescalerdir`."""
+    """CLI to :py:func:`~labrador.utils.setup_rescalerdir`."""
     parser = argparse.ArgumentParser(
         description='Create a new rescaler directory under a given priordir.')
     parser.add_argument('priordir', type=Path, help='Physical-prior directory')

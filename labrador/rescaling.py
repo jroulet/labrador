@@ -28,7 +28,7 @@ import pandas as pd
 import cogwheel.utils
 from cogwheel import gw_plotting
 
-from cogwheel_machine import pp_plot, sbi_hacks, utils, legacy
+from . import pp_plot, sbi_hacks, utils, legacy
 
 
 logger = logging.getLogger(__name__)

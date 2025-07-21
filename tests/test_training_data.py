@@ -10,17 +10,19 @@ from unittest import TestCase, main
 import numpy as np
 import h5py
 
-from cogwheel_machine import (compression,
-                              generate_parameters,
-                              injections,
-                              posterior,
-                              pp_plot,
-                              rescaling,
-                              simulation,
-                              training,
-                              unfolding,
-                              utils,
-                              weighting)
+from labrador import (
+    compression,
+    generate_parameters,
+    injections,
+    posterior,
+    pp_plot,
+    rescaling,
+    simulation,
+    training,
+    unfolding,
+    utils,
+    weighting,
+)
 # pylint: enable=wrong-import-position
 
 

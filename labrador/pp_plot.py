@@ -13,7 +13,7 @@ import torch
 
 from cogwheel import gw_plotting
 
-from cogwheel_machine import utils
+from . import utils
 
 warnings.filterwarnings('ignore',
                         message='torch.triangular_solve is deprecated')

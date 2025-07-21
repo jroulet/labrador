@@ -58,7 +58,7 @@ import h5py
 import cogwheel.utils
 import cogwheel.validation
 
-from cogwheel_machine import __version__
+from . import __version__
 
 
 EXAMPLE_CONFIGS_DIR = Path(__file__).parent/'example_configs'
@@ -354,11 +354,11 @@ def get_preprocessed_data(datadir, apply_mask=True,
 
 def check_version(rundir):
     """
-    Check that the version of cogwheel_machine recorded in `rundir`
-    matches the current one.
+    Check that the package version recorded in `rundir` matches the
+    current one.
 
-    Issue a warning if not. Raise ``FileNotFoundError`` if `rundir`
-    does not contain a version file.
+    Issue a warning if not. Raise ``FileNotFoundError`` if `rundir` does
+    not contain a version file.
     """
     rundir = Path(rundir)
     with open(rundir/VERSION_FILENAME, encoding='utf-8') as file:
@@ -366,12 +366,12 @@ def check_version(rundir):
 
     if version != __version__:
         logging.warning(f'{rundir} was populated using a different version of'
-                        f' `cogwheel_machine`, {version!r}. '
+                        f' `labrador`, {version!r}. '
                         f'The current version is {__version__!r}.')
 
 
 def write_version(rundir):
-    """Write the version of cogwheel_machine to a file in `rundir`."""
+    """Write the version of labrador to a file in `rundir`."""
     rundir = Path(rundir)
     with open(rundir/VERSION_FILENAME, 'w', encoding='utf-8') as file:
         file.write(__version__)

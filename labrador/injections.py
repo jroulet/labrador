@@ -1,7 +1,7 @@
 """
 Functions to run cogwheel, for comparison.
 
-Create data that is compatible with both cogwheel and cogwheel_machine.
+Create data that is compatible with both cogwheel and labrador.
 """
 import argparse
 import os
@@ -14,11 +14,7 @@ import cogwheel.waveform
 import cogwheel.posterior
 import cogwheel.sampling
 
-from cogwheel_machine import (
-    compression,
-    simulation,
-    utils,
-)
+from . import compression, simulation, utils
 
 EVENTS_DIRNAME = 'example_events'
 
@@ -44,10 +40,10 @@ def main(eventdir, sampler_cls, run_inference=True):
        synthetic data (constrained to satisfy the mask constraints in
        ``rundir/data_config.py``)
     2. Save the data in `eventdir` so that they are readable by
-       ``cogwheel`` and ``cogwheel_machine``
+       ``cogwheel`` and ``labrador``
     3. Infer the posterior using a stochastic sampler (``cogwheel``).
 
-    Can be used for comparing ``cogwheel_machine`` against ``cogwheel``.
+    Can be used for comparing ``labrador`` against ``cogwheel``.
 
     Parameters
     ----------
@@ -125,7 +121,7 @@ def generate_data_and_transform(rundir, prior_cls=None):
     compressed_data : numpy.ndarray
         Input to SBI posterior.
 
-    transform : cogwheel_machine.transform.TransformMixin
+    transform : labrador.transform.TransformMixin
         Instance of the transform class that corresponds to these data.
     """
     data_config = utils.load_data_config(rundir)
