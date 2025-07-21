@@ -5,6 +5,7 @@ It uses a phenomenological waveform model with few, uncorrelated
 parameters.
 """
 from scipy import interpolate, optimize
+from scipy.stats import qmc
 import numpy as np
 
 import lal
@@ -20,6 +21,11 @@ def get_unwrapped_phase(frequencies, signal, mchirp):
     return np.unwrap(np.angle(dechirped)) + phase_0
 
 
+def _get_differential_evolution_initial_population(bounds, popsize=15):
+    n_dim = len(bounds)
+    return qmc.scale(qmc.Halton(n_dim).random(popsize * n_dim), *zip(*bounds))
+
+
 class SemicoherentLikelihood:
     """Methods to fit a phenomenological waveform to the data."""
 
@@ -28,17 +34,17 @@ class SemicoherentLikelihood:
         """
         Parameters
         ----------
-        event_data: cogwheel.data.EventData
+        event_data : cogwheel.data.EventData
             Contains data, i.e. signal plus noise.
 
-        ref_waveform_phase: float array of shape (n_det, n_freq)
+        ref_waveform_phase : float array of shape (n_det, n_freq)
             Must be defined on ``event_data.frequencies[event_data.fslice]``.
             The function ``get_unwrapped_phase`` may be helpful for this.
 
-        waveform_model: waveform_model.PhenomenologicalWaveformGenerator
+        waveform_model : waveform_model.PhenomenologicalWaveformGenerator
             Will be used to generate a relative binning reference.
 
-        n_coherent_segments: int
+        n_coherent_segments : int
             The frequency range is partitioned into segments, a constant
             phase is optimized independently in each segment. This is
             unphysical and intended to make the maximization more robust
@@ -107,29 +113,29 @@ class SemicoherentLikelihood:
 
         Parameters
         ----------
-        frequencies: float array of shape (n_freq,)
+        frequencies : float array of shape (n_freq,)
             Frequency array on which the user's reference waveform is
             defined. For now, it must match
             ``event_data.frequencies[event_data.fslice]``.
 
-        ref_waveform_amp: float array of shape (n_det, n_freq)
+        ref_waveform_amp : float array of shape (n_det, n_freq)
             User-provided reference waveform amplitude.
 
-        ref_waveform_phase: float array of shape (n_det, n_freq)
+        ref_waveform_phase : float array of shape (n_det, n_freq)
             User-provided reference waveform unwrapped phase.
 
-        Return
-        ------
-        coef: float array
+        Returns
+        -------
+        coef : float array
             Parameters of the best-fit phenomenological waveform.
 
-        dh_semicoherent: float array of shape (n_det,)
-            Semicoherent ⟨d|h⟩ of the best fit waveform.
-
-        h_h: float array of shape (n_det,)
+        h_h : float array of shape (n_det,)
             ⟨h|h⟩ of the best fit waveform.
         """
         assert np.array_equal(frequencies, self.frequencies)
+
+        big_boxsize = 20.0  # Hard bounds for optimization
+        small_boxsize = 2.5  # Initial bounds for population
 
         shapecoef_guess = self.waveform_model.guess_shapecoef(
             frequencies,
@@ -140,14 +146,23 @@ class SemicoherentLikelihood:
         shapeampcoef_bounds = self.waveform_model.amplitude_model \
             .amplitude_tapering.shapeampcoef_bounds
 
-        shapecoef = optimize.minimize(
+        def get_bounds(boxsize):
+            shapephasecoef_bounds = (
+                shapecoef_guess[len(shapeampcoef_bounds):, np.newaxis]
+                + (-boxsize, boxsize))
+            return [*shapeampcoef_bounds, *shapephasecoef_bounds]
+
+        small_bounds = get_bounds(small_boxsize)
+        big_bounds = get_bounds(big_boxsize)
+
+        init_pop = _get_differential_evolution_initial_population(small_bounds)
+
+        shapecoef = optimize.differential_evolution(
             lambda shapecoef: -self.semicoherent_lnlike(shapecoef),
-            x0=shapecoef_guess,
-            tol=.1,
-            bounds=[*shapeampcoef_bounds,
-                    *[(-np.inf, np.inf)] * (len(shapecoef_guess)
-                                            - len(shapeampcoef_bounds))]
-            ).x
+            bounds=big_bounds,
+            init=init_pop,
+        ).x
+
         return self._fit_amp_phase(shapecoef)
 
     def _fit_amp_phase(self, shapecoef):
@@ -156,21 +171,18 @@ class SemicoherentLikelihood:
 
         Parameters
         ----------
-        shapecoef: float array
+        shapecoef : float array
             Coefficients characterizing the waveform shape.
             You may use the output of ``._guess_shapecoef`` for this.
 
-        Return
-        ------
-        coef: float array
+        Returns
+        -------
+        coef : float array
             `shapecoef` but with additional entries for detector
             amplitudes and phases that maximize the likelihood.
             Can be passed to ``.waveform_model`` to produce a waveform.
 
-        dh_semicoherent: float array of shape (n_det,)
-            Semicoherent ⟨d|h⟩ of the best fit waveform.
-
-        h_h: float array of shape (n_det,)
+        h_h : float array of shape (n_det,)
             ⟨h|h⟩ of the best fit waveform.
         """
         dh_d, hh_d, dh_semicoherent_d = self._get_dh_hh(shapecoef)
@@ -181,9 +193,8 @@ class SemicoherentLikelihood:
         coef = self.waveform_model.coef_from_shapecoef(shapecoef,
                                                        det_amp=best_amp,
                                                        det_phase=best_phase)
-        dh_semicoherent = np.abs(dh_semicoherent_d) * best_amp
-        h_h = hh_d * best_amp**2
-        return coef, dh_semicoherent, h_h
+        best_hh_d = hh_d * best_amp**2
+        return coef, best_hh_d
 
     def _get_dh_hh(self, shapecoef):
         """With fiducial amp_det=1, phase_det=0."""
@@ -228,17 +239,17 @@ class SemicoherentLikelihood:
         """
         Parameters
         ----------
-        coef: float array
+        coef : float array
             Parameters of the best-fit phenomenological waveform, that
             will be used to heterodyne the data.
 
-        pn_phase_tol: float, optional
+        pn_phase_tol : float, optional
             Inversely proportional to the frequency resolution of the
             heterodyned data.
 
-        Return
-        ------
-        heterodyned_data: complex array of shape (n_det, n_freq)
+        Returns
+        -------
+        heterodyned_data : complex array of shape (n_det, n_freq)
             Data, heterodyned with a reference waveform defined by
             `coef`. The frequency cutoff parameter is ignored in the
             reference waveform, to preserve high-frequency data.
@@ -246,12 +257,12 @@ class SemicoherentLikelihood:
             of the heterodyned data is independent of the SNR of the
             event.
 
-        heterodyned_signal: complex array of shape (n_det, n_freq)
+        heterodyned_signal : complex array of shape (n_det, n_freq)
             Similar to `heterodyned_data` but with the noise realization
             subtracted. Note, this information is inaccesible except in
             simulations.
 
-        fbin: float array of shape (n_freq,)
+        fbin : float array of shape (n_freq,)
             Frequencies at which the heterodyned data are evaluated.
         """
         h_df = self.waveform_model(

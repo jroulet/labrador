@@ -1,5 +1,7 @@
 """P-P plots."""
+import argparse
 import multiprocessing
+import warnings
 from pathlib import Path
 from scipy import stats
 
@@ -11,8 +13,10 @@ import torch
 
 from cogwheel import gw_plotting
 
-from cogwheel_machine import utils
+from . import utils
 
+warnings.filterwarnings('ignore',
+                        message='torch.triangular_solve is deprecated')
 
 CREDIBLE_INTERVALS_FILENAME = 'credible_intervals.feather'
 
@@ -30,41 +34,54 @@ def pp_plot(credible_intervals, ax=None, show_legend=True,
 
     Parameters
     ----------
-    credible_intervals: pandas.DataFrame
+    credible_intervals : pandas.DataFrame
         E.g. the output of ``get_credible_intervals``.
+        Columns are parameter names, rows are injections. Values are the
+        credible interval that our inference assigns to the truth.
+        May contain an additional column 'weights' with the ratio of the
+        physical prior to the simulation prior with which the credible
+        intervals were obtained (up to an arbitrary normalization).
 
-    ax: matplotlib.axes.Axes, optional
+    ax : matplotlib.axes.Axes, optional
         Where to draw the P-P plot
 
-    show_legend: bool
+    show_legend : bool
         Whether to display the legend.
 
-    show_sigmas: sequence of float
+    show_sigmas : sequence of float
         Add shaded regions to the plot with the corresponding
         expected uncertainty.
     """
     if ax is None:
         _, ax = plt.subplots()
 
+    n_injections = len(credible_intervals)
+    weights = credible_intervals.get('weights', np.ones(n_injections))
+    weights = weights / weights.sum()
+
+    credible_intervals = credible_intervals.drop(columns='weights',
+                                                 errors='ignore')
+
     ax.plot((0, 1), (0, 1), 'k:')  # Reference diagonal line
 
     # P-P traces:
-    for par in credible_intervals:
-        sorted_credible_intervals = np.sort(credible_intervals[par])
+    for par, intervals in credible_intervals.items():
+        order = intervals.argsort()
+        sorted_credible_intervals = intervals.iloc[order]
+        empirical_credible_intervals = weights[order].cumsum()
         ax.plot(sorted_credible_intervals,
-                np.linspace(0, 1, len(credible_intervals)),
+                empirical_credible_intervals,
                 label=LATEX_LABELS[par], lw=1.2)
-
 
     if show_legend:
         ax.legend(fontsize=10, frameon=True, framealpha=.5, labelspacing=0.25,
                   loc='upper left', edgecolor='none', borderpad=0.3)
 
     for sigmas in show_sigmas:
-        plt.fill_between(*_pp_error(sigmas, len(credible_intervals)),
+        plt.fill_between(*_pp_error(sigmas, n_injections),
                          color='k', lw=1, ls=':', zorder=0, alpha=.1)
 
-    ax.set_title(f'$N = {len(credible_intervals)}$', fontsize='medium')
+    ax.set_title(f'$N = {n_injections}$', fontsize='medium')
     ax.set_xlabel('Credible interval')
     ax.set_ylabel('Fraction of injections in credible interval')
 
@@ -76,36 +93,36 @@ def pp_plot(credible_intervals, ax=None, show_legend=True,
     ax.set_ylim(0, 1)
 
 
-def get_credible_intervals(modeldir, load=True, save=True, n_data=None,
+def get_credible_intervals(sbidir, load=True, save=True, n_data=None,
                            n_samples=1000, n_processes=20):
     """
     Load or compute credible intervals, needed to construct a P-P plot.
 
     Parameters
     ----------
-    modeldir: os.PathLike
+    sbidir : os.PathLike
         Directory containing a trained posterior.
 
-    load: bool
+    load : bool
         Whether to load credible intervals from disk if available.
 
-    save: bool
+    save : bool
         Whether to save credible intervals to disk in case they had to
         be computed.
 
-    n_data: int
+    n_data : int
         How many injections to do or load.
 
-    n_samples: int
+    n_samples : int
         How many samples to use for computing each credible interval, in
         case we have to compute them.
 
-    n_processes: int
+    n_processes : int
         How many processes to use in case we have to compute the
         credible intervals.
 
-    Return
-    ------
+    Returns
+    -------
     pd.DataFrame
         Columns contain parameters, rows contain floats between 0 and 1
         representing the credible interval at which the truth is
@@ -115,14 +132,14 @@ def get_credible_intervals(modeldir, load=True, save=True, n_data=None,
     --------
     pp_plot
     """
-    modeldir = Path(modeldir)
+    sbidir = Path(sbidir)
 
-    filepath = modeldir/CREDIBLE_INTERVALS_FILENAME
+    filepath = sbidir/CREDIBLE_INTERVALS_FILENAME
     if load and filepath.exists():
         return pd.read_feather(filepath)[:n_data]
 
     credible_intervals = _compute_credible_intervals(
-        modeldir, n_data, n_samples, n_processes)
+        sbidir, n_data, n_samples, n_processes)
 
     if save:
         credible_intervals.to_feather(filepath)
@@ -130,23 +147,26 @@ def get_credible_intervals(modeldir, load=True, save=True, n_data=None,
     return credible_intervals
 
 
-def _compute_credible_intervals(modeldir, n_data, n_samples, n_processes
+def _compute_credible_intervals(sbidir, n_data, n_samples, n_processes
                                ) -> pd.DataFrame:
-    folded_sampled_params, data = _load_data(modeldir.parent, n_data)
+    rescalerdir = sbidir.resolve().parent
+    folded_sampled_params, data, weights = _load_data(rescalerdir, n_data)
 
-    posterior = torch.load(modeldir/'posterior.pt',
+    posterior = torch.load(sbidir/utils.POSTERIOR_FILENAME,
                            map_location=torch.device('cpu'),
                            weights_only=False)
 
-    with multiprocessing.Pool(n_processes) as pool:
-        injections = (row for _, row in folded_sampled_params.iterrows())
+    injections = (row for _, row in folded_sampled_params.iterrows())
 
+    with multiprocessing.Pool(n_processes) as pool:
         credible_intervals = pool.starmap(
             _compute_credible_interval,
             ((injection, x_obs, posterior, n_samples)
              for injection, x_obs in zip(injections, data)))
 
-    return pd.DataFrame.from_records(credible_intervals)
+    credible_intervals = pd.DataFrame.from_records(credible_intervals)
+    credible_intervals['weights'] = weights
+    return credible_intervals
 
 
 def _compute_credible_interval(injection, x_obs, posterior, n_samples
@@ -157,16 +177,16 @@ def _compute_credible_interval(injection, x_obs, posterior, n_samples
 
     Parameters
     ----------
-    injection: dict-like
+    injection : dict-like
         Keys correspond to the physical parameters of the posterior.
 
-    x_obs: float array
+    x_obs : float array
         Data.
 
-    posterior: sbi.inference.posteriors.direct_posterior.DirectPosterior
+    posterior : sbi.inference.posteriors.direct_posterior.DirectPosterior
         Posterior density estimator.
 
-    n_samples: int
+    n_samples : int
         How many samples to generate for computing the credible
         interval.
     """
@@ -178,17 +198,21 @@ def _compute_credible_interval(injection, x_obs, posterior, n_samples
             for par, truth in injection.items()}
 
 
-def _load_data(rundir, n_data):
+def _load_data(rescalerdir, n_data):
+    priordir, rundir = rescalerdir.parents[:2]
     datadir = rundir/utils.TEST_DIR
+    rescaled_datadir = rescalerdir/utils.TEST_DIR
 
     mask = np.load(datadir/utils.MASK_FILENAME)
     data = np.load(datadir/utils.COMPRESSED_DATA_FILENAME)[mask][:n_data]
 
-    folded_sampled_params = pd.DataFrame(
-        np.load(datadir/utils.FOLDED_SAMPLED_PARAMS_FILENAME)[mask][:n_data],
+    rescaled_params = pd.DataFrame(
+        np.load(rescaled_datadir/utils.RESCALED_PARAMETERS_FILENAME)[:n_data],
         columns=_get_folded_params(rundir))
 
-    return folded_sampled_params, data
+    weights = np.load(priordir/utils.TEST_DIR/utils.WEIGHTS_FILENAME)[:n_data]
+
+    return rescaled_params, data, weights
 
 
 def _get_folded_params(rundir):
@@ -206,3 +230,38 @@ def _pp_error(sigmas: float, n_sim: int):
     cdfs = stats.norm.cdf((-sigmas, sigmas))
     y_values = stats.binom.ppf(cdfs[:, np.newaxis], n_sim, x_values) / n_sim
     return x_values, *y_values
+
+
+def main(sbidir, load=True, save=True, n_data=None, n_samples=1000,
+         n_processes=20):
+    """Make a P-P plot and save it in `sbidir`."""
+    sbidir = Path(sbidir).resolve()
+    credible_intervals = get_credible_intervals(
+        sbidir, load, save, n_data, n_samples, n_processes)
+
+    pp_plot(credible_intervals)
+    plt.title(f'Folded & rescaled; {sbidir.name}')
+    plt.savefig(sbidir/'pp_plot.pdf', bbox_inches='tight')
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Make a P-P plot.')
+    parser.add_argument(
+        'sbidir',
+        type=str,
+        help='Path to the model directory.'
+    )
+    parser.add_argument(
+        '--n_data',
+        type=int,
+        default=2000,
+        help='Number of simulations to use (default: 2000).'
+    )
+    parser.add_argument(
+        '--n_processes',
+        type=int,
+        default=20,
+        help='Number of processes to use (default: 20).'
+    )
+
+    main(**vars(parser.parse_args()))

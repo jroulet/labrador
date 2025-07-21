@@ -1,27 +1,28 @@
 """
-Define ``TargetSpaceTransform``, a class that implements a
-coordinate transformation that gives a first approximation to the
-normalizing flow.
+Define ``TargetSpaceTransform``, a class that implements a coordinate
+transformation that gives a first approximation to the normalizing flow.
 """
 import numpy as np
 
 import lal
 
-from cogwheel.prior import Prior, CombinedPrior
+from cogwheel.prior import Prior, CombinedPrior, UnitJacobianMixin
 from cogwheel import gw_prior
+
+# pylint: disable=arguments-differ
 
 
 class TransformMixin:
     """
-    Indicates that a `Prior` object is intended to be used only for
-    its ``transform`` and ``inverse_transform`` methods.
+    Indicates that a `Prior` object is intended to be used only for its
+    ``transform`` and ``inverse_transform`` methods.
     """
     def lnprior(self, *args, **kwargs):
         """Intentionally not implemented."""
         del self, args, kwargs
         raise NotImplementedError(
-            'This class is intended to be used for its `transform` '
-            'and `inverse_transform` only.')
+            'This class is intended to be used for its `transform` and '
+            '`inverse_transform` only.')
 
 
 class MassesTransform(TransformMixin, Prior):
@@ -43,27 +44,28 @@ class MassesTransform(TransformMixin, Prior):
     centered at 0.
     """
     range_dic = {'diff_regularized0pn': (-np.inf, np.inf),
-                 'lnq': (-np.inf, 0.0)}
+                 'lnq': None}
     standard_params = ['m1', 'm2']
 
-    def __init__(self, coef0pn, mchirp_break=60.0, **kwargs):
+    def __init__(self, coef0pn, q_min, mchirp_break=60.0, **kwargs):
         """
         Parameters
         ----------
-        coef0pn: float
+        coef0pn : float
             Estimate of the 0-pN coefficient from the reference
             waveform.
 
-        mchirp_break: float
+        mchirp_break : float
             Chirp mass (Msun) at which to shift from the post-Newtonian
             regime to a linear regime for the chirp-mass
             reparametrization.
 
-        See also
+        See Also
         --------
         waveform_model.PhenomenologicalWaveformGenerator.get_transform_kwargs
         waveform_model.PhaseModel.get_coef0pn
         """
+        self.range_dic = self.range_dic | {'lnq': (np.log(q_min), 0.0)}
         super().__init__(**kwargs)
         self.mchirp_break = mchirp_break
         self.coef0pn = coef0pn
@@ -91,7 +93,8 @@ class MassesTransform(TransformMixin, Prior):
     def get_init_dict(self):
         """Keyword arguments to reproduce the class instance."""
         return {'coef0pn': self.coef0pn,
-                'mchirp_break': self.mchirp_break}
+                'mchirp_break': self.mchirp_break,
+                'q_min': np.exp(self.range_dic['lnq'][0])}
 
     def _regularized0pn(self, mchirp):
         mchirp = np.asarray(mchirp)  # piecewise needs arrays
@@ -122,10 +125,34 @@ class MassesTransform(TransformMixin, Prior):
             128*(np.pi*lal.MTSUN_SI*self.mchirp_break)**(5/3) * regularized0pn
             + 8)
 
+    def ln_jacobian_determinant(self, m1, m2):
+        """
+        Return log of the Jacobian determinant between sampled and
+        standard parameters.
+
+        I.e.
+            ln(|∂{diff_regularized0pn, lnq} / ∂{m1, m2}|)
+        """
+        q = m2 / m1
+        mchirp = m1 * q**.6 / (1 + q)**.2
+        regularized0pn = self._regularized0pn(mchirp)
+
+        if mchirp < self.mchirp_break:
+            lnj_regularized0pn_lnmchirp = np.log(np.abs(5/3*regularized0pn))
+        else:
+            lnj_regularized0pn_lnmchirp = np.log(np.abs(
+                regularized0pn
+                + 1/16 * (np.pi*self.mchirp_break*lal.MTSUN_SI)**(-5/3)))
+
+        lnj_lnmchirplnq_m1m2 = -np.log(m1*m2)
+
+        return lnj_regularized0pn_lnmchirp + lnj_lnmchirplnq_m1m2
+
 
 class PhaseTransform(TransformMixin, gw_prior.UniformPhasePrior):
     """
     Coordinate transformation for the orbital phase.
+
     The coordinate is cogwheel's ``phi_ref_hat`` except the baseline
     phase ``phi_refdet_0` is passed by the user.
     """
@@ -134,17 +161,17 @@ class PhaseTransform(TransformMixin, gw_prior.UniformPhasePrior):
         """
         Parameters
         ----------
-        tgps: float
+        tgps : float
             Fiducial GPS time used in the training set.
             NOT the real GPS time of the event!
 
-        ref_det_name: str
+        ref_det_name : str
             Reference detector name, e.g. 'H' for Hanford.
 
-        f_avg: float
+        f_avg : float
             Fiducial f_avg used in the training set.
 
-        phase_refdet_0: float
+        phase_refdet_0 : float
             Phase of the reference waveform at the reference detector.
         """
         super().__init__(tgps=tgps, ref_det_name=ref_det_name, f_avg=f_avg,
@@ -159,28 +186,29 @@ class PhaseTransform(TransformMixin, gw_prior.UniformPhasePrior):
         return init_dict
 
 
-class TimeTransform(TransformMixin, Prior):
+class TimeTransform(TransformMixin, UnitJacobianMixin, Prior):
     """
     Coordinate transformation for the geocenter time of arrival.
-    The coordiante is the arrival time at the reference detector, minus
+
+    The coordinate is the arrival time at the reference detector, minus
     a fiducial arrival time at the reference detector.
     """
     standard_params = ['t_geocenter']
-    range_dic = {'dt_refdet': (np.nan, np.nan)}
+    range_dic = {'dt_refdet': (-np.inf, np.inf)}
     conditioned_on = ['ra', 'dec']
 
     def __init__(self, *, tgps, ref_det_name, t0_refdet, **kwargs):
         """
         Parameters
         ----------
-        tgps: float
+        tgps : float
             Fiducial GPS time used in the training set.
             NOT the real GPS time of the event!
 
-        ref_det_name: str
+        ref_det_name : str
             Reference detector name, e.g. 'H' for Hanford.
 
-        amp_ref_det: float
+        amp_ref_det : float
             Amplitude of the reference waveform at the reference
             detector (units don't matter as long as they are
             consistent across training and production).
@@ -215,6 +243,7 @@ class TimeTransform(TransformMixin, Prior):
 class DistanceTransform(TransformMixin, Prior):
     """
     Coordinate transformation for the distance.
+
     The coordinate is `relative_dhat`, i.e. cogwheel's d_hat divided by
     a fiducial d_hat.
     """
@@ -226,14 +255,14 @@ class DistanceTransform(TransformMixin, Prior):
         """
         Parameters
         ----------
-        tgps: float
+        tgps : float
             Fiducial GPS time used in the training set.
             NOT the real GPS time of the event!
 
-        ref_det_name: str
+        ref_det_name : str
             Reference detector name, e.g. 'H' for Hanford.
 
-        amp_ref_det: float
+        amp_ref_det : float
             Amplitude of the reference waveform at the reference
             detector (units don't matter as long as they are
             consistent across training and production).
@@ -257,6 +286,23 @@ class DistanceTransform(TransformMixin, Prior):
         d_hat = self._distance_transformer.inverse_transform(
             d_luminosity, ra, dec, psi, iota, m1, m2)['d_hat']
         return {'relative_dhat': d_hat * self.amp_ref_det}
+
+    def ln_jacobian_determinant(self, d_luminosity, ra, dec, psi, iota,
+                                m1, m2):
+        """
+        Return log of the Jacobian determinant between sampled and
+        standard parameters.
+
+        I.e.
+            ln(|∂{relative_dhat} / ∂{d_luminosity}|)
+        """
+        lnj_relativedhat_dhat = np.log(self.amp_ref_det)
+
+        lnj_dhat_dluminosity \
+            = self._distance_transformer.ln_jacobian_determinant(
+                d_luminosity, ra, dec, psi, iota, m1, m2)
+
+        return lnj_relativedhat_dhat + lnj_dhat_dluminosity
 
     def get_init_dict(self):
         """Keyword arguments to reproduce the class instance."""
@@ -282,4 +328,52 @@ class TargetSpaceTransformAlignedSpins(CombinedPrior):
     """Full coordinate transformation for all waveform parameters."""
     prior_classes = [*TargetSpaceTransformNoSpins.prior_classes,
                      gw_prior.UniformEffectiveSpinPrior,
+                     ]
+
+
+class _PNCoordinatesPrior(gw_prior.PNCoordinatesPrior):
+    range_dic = {'mu1': (-np.inf, np.inf),
+                 'mu2': (-np.inf, np.inf),
+                 'lnq': None,
+                 's2z': (-1, 1),
+                }
+    def __init__(self, eigvecs=None, **kwargs):
+        # TODO; for now just put some values for par_dic_0 and eigvecs
+        if eigvecs is None:
+            eigvecs = np.array([[-1.57616411, -0.04111396],
+                                [-0.54265283,  0.08432735],
+                                [-0.27537869,  0.06914793]])
+
+        par_dic_0 = dict.fromkeys(['m1', 'm2', 's1z', 's2z'], 1.0)
+
+        super().__init__(eigvecs=eigvecs, par_dic_0=par_dic_0, **kwargs)
+
+        # The parent class tries to be smart about the range_dic, undo.
+        # TODO change cogwheel.gw_prior.PNCoordinatesPrior, perhaps allow
+        # par_dic_0 = None
+        # Perhaps make a base class with abstract standard_lnprior
+        self.range_dic.update(mu1=(-np.inf, np.inf),
+                              mu2=(-np.inf, np.inf))
+        self.cubemin = np.array([rng[0] for rng in self.range_dic.values()])
+        cubemax = np.array([rng[1] for rng in self.range_dic.values()])
+        self.cubesize = cubemax - self.cubemin
+        self.folded_cubesize = self.cubesize.copy()
+        self.folded_cubesize[self._folded_inds] /= 2
+
+    def get_init_dict(self):
+        """Return kwargs to reproduce this class instance."""
+        # We don't want to pollute the .json with the dummy par_dic_0
+        init_dict = super().get_init_dict()
+        del init_dict['par_dic_0']
+        return init_dict
+
+
+class TargetSpaceTransformAlignedSpinsPN(CombinedPrior):
+    prior_classes = [_PNCoordinatesPrior,
+                     gw_prior.IsotropicInclinationPrior,
+                     gw_prior.UniformPolarizationPrior,
+                     gw_prior.IsotropicSkyLocationPrior,
+                     TimeTransform,
+                     PhaseTransform,
+                     DistanceTransform,
                      ]
