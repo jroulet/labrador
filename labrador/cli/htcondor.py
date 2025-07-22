@@ -18,6 +18,11 @@ from .. import compression, generate_parameters, simulation
 
 
 def generate_data_cli():
+    """
+    Command-line interface for generating a training set.
+
+    This function is accessible as ``lab-generate-data-htcondor``.
+    """
     parser = argparse.ArgumentParser(
         description=textwrap.dedent('''\
             Submit jobs to HTCondor for generating a training set.

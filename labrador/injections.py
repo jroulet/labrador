@@ -9,10 +9,11 @@ from pathlib import Path
 
 import numpy as np
 
-import cogwheel.utils
-import cogwheel.waveform
+import cogwheel.gw_utils
 import cogwheel.posterior
 import cogwheel.sampling
+import cogwheel.utils
+import cogwheel.waveform
 
 from . import compression, simulation, utils
 
@@ -68,6 +69,9 @@ def main(eventdir, sampler_cls, run_inference=True):
     transform.to_json(eventdir, basename='Transform.json')
     np.save(eventdir/utils.COMPRESSED_DATA_FILENAME, compressed_data)
 
+    physical_prior = _adjust_mchirp_range(physical_prior,
+                                          event_data.injection['par_dic'])
+
     sampler = _build_sampler(event_data, physical_prior, sampler_cls)
     if run_inference:
         sampler.run(eventdir)
@@ -81,13 +85,30 @@ def _build_physical_prior(data_config, prior_name):
     return cls(**data_config.PRIOR_KWARGS)
 
 
+def _adjust_mchirp_range(prior, par_dic):
+    uses_mchirp = (
+        'mchirp' in prior.sampled_params
+        and any(par.name == 'mchirp_range' for par in prior.init_parameters())
+    )
+    if not uses_mchirp:
+        return prior
+
+    mchirp_range = cogwheel.gw_utils.estimate_mchirp_range(par_dic['mchirp'],
+                                                           sigmas=10.0)
+    np.clip(mchirp_range, *prior.range_dic['mchirp'], out=mchirp_range)
+
+    return prior.reinstantiate(mchirp_range=mchirp_range)
+
+
 def _build_sampler(event_data, physical_prior, sampler_cls):
     if isinstance(sampler_cls, str):
         sampler_cls = next(
             cls  for cls in cogwheel.sampling.Sampler.__subclasses__()
             if cls.__name__ == sampler_cls)
+
     waveform_generator = cogwheel.waveform.WaveformGenerator.from_event_data(
         event_data, event_data.injection['approximant'])
+
     likelihood = physical_prior.default_likelihood_class(
         event_data=event_data,
         waveform_generator=waveform_generator,
@@ -182,7 +203,7 @@ def _add_snr_to_summary(summary, preprocessed_data):
 def submit_condor(priordir,
                   sampler_cls,
                   request_cpus=1,
-                  request_memory='2G',
+                  request_memory='1G',
                   request_disk='1G',
                   **submit_kwargs):
     """
