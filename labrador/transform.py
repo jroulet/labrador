@@ -8,6 +8,7 @@ import lal
 
 from cogwheel.prior import Prior, CombinedPrior, UnitJacobianMixin
 from cogwheel import gw_prior
+from . import pn_coords
 
 # pylint: disable=arguments-differ
 
@@ -370,6 +371,17 @@ class _PNCoordinatesPrior(gw_prior.PNCoordinatesPrior):
 
 class TargetSpaceTransformAlignedSpinsPN(CombinedPrior):
     prior_classes = [_PNCoordinatesPrior,
+                     gw_prior.IsotropicInclinationPrior,
+                     gw_prior.UniformPolarizationPrior,
+                     gw_prior.IsotropicSkyLocationPrior,
+                     TimeTransform,
+                     PhaseTransform,
+                     DistanceTransform,
+                     ]
+
+
+class TargetSpaceTransformAlignedSpinsPN2(CombinedPrior):
+    prior_classes = [pn_coords.PNCoordinatesPrior2,
                      gw_prior.IsotropicInclinationPrior,
                      gw_prior.UniformPolarizationPrior,
                      gw_prior.IsotropicSkyLocationPrior,
