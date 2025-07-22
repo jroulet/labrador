@@ -3,7 +3,7 @@ Command-line interface to some functions in :py:mod:`~labrador.utils`.
 """
 import argparse
 from pathlib import Path
-from . import utils
+from .. import utils
 
 
 def setup_rundir_cli():
