@@ -712,7 +712,7 @@ def setup_condor_sub(rundir, chunk_size,
 
 
 def _setup_condor_for_simulate_chunks(rundir,
-                                      request_memory='6G',
+                                      request_memory='8G',
                                       request_disk='1G',
                                       **submit_kwargs):
     """
