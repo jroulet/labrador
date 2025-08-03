@@ -23,4 +23,30 @@ pip install -e .
 
 ## Usage
 
-See `notebooks/workflow.ipynb`
+See `notebooks/workflow.ipynb` or use the cheatsheet below.
+
+## Cheatsheet
+
+### 1. Create and populate `RUNDIR` (uses HTCondor)
+```bash
+lab-setup-rundir PARENTDIR
+lab-generate-data-htcondor RUNDIR
+```
+
+### 2. Create and populate `RESCALERDIR` (uses GPU)
+```bash
+lab-setup-rescalerdir PRIORDIR
+python -m labrador.rescaling RESCALERDIR
+```
+
+### 3. Create and populate `SBIDIR` (uses GPU)
+```bash
+lab-setup-sbidir RESCALERDIR
+python -m labrador.training SBIDIR
+```
+
+### 4. Create and populate `UNFOLDERDIR`
+```bash
+lab-setup-unfolderdir RESCALERDIR
+python -m labrador.unfolding UNFOLDERDIR
+```

@@ -76,12 +76,16 @@ def generate_data(rundir, *, chunk_size=10_000, **submit_kwargs):
     submit_compress_path = compression.setup_condor_sub(
         rundir, **submit_kwargs)
 
+    submit_weight_path = weighting.setup_condor_sub(
+        rundir, **submit_kwargs)
+
     # Generate DAGMan file for submitting jobs in the correct order
     dagman_path = _generate_dagman_file(submit_gen_parameters_path,
                                         submit_chunks_train_path,
                                         submit_chunks_test_path,
                                         submit_merge_path,
-                                        submit_compress_path)
+                                        submit_compress_path,
+                                        submit_weight_path)
 
     # Submit DAGMan
     subprocess.run(['condor_submit_dag', dagman_path], check=True)
@@ -92,7 +96,8 @@ def _generate_dagman_file(submit_gen_parameters_path,
                           submit_chunks_train_path,
                           submit_chunks_test_path,
                           submit_merge_path,
-                          submit_compress_path
+                          submit_compress_path,
+                          submit_weight_path,
                           ) -> Path:
     """
     Create DAGMan file to organize simulation jobs and return its path.
@@ -125,15 +130,14 @@ def _generate_dagman_file(submit_gen_parameters_path,
         JOB submit_chunks_test {submit_chunks_test_path}
         JOB submit_merge {submit_merge_path}
         JOB compress {submit_compress_path}
+        JOB weight {submit_weight_path}
 
         PARENT gen_parameters CHILD submit_chunks_test
         PARENT gen_parameters CHILD submit_chunks_train
         PARENT submit_chunks_train CHILD submit_merge
         PARENT submit_chunks_test CHILD submit_merge
         PARENT submit_merge CHILD compress
-
-        RETRY submit_chunks_train 1
-        RETRY submit_chunks_test 1
+        PARENT compress CHILD weight
         ''')
 
     scripts_dir = Path(submit_gen_parameters_path).resolve().parent

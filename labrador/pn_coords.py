@@ -92,6 +92,11 @@ class PNCoordinatesPrior2(Prior):
                   ) / self.eigvecs[2, 0]
 
         beta = 32/3 * eta * v_ref**2 * pn_1_5 + 4*np.pi
+
+        # Check for unphysical beta
+        if np.abs(beta) > 113/12 * (1 - 76/113*eta):
+            return dict.fromkeys(self.standard_params, np.nan)
+
         s2z_min, s2z_max = self._s2z_bounds(beta, eta)
         s2z = s2z_min + cums2z * (s2z_max-s2z_min)
 
@@ -142,7 +147,6 @@ class PNCoordinatesPrior2(Prior):
         -------
         float : log|∂{mu1, mu2, lnq, s2z} / ∂{m1, m2, s1z, s2z}|
         """
-        del s2z
         mchirp = cogwheel.gw_utils.m1m2_to_mchirp(m1, m2)
         eta, beta, v_ref = self._eta_beta_vref(m1, m2, s1z, s2z)
         _, beta0, _ = self._eta_beta_vref(m1, m2, s1z, s2z=0.)
