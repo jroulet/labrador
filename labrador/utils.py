@@ -48,6 +48,7 @@ import pstats
 import shutil
 import subprocess
 import tempfile
+import warnings
 from pathlib import Path
 from cProfile import Profile
 import torch
@@ -473,6 +474,14 @@ def get_best_device(by='utilization'):
 
     if not shutil.which('nvidia-smi'):
         return torch.device('cuda')
+
+    if os.environ.get('CUDA_DEVICE_ORDER') != 'PCI_BUS_ID':
+        warnings.warn(
+            'CUDA_DEVICE_ORDER is not set to "PCI_BUS_ID".\nThis may cause '
+            'device IDs in PyTorch to not match those in `nvidia-smi`.\nTo fix'
+            ' this, add `export CUDA_DEVICE_ORDER=PCI_BUS_ID` to your shell '
+            'config or set it in your script before importing torch.'
+        )
 
     def query_gpu(query):
         result = subprocess.check_output(

@@ -486,6 +486,10 @@ def _setup_chunks(rundir, chunk_size):
         with open(filepath, 'w', newline='', encoding='utf-8') as file:
             csv.writer(file).writerows(ind_pairs)
 
+    # Ensure the waveform_model.h5 exists before the `simulate_chunk`
+    # jobs run, to avoid race condition between them.
+    PhenomenologicalWaveformGenerator.from_rundir(rundir)
+
 
 def _validate_chunkpaths(chunkpaths):
     # Validate that all chunks are there
@@ -712,7 +716,7 @@ def setup_condor_sub(rundir, chunk_size,
 
 
 def _setup_condor_for_simulate_chunks(rundir,
-                                      request_memory='6G',
+                                      request_memory='8G',
                                       request_disk='1G',
                                       **submit_kwargs):
     """

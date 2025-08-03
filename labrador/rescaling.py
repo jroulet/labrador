@@ -13,6 +13,7 @@ relevant rescaler_config parameters and then do:
     main(rescalerdir)  # Will create files in the training and test directory
 """
 import argparse
+import copy
 import cProfile
 import logging
 from pathlib import Path
@@ -25,7 +26,6 @@ import torch
 from torch import nn
 import pandas as pd
 
-import cogwheel.utils
 from cogwheel import gw_plotting
 
 from . import pp_plot, sbi_hacks, utils, legacy
@@ -116,28 +116,43 @@ class ParameterRescaler:
         device = self.rescaler_config.DEVICE
         if device is None:
             device = utils.get_best_device()
+
         logger.info(f'Using {device=}')
+        if device.type == 'cuda':
+            logger.info(torch.cuda.get_device_name(device))
 
         self.device = torch.device(device)
 
         params = list(self.folded_range_dic)
-        self._periodic_inds = [
-            params.index(par) for par in self.periodic_params]
+        self._periodic_inds = torch.tensor(
+            [params.index(par) for par in self.periodic_params],
+            device=self.device)
 
         self._bounded_nonperiodic_inds = [
             params.index(par) for par in self.bounded_nonperiodic_params]
 
-        self._nonperiodic_inds = [ind for ind in range(self.n_parameters)
-                                  if ind not in self._periodic_inds]
+        self._nonperiodic_inds = torch.tensor(
+            [ind for ind in range(self.n_parameters)
+             if ind not in self._periodic_inds],
+            device=self.device)
+
+        self._diag_mask = torch.eye(self.n_parameters,
+                                    device=self.device).bool()
+        self._tril_mask = torch.tril(
+            torch.ones(self.n_parameters, self.n_parameters,
+                       device=self.device),
+            diagonal=-1
+        ).bool()
 
         self._coefs = None  # Set by ._{load|fit}_model
         self._nonperiodic_residuals_scale = None  # Set by ._{load|fit}_model
         self._lnj_scale = None  # Set by ._{load|fit}_model
         self._moments_model = None  # Set by ._{load|fit}_model
         self._training_info = None  # Set by ._{load|fit}_model
-        try:
+
+        if (self.rescalerdir/PARAMETER_RESCALER_FILENAME).exists():
             self._load_model()
-        except FileNotFoundError:  # Models have not been trained yet
+        else:  # Model has not been trained yet
             logger.info('Did not find existing rescaler, will train one...')
 
             with cProfile.Profile() as profile:
@@ -400,14 +415,12 @@ class ParameterRescaler:
         nonperiodic = parameters[:, self._nonperiodic_inds]
 
         # Add a column of 1 to compressed_data for the affine transformation
-        ones = torch.ones((compressed_data.shape[0], 1),
-                          device=compressed_data.device)
-        data_augmented = torch.hstack([compressed_data, ones])
-        self._coefs = torch.linalg.lstsq(data_augmented,
-                                         nonperiodic).solution
+        ones = torch.ones((compressed_data.shape[0], 1))
+        data_augmented = torch.hstack([compressed_data.cpu(), ones])
+        self._coefs = torch.linalg.lstsq(data_augmented, nonperiodic.cpu()
+                                        ).solution.to(compressed_data.device)
         fit = self._nonperiodic_fit(compressed_data)
-        self._nonperiodic_residuals_scale = torch.std(nonperiodic - fit,
-                                                      dim=0)
+        self._nonperiodic_residuals_scale = torch.std(nonperiodic - fit, dim=0)
 
     def _nonperiodic_fit(self, compressed_data):
         return compressed_data @ self._coefs[:-1] + self._coefs[-1]
@@ -474,9 +487,11 @@ class ParameterRescaler:
         Map periodic parameters to (-pi, pi) inplace by adding a
         multiple of 2 pi.
         """
-        for i in self._periodic_inds:
-            parameters[..., i] = cogwheel.utils.mod(parameters[..., i],
-                                                    start=-np.pi)
+        inds = self._periodic_inds.to(parameters.device)
+        parameters[..., inds] = torch.remainder(
+            parameters[..., inds] + np.pi,
+            2 * np.pi
+        ) - np.pi
 
     def _decompactify_periodic(self, parameters):
         """
@@ -545,14 +560,6 @@ class ParameterRescaler:
             self.rescalerdir/PARAMETER_RESCALER_TRAINING_FILENAME,
             weights_only=True, map_location=self.device)
 
-    def _save_current_model(self):
-        model_config = {
-            '_MultiLayerPerceptron': self._moments_model.to_dict(),
-            'coefs': self._coefs,
-            'nonperiodic_residuals_scale': self._nonperiodic_residuals_scale}
-
-        torch.save(model_config, self.rescalerdir/PARAMETER_RESCALER_FILENAME)
-
     def _setup_model(self):
         """
         Set attributes ``_non_periodic_mean`` and ``non_periodic_scale``
@@ -579,6 +586,10 @@ class ParameterRescaler:
                                'val_losses': [],
                                'best_val_loss': np.inf}
 
+        n_pars = sum(p.numel() for p in self._moments_model.parameters()
+                     if p.requires_grad)
+        logger.info(f'Set up rescaler with {n_pars} trainable parameters.')
+
     def train(self):
         """
         Train multilayer perceptron model for the mean and covariance.
@@ -601,6 +612,7 @@ class ParameterRescaler:
         logger.info('Start training...')
 
         patience_counter = 0
+        best_model = None
 
         try:
             for epoch in range(kwargs['max_num_epochs']):
@@ -611,6 +623,8 @@ class ParameterRescaler:
                     optimizer.zero_grad()
                     loss = self._loss_function(*training_batch)
                     loss.backward()
+                    torch.nn.utils.clip_grad_norm_(
+                        self._moments_model.parameters(), max_norm=1.0)
                     optimizer.step()
                     train_loss += loss.item()
 
@@ -630,30 +644,44 @@ class ParameterRescaler:
 
                 scheduler.step(val_loss)
 
-                # Early stopping
+                print(f'Epoch {epoch} | Validation Loss: {val_loss:.3f}',
+                      end='\r')
+
                 if val_loss < self._training_info['best_val_loss']:
+                    # Keep track of best model
+                    best_model = {
+                        '_MultiLayerPerceptron': copy.deepcopy(
+                            self._moments_model.to_dict()),
+                        'coefs': copy.deepcopy(self._coefs),
+                        'nonperiodic_residuals_scale':
+                            self._nonperiodic_residuals_scale,
+                    }
                     self._training_info['best_val_loss'] = val_loss
                     patience_counter = 0
-                    self._save_current_model()
+                    print()  # Keep best models on screen
                 else:
                     patience_counter += 1
+                    # Early stopping
                     if patience_counter >= kwargs['stop_after_epochs']:
                         break
 
-                print(f'Epoch {epoch} | Validation Loss: {val_loss:.3f}',
-                      end='\r')
             print()
             logger.info('Done training.')
         except KeyboardInterrupt:
-            print('\nTraining interrupted.')
+            print('\nTraining interrupted. '
+                  'Will go on processing with the best model so far.')
 
             if (len(self._training_info['train_losses'])
                     == len(self._training_info['val_losses']) + 1):
                 del self._training_info['train_losses'][-1]
 
             self._moments_model.eval()
+        finally:
+            if best_model is not None:
+                torch.save(best_model,
+                           self.rescalerdir/PARAMETER_RESCALER_FILENAME)
+                self._save_training_info()
 
-        self._save_training_info()
         self._load_model()
 
     def _check_no_rescaled_parameter_files(self):
@@ -762,13 +790,11 @@ class ParameterRescaler:
     def _get_mean_and_chol_inv(self, model_outputs):
         """
         Predict mean and Cholesky(inverse covariance) of the parameters.
-
-        We use circular mean for the periodic parameters.
         """
         (mean_nonperiodic, mean_sin_periodic, mean_cos_periodic,
          log_diag_chol_inv, offdiagonal_chol_inv) = model_outputs
 
-        n_samples, _ = mean_nonperiodic.shape
+        n_samples = mean_nonperiodic.shape[0]
 
         # Mean
         mean = torch.empty((n_samples, self.n_parameters), device=self.device)
@@ -779,13 +805,12 @@ class ParameterRescaler:
         # Cholesky decomposition of the inverse covariance
         chol_inv = torch.zeros(
             (n_samples, self.n_parameters, self.n_parameters),
-            device=self.device)
-        # - Diagonal, ensuring it's positive:
-        inds = np.arange(self.n_parameters)
-        chol_inv[:, inds, inds] = torch.exp(log_diag_chol_inv)
-        # - Lower triangle:
-        i, j = np.tril_indices(self.n_parameters, -1)
-        chol_inv[:, i, j] = offdiagonal_chol_inv
+            device=self.device
+        )
+        # - Fill diagonal
+        chol_inv[:, self._diag_mask] = torch.exp(log_diag_chol_inv)
+        # - Fill lower triangle
+        chol_inv[:, self._tril_mask] = offdiagonal_chol_inv
 
         return mean, chol_inv
 
@@ -796,7 +821,7 @@ class ParameterRescaler:
             = model_outputs
 
         mean, chol_inv = self._get_mean_and_chol_inv(model_outputs)
-        rescaled = self._rescale(preconditioned.detach(), mean, chol_inv)
+        rescaled = self._rescale(preconditioned, mean, chol_inv)
         chi_squared = (rescaled**2).sum(dim=1)
 
         log_det_chol_inv = log_diag_chol_inv.sum(dim=1)

@@ -334,11 +334,6 @@ class NPEFixedBatches(PosteriorEstimator):
             if hasattr(self, 'lr_scheduler'):  # *
                 self.lr_scheduler.step(self._val_loss)  # *
 
-            # Save model and summary every 100 epochs so we can inspect
-            # and/or kill without losing everything:
-            if self.epoch % 100 == 0:  # *
-                self._save_progress()  # *
-
         self._report_convergence_at_end(self.epoch, stop_after_epochs, max_num_epochs)
 
         # Update summary.

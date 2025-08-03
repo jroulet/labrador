@@ -9,21 +9,21 @@ the network.
 import torch
 
 # kwargs for the multilayer perceptron
-RESCALER_NN_KWARGS = {'n_layers': 5,
-                      'layer_size': 100,
+RESCALER_NN_KWARGS = {'n_layers': 4,
+                      'layer_size': 32,
                       'activation_fn': 'SiLU'}
 
 RESCALER_TRAIN_KWARGS = {
-    'training_batch_size': 8192,
+    'training_batch_size': 4000,
     'validation_fraction': 0.1,
-    'stop_after_epochs': 200,
-    'max_num_epochs': 10000,
+    'stop_after_epochs': 32,
+    'max_num_epochs': 300,
     'optimizer_cls': torch.optim.AdamW,
-    'optimizer_kwargs': {'lr': 1e-4},  # kwargs to `optimizer_cls`
+    'optimizer_kwargs': {'lr': 5e-3},  # kwargs to `optimizer_cls`
     'scheduler_kwargs': {
         'factor': 0.5,
-        'patience': 64,
-        'min_lr': 5e-6,
+        'patience': 8,
+        'min_lr': 1e-5,
      },  # kwargs to torch.optim.lr_scheduler.ReduceLROnPlateau
 }
 
