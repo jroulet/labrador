@@ -12,7 +12,7 @@ from scipy.optimize import differential_evolution
 
 from cogwheel.prior_ratio import PriorRatio
 
-from . import utils
+from . import condor_utils, utils
 
 
 LN_PRIOR_RATIOS_FILENAME = 'ln_prior_ratios.npy'
@@ -154,6 +154,36 @@ def _reweighting_efficiency(a, b, mu, sigma, ln_prior_ratios):
     ln_prior_ratios_pred = a * mu + b * sigma
     weights = np.exp(ln_prior_ratios - ln_prior_ratios_pred)
     return cogwheel.utils.n_effective(weights) / len(weights)
+
+
+def setup_condor_sub(rundir, request_memory='1G', request_disk='1G',
+                     submit=False, **submit_kwargs):
+    """
+    Create a script to run the weighting job on HTCondor.
+
+    This will generate the following files:
+        {rundir}/submission_scripts/weighting.{sub,sh}
+
+    Parameters
+    ----------
+    rundir : os.PathLike
+        Simulations directory, on which `compression` has already
+        been run.
+
+    Returns
+    -------
+    pathlib.Path
+        Path to the HTCondor submit file.
+    """
+    rundir = Path(rundir).resolve()
+    stem = rundir/'submission_scripts'/'weighting'
+    module = 'labrador.weighting'
+    return condor_utils.setup_condor_sub(stem, module,
+                                         request_memory=request_memory,
+                                         request_disk=request_disk,
+                                         submit=submit,
+                                         arguments=rundir,
+                                         **submit_kwargs)
 
 
 def main(rundir, recompute_existing=False):
