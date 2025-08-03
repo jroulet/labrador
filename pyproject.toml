@@ -23,6 +23,8 @@ readme = "README.md"
 [project.scripts]
 lab-setup-rundir = "labrador.cli.utils:setup_rundir_cli"
 lab-setup-rescalerdir = "labrador.cli.utils:setup_rescalerdir_cli"
+lab-setup-sbidir = "labrador.cli.utils:setup_sbidir_cli"
+lab-setup-unfolderdir = "labrador.cli.utils:setup_unfolderdir_cli"
 lab-simulate-chunk = "labrador.cli.simulation_chunks:simulate_chunk_cli"
 lab-merge-chunks = "labrador.cli.simulation_chunks:merge_chunks_cli"
 lab-generate-data-htcondor = "labrador.cli.htcondor:generate_data_cli"
