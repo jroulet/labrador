@@ -26,7 +26,6 @@ import torch
 from torch import nn
 import pandas as pd
 
-import cogwheel.utils
 from cogwheel import gw_plotting
 
 from . import pp_plot, sbi_hacks, utils, legacy
@@ -654,7 +653,8 @@ class ParameterRescaler:
                         '_MultiLayerPerceptron': copy.deepcopy(
                             self._moments_model.to_dict()),
                         'coefs': copy.deepcopy(self._coefs),
-                        'nonperiodic_residuals_scale': self._nonperiodic_residuals_scale
+                        'nonperiodic_residuals_scale':
+                            self._nonperiodic_residuals_scale,
                     }
                     self._training_info['best_val_loss'] = val_loss
                     patience_counter = 0
