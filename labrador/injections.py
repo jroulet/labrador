@@ -55,6 +55,10 @@ def main(eventdir, sampler_cls, run_inference=True):
     sampler_cls : class, str
         Either a subclass of ``cogwheel.sampling.Sampler``, or a string
         with its name (e.g. 'Dynesty', 'Nautilus', 'PyMultiNest', ...).
+
+    run_inference : bool
+        True (default): save and run the cogwheel sampler.
+        False: just save the cogwheel sampler to json.
     """
     eventdir = Path(eventdir).resolve()
     priordir, rundir = eventdir.parents[1 : 3]
@@ -63,7 +67,7 @@ def main(eventdir, sampler_cls, run_inference=True):
     physical_prior = _build_physical_prior(data_config, priordir.name)
 
     event_data, compressed_data, transform = generate_data_and_transform(
-        rundir, physical_prior.__class__)
+        rundir)
     event_data.eventname = eventdir.name
 
     transform.to_json(eventdir, basename='Transform.json')
