@@ -486,10 +486,6 @@ def _setup_chunks(rundir, chunk_size):
         with open(filepath, 'w', newline='', encoding='utf-8') as file:
             csv.writer(file).writerows(ind_pairs)
 
-    # Ensure the waveform_model.h5 exists before the `simulate_chunk`
-    # jobs run, to avoid race condition between them.
-    PhenomenologicalWaveformGenerator.from_rundir(rundir)
-
 
 def _validate_chunkpaths(chunkpaths):
     # Validate that all chunks are there

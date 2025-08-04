@@ -30,7 +30,7 @@ See `notebooks/workflow.ipynb` or use the cheatsheet below.
 ### 1. Create and populate `RUNDIR` (uses HTCondor)
 ```bash
 lab-setup-rundir PARENTDIR
-lab-generate-data-htcondor RUNDIR
+lab-generate-data-htcondor RUNDIR --submit-arg accounting_group=ACCOUNTING_GROUP
 ```
 
 ### 2. Create and populate `RESCALERDIR` (uses GPU)
