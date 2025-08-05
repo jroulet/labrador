@@ -282,17 +282,20 @@ class SemicoherentLikelihood:
             # Downsample and rescale so amplitude is always similar:
             return rb_splines.get_summary_weights(
                 event_data.blued_strain[:, event_data.fslice] * h_df.conj()
-                ) / amp_d[:, np.newaxis]**2 * 1e-4  # factor made up so ~ O(1)
+            ) / amp_d[:, np.newaxis]**2 * 1e-4  # factor made up so ~ O(1)
 
         heterodyned_data = heterodyne(self.event_data)
 
-        event_data_noiseless = self.event_data.reinstantiate(
-            strain=np.zeros_like(self.event_data.strain), injection=None)
-        # This recomputes the waveform; if it ever becomes a bottleneck
-        # we may want to restructure the code:
-        event_data_noiseless.inject_signal(
-            self.event_data.injection['par_dic'],
-            self.event_data.injection['approximant'])
-        heterodyned_signal = heterodyne(event_data_noiseless)
+        if self.event_data.injection:
+            event_data_noiseless = self.event_data.reinstantiate(
+                strain=np.zeros_like(self.event_data.strain), injection=None)
+            # This recomputes the waveform; if it ever becomes a bottleneck
+            # we may want to restructure the code:
+            event_data_noiseless.inject_signal(
+                self.event_data.injection['par_dic'],
+                self.event_data.injection['approximant'])
+            heterodyned_signal = heterodyne(event_data_noiseless)
+        else:
+            heterodyned_signal = None
 
         return heterodyned_data, heterodyned_signal, rb_splines.fbin

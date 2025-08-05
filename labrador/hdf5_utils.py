@@ -25,6 +25,7 @@ def read_hdf5(file_path):
     return HDF5Mixin.read_object(dic)
 
 
+# TODO this is not compatible with JSONMixin because of how it treats None
 class HDF5Mixin:
     """
     Provide HDF5 output to subclasses.
@@ -127,6 +128,21 @@ class HDF5Mixin:
         if module == '__main__' and (spec := inspect.getmodule(self).__spec__):
             module = spec.name
         return module
+
+    def reinstantiate(self, **new_init_kwargs):
+        """
+        Return a new instance of the class, possibly updating
+        `init_kwargs`.
+
+        Values not passed will be taken from the current instance.
+        """
+        init_kwargs = self.read_object(self.get_init_dict())
+
+        if not new_init_kwargs.keys() <= init_kwargs.keys():
+            raise ValueError(
+                f'`new_init_kwargs` must be from ({", ".join(init_kwargs)})')
+
+        return self.__class__(**init_kwargs | new_init_kwargs)
 
 
 def save_dict_to_hdf5(file_path, dic):

@@ -924,8 +924,10 @@ class PhaseModel(hdf5_utils.HDF5Mixin):
         frequencies = np.asarray(frequencies)
         cache_key = (frequencies.tobytes(), frequencies.shape,
                      frequencies.dtype, n_det)
-        if (cached_pnphases := cls._cache.get(cache_key, None)) is not None:
-            return cached_pnphases
+        try:
+            return cls._cache[cache_key]
+        except KeyError:
+            pass
 
         n_freq = len(frequencies)
         n_ext = 2 * n_det  # phase at detector, time at detector
