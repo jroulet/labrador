@@ -2,7 +2,7 @@
 Phenomenological waveform model that works with coordinates that are
 approximately orthonormal (under a reference PSD).
 """
-import filelock
+import argparse
 from collections import OrderedDict
 from pathlib import Path
 import scipy.interpolate
@@ -17,7 +17,7 @@ import cogwheel.gw_utils
 import cogwheel.waveform
 
 from .rbsplines import RelativeBinningSplines
-from . import utils, hdf5_utils
+from . import condor_utils, hdf5_utils, utils
 
 
 class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
@@ -59,33 +59,31 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
         rundir = Path(rundir)
 
         filename = rundir/utils.WAVEFORM_MODEL_FILENAME
-        lockfile = filename.with_suffix(filename.suffix + '.lock')
 
-        with filelock.FileLock(lockfile):
-            if filename.exists():
-                return hdf5_utils.read_hdf5(filename)
+        if filename.exists():
+            return hdf5_utils.read_hdf5(filename)
 
-            config = utils.load_data_config(rundir)
-            dummy_data = cogwheel.data.EventData.gaussian_noise(
-                **config.EVENT_DATA_KWARGS)
+        config = utils.load_data_config(rundir)
+        dummy_data = cogwheel.data.EventData.gaussian_noise(
+            **config.EVENT_DATA_KWARGS)
 
-            frequencies = dummy_data.frequencies[dummy_data.fslice]
-            wht_filter = dummy_data.wht_filter[:, dummy_data.fslice]
+        frequencies = dummy_data.frequencies[dummy_data.fslice]
+        wht_filter = dummy_data.wht_filter[:, dummy_data.fslice]
 
-            waveform_generator \
-                = cogwheel.waveform.WaveformGenerator.from_event_data(
-                    dummy_data, config.APPROXIMANT)
+        waveform_generator \
+            = cogwheel.waveform.WaveformGenerator.from_event_data(
+                dummy_data, config.APPROXIMANT)
 
-            simulation_parameters = pd.read_feather(
-                rundir/utils.TRAINING_DIR/utils.PARAMETERS_FILENAME
-            )[:n_svd_examples]
+        simulation_parameters = pd.read_feather(
+            rundir/utils.TRAINING_DIR/utils.PARAMETERS_FILENAME
+        )[:n_svd_examples]
 
-            waveform_model = cls.from_waveforms(
-                frequencies, wht_filter, waveform_generator,
-                simulation_parameters, config.PN_PHASE_TOL)
+        waveform_model = cls.from_waveforms(
+            frequencies, wht_filter, waveform_generator,
+            simulation_parameters, config.PN_PHASE_TOL)
 
-            waveform_model.to_hdf5(filename)
-            return waveform_model
+        waveform_model.to_hdf5(filename)
+        return waveform_model
 
     @classmethod
     def from_waveforms(cls, frequencies, fiducial_wht_filter,
@@ -1018,3 +1016,55 @@ def unique_qr(mat):
     qmat, rmat = np.linalg.qr(mat)
     signs = np.diagflat(np.sign(np.diag(rmat)))
     return qmat @ signs, signs @ rmat
+
+
+def setup_condor_sub(rundir, request_memory='1G', request_disk='1G',
+                     submit=False, **submit_kwargs):
+    """
+    Create a script to run the waveform_model job on HTCondor.
+
+    This will generate the following files:
+        {rundir}/submission_scripts/waveform_model.{sub,sh}
+
+    Parameters
+    ----------
+    rundir : os.PathLike
+        Simulations directory, on which `generate_data` has already
+        been run.
+
+    Returns
+    -------
+    pathlib.Path
+        Path to the HTCondor submit file.
+    """
+    rundir = Path(rundir).resolve()
+    stem = rundir/'submission_scripts'/'waveform_model'
+    module = 'labrador.waveform_model'
+    return condor_utils.setup_condor_sub(stem, module,
+                                         request_memory=request_memory,
+                                         request_disk=request_disk,
+                                         submit=submit,
+                                         arguments=rundir,
+                                         **submit_kwargs)
+
+
+def main(rundir):
+    """
+    Create a file ``{rundir}/waveform_model.h5``.
+
+    Parameters
+    ----------
+    rundir : os.PathLike
+        Run directory, must contain a training a test directories with
+        simulation parameters (after ``generate_parameters.py`` has been
+        run).
+    """
+    PhenomenologicalWaveformGenerator.from_rundir(rundir)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+        description='Create a file `{rundir}/waveform_model.h5`.')
+    parser.add_argument('rundir', help='path to a run directory.')
+
+    main(**vars(parser.parse_args()))

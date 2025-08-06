@@ -14,7 +14,13 @@ import textwrap
 import subprocess
 from pathlib import Path
 
-from .. import compression, generate_parameters, simulation, weighting
+from .. import (
+    compression,
+    generate_parameters,
+    simulation,
+    waveform_model,
+    weighting
+)
 
 
 def generate_data_cli():
@@ -28,9 +34,12 @@ def generate_data_cli():
             Submit jobs to HTCondor for generating a training set.
 
             1. Generate training and test parameters.
-            2. Simulate data in chunks.
-            3. Merge chunks into single files.
-            4. Compress the generated data.
+            2. Create the phenomenological waveform model.
+            3. Simulate data in chunks.
+            4. Merge chunks into single files.
+            5. Compress the generated data.
+            6. Create weights to convert the simulation prior to the
+               physical prior.
             ''')
     )
     parser.add_argument('rundir', help='Run directory')
@@ -61,12 +70,18 @@ def generate_data(rundir, *, chunk_size=10_000, **submit_kwargs):
     Submit jobs to HTCondor for generating a training set.
 
     1. Generate training and test parameters.
-    2. Simulate data in chunks.
-    3. Merge chunks into a single file.
-    4. Compress the data.
+    2. Create the phenomenological waveform model.
+    3. Simulate data in chunks.
+    4. Merge chunks into single files.
+    5. Compress the generated data.
+    6. Create weights to convert the simulation prior to the physical
+       prior.
     """
     # Generate submit files for all tasks
     submit_gen_parameters_path = generate_parameters.setup_condor_sub(
+        rundir, **submit_kwargs)
+
+    submit_waveform_model_path = waveform_model.setup_condor_sub(
         rundir, **submit_kwargs)
 
     (submit_chunks_train_path, submit_chunks_test_path), submit_merge_path \
@@ -81,6 +96,7 @@ def generate_data(rundir, *, chunk_size=10_000, **submit_kwargs):
 
     # Generate DAGMan file for submitting jobs in the correct order
     dagman_path = _generate_dagman_file(submit_gen_parameters_path,
+                                        submit_waveform_model_path,
                                         submit_chunks_train_path,
                                         submit_chunks_test_path,
                                         submit_merge_path,
@@ -93,6 +109,7 @@ def generate_data(rundir, *, chunk_size=10_000, **submit_kwargs):
 
 
 def _generate_dagman_file(submit_gen_parameters_path,
+                          submit_waveform_model_path,
                           submit_chunks_train_path,
                           submit_chunks_test_path,
                           submit_merge_path,
@@ -106,6 +123,10 @@ def _generate_dagman_file(submit_gen_parameters_path,
     ----------
     submit_gen_parameters_path : os.PathLike
         Path to the submit file for generating parameters.
+
+    submit_waveform_model_path : os.PathLike
+        Path to the submit file for creating the phenomenological
+        waveform model.
 
     submit_chunks_train_path : os.PathLike
         Path to the submit file for simulating training-set chunks.
@@ -126,14 +147,16 @@ def _generate_dagman_file(submit_gen_parameters_path,
     """
     dagman_text = textwrap.dedent(f'''\
         JOB gen_parameters {submit_gen_parameters_path}
+        JOB waveform_model {submit_waveform_model_path}
         JOB submit_chunks_train {submit_chunks_train_path}
         JOB submit_chunks_test {submit_chunks_test_path}
         JOB submit_merge {submit_merge_path}
         JOB compress {submit_compress_path}
         JOB weight {submit_weight_path}
 
-        PARENT gen_parameters CHILD submit_chunks_test
-        PARENT gen_parameters CHILD submit_chunks_train
+        PARENT gen_parameters CHILD waveform_model
+        PARENT waveform_model CHILD submit_chunks_test
+        PARENT waveform_model CHILD submit_chunks_train
         PARENT submit_chunks_train CHILD submit_merge
         PARENT submit_chunks_test CHILD submit_merge
         PARENT submit_merge CHILD compress
