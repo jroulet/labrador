@@ -45,6 +45,8 @@ def generate_data_cli():
     parser.add_argument('rundir', help='Run directory')
     parser.add_argument('--chunk-size', type=int, default=10_000,
                         help='Number of simulations performed by each job.')
+    parser.add_argument('--submit', action='store_true',
+                        help='Actually submit the .dag after creating it.')
     parser.add_argument(
         '--submit-arg', action='append', default=[],
         help='Extra submit file arguments as key=value pairs. '
@@ -62,10 +64,11 @@ def generate_data_cli():
         submit_kwargs[key] = value
 
     generate_data(rundir=args.rundir, chunk_size=args.chunk_size,
-                  **submit_kwargs)
+                  submit=args.submit, **submit_kwargs)
 
 
-def generate_data(rundir, *, chunk_size=10_000, **submit_kwargs):
+def generate_data(rundir, *, chunk_size=10_000, submit=False,
+                  **submit_kwargs):
     """
     Submit jobs to HTCondor for generating a training set.
 
@@ -104,8 +107,14 @@ def generate_data(rundir, *, chunk_size=10_000, **submit_kwargs):
                                         submit_weight_path)
 
     # Submit DAGMan
-    subprocess.run(['condor_submit_dag', dagman_path], check=True)
-    print(f'Submitted DAGMan file: {dagman_path}')
+    if submit:
+        subprocess.run(['condor_submit_dag', dagman_path], check=True)
+        print(f'Submitted DAGMan file: {dagman_path}')
+    else:
+        print(f'Created DAGMan file: {dagman_path}\n'
+              'You may adjust the resources requested in the *.sub files. '
+              'Submit with:\n'
+              f'condor_submit_dag {dagman_path}')
 
 
 def _generate_dagman_file(submit_gen_parameters_path,

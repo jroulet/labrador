@@ -1018,7 +1018,7 @@ def unique_qr(mat):
     return qmat @ signs, signs @ rmat
 
 
-def setup_condor_sub(rundir, request_memory='1G', request_disk='1G',
+def setup_condor_sub(rundir, request_memory='8G', request_disk='1G',
                      submit=False, **submit_kwargs):
     """
     Create a script to run the waveform_model job on HTCondor.
