@@ -409,6 +409,14 @@ class DataPreprocessor:
         assert np.array_equal(frequencies,
                               event_data.frequencies[event_data.fslice])
 
+        rb_splines = self.waveform_model.phase_model.rb_splines
+        if not np.array_equal(frequencies, rb_splines.frequencies):
+            print('Changing frequency grid to match that of `event_data`.')
+            self.waveform_model.phase_model.rb_splines \
+                = rb_splines.reinstantiate(frequencies=frequencies,
+                                           pn_phase_tol=None,
+                                           fbin=rb_splines.fbin)
+
         like = semicoherent_likelihood.SemicoherentLikelihood(
             event_data=event_data,
             ref_waveform_phase=ref_waveform_phase,
