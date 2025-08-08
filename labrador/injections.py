@@ -97,8 +97,8 @@ def _adjust_mchirp_range(prior, par_dic):
     if not uses_mchirp:
         return prior
 
-    mchirp_range = cogwheel.gw_utils.estimate_mchirp_range(par_dic['mchirp'],
-                                                           sigmas=10.0)
+    mchirp = cogwheel.gw_utils.m1m2_to_mchirp(par_dic['m1'], par_dic['m2'])
+    mchirp_range = cogwheel.gw_utils.estimate_mchirp_range(mchirp, sigmas=10.0)
     np.clip(mchirp_range, *prior.range_dic['mchirp'], out=mchirp_range)
 
     return prior.reinstantiate(mchirp_range=mchirp_range)
