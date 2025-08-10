@@ -156,7 +156,7 @@ def _reweighting_efficiency(a, b, mu, sigma, ln_prior_ratios):
     return cogwheel.utils.n_effective(weights) / len(weights)
 
 
-def setup_condor_sub(rundir, request_memory='1G', request_disk='1G',
+def setup_condor_sub(rundir, request_memory='16G', request_disk='1G',
                      submit=False, **submit_kwargs):
     """
     Create a script to run the weighting job on HTCondor.

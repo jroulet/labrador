@@ -250,7 +250,7 @@ class Posterior:
 
         Returns
         -------
-        rescaled_parameters : (n_samples, n_rescaled_params) array
+        rescaled_parameters : (n_samples, n_rescaled_params) tensor
             Rescaled-folded parameters.
         """
         # Inverse-transform to coordinates suitable for folding:
@@ -264,7 +264,8 @@ class Posterior:
         )(**samples[transform.sampled_params])
 
         # Rescale:
-        rescaled = self.parameter_rescaler.rescale(compressed_data, folded)
+        with torch.no_grad():
+            rescaled = self.parameter_rescaler.rescale(compressed_data, folded)
         return rescaled
 
 def _unfold(transform, unfolding_probabilities,
