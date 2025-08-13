@@ -440,8 +440,8 @@ class ParameterRescaler:
 
         Inverse of ``._periodic_to_angle``.
 
-        Return
-        ------
+        Returns
+        -------
             float : log|∂{periodic} / ∂{angle}|
         """
         lnj = 0.0

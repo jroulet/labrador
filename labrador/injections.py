@@ -63,8 +63,7 @@ def main(eventdir, sampler_cls, run_inference=True):
     eventdir = Path(eventdir).resolve()
     priordir, rundir = eventdir.parents[1 : 3]
 
-    data_config = utils.load_data_config(rundir)
-    physical_prior = _build_physical_prior(data_config, priordir.name)
+    prior = build_cogwheel_prior(priordir)
 
     event_data, compressed_data, transform = generate_data_and_transform(
         rundir)
@@ -73,19 +72,31 @@ def main(eventdir, sampler_cls, run_inference=True):
     transform.to_json(eventdir, basename='Transform.json')
     np.save(eventdir/utils.COMPRESSED_DATA_FILENAME, compressed_data)
 
-    physical_prior = _adjust_mchirp_range(physical_prior,
-                                          event_data.injection['par_dic'])
+    prior = _adjust_mchirp_range(prior, event_data.injection['par_dic'])
+    posterior = build_cogwheel_posterior(event_data, prior)
+    sampler = _build_sampler(posterior, sampler_cls)
 
-    sampler = _build_sampler(event_data, physical_prior, sampler_cls)
     if run_inference:
         sampler.run(eventdir)
     else:
         sampler.to_json(eventdir)
 
 
-def _build_physical_prior(data_config, prior_name):
+def build_cogwheel_prior(priordir):
+    """
+    Parameters
+    ----------
+    priordir : os.PathLike
+        Prior directory (lives inside a ``rundir``).
+
+    Returns
+    -------
+    cogwheel.posterior.Prior
+    """
+    priordir = Path(priordir).resolve()
+    data_config = utils.load_data_config(priordir.parent)
     cls = next(cls for cls in data_config.PHYSICAL_PRIOR_CLASSES
-               if cls.__name__ == prior_name)
+               if cls.__name__ == priordir.name)
     return cls(**data_config.PRIOR_KWARGS)
 
 
@@ -104,23 +115,41 @@ def _adjust_mchirp_range(prior, par_dic):
     return prior.reinstantiate(mchirp_range=mchirp_range)
 
 
-def _build_sampler(event_data, physical_prior, sampler_cls):
-    if isinstance(sampler_cls, str):
-        sampler_cls = next(
-            cls  for cls in cogwheel.sampling.Sampler.__subclasses__()
-            if cls.__name__ == sampler_cls)
+def build_cogwheel_posterior(event_data, prior):
+    """
+    Build a cogwheel posterior from an event data with an injection.
 
+    Parameters
+    ----------
+    event_data : cogwheel.data.EventData
+        Needs to have an injection (`event_data.injection`).
+
+    prior : cogwheel.prior.Prior
+        Defines the prior and the likelihood class.
+
+    Returns
+    -------
+    cogwheel.posterior.Posterior
+    """
     waveform_generator = cogwheel.waveform.WaveformGenerator.from_event_data(
         event_data, event_data.injection['approximant'])
 
-    likelihood = physical_prior.default_likelihood_class(
+    likelihood = prior.default_likelihood_class(
         event_data=event_data,
         waveform_generator=waveform_generator,
         par_dic_0=event_data.injection['par_dic'],
         pn_phase_tol=0.05,
     )
-    posterior = cogwheel.posterior.Posterior(physical_prior, likelihood)
-    sampler = sampler_cls(posterior)
+    return cogwheel.posterior.Posterior(prior, likelihood)
+
+
+def _build_sampler(cogwheel_posterior, sampler_cls):
+    if isinstance(sampler_cls, str):
+        sampler_cls = next(
+            cls  for cls in cogwheel.sampling.Sampler.__subclasses__()
+            if cls.__name__ == sampler_cls)
+
+    sampler = sampler_cls(cogwheel_posterior)
     return sampler
 
 

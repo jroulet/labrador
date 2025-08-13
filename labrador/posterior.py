@@ -391,8 +391,8 @@ class ImportancePosterior:
             `target_n_eff` is reached or a total of `max_n_samples` has
             been drawn.
 
-        Return
-        ------
+        Returns
+        -------
         samples : pandas.DataFrame
             Weighted samples, where the weight is the ratio of the
             posterior (computed with cogwheel) to the normalizing-flow
