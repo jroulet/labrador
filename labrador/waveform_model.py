@@ -2,6 +2,7 @@
 Phenomenological waveform model that works with coordinates that are
 approximately orthonormal (under a reference PSD).
 """
+import argparse
 from collections import OrderedDict
 from pathlib import Path
 import scipy.interpolate
@@ -16,13 +17,12 @@ import cogwheel.gw_utils
 import cogwheel.waveform
 
 from .rbsplines import RelativeBinningSplines
-from . import utils, hdf5_utils
+from . import condor_utils, hdf5_utils, utils
 
 
 class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
     """
-    Class that implementes a simple waveform model with the purpose of
-    finding a reference waveform quickly.
+    A simple waveform model to find a reference waveform quickly.
 
     The phenomenological waveform is based on the 1.5pN expression for
     the phase and the 0pN with a phenomenological cutoff for the
@@ -43,8 +43,7 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
     @classmethod
     def from_rundir(cls, rundir, n_svd_examples=1000):
         """
-        Attempt to load from a saved file. If there is no such file,
-        construct an instance, save it to a file and return it.
+        Attempt to load instance, else construct and save it.
 
         Parameters
         ----------
@@ -60,27 +59,28 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
         rundir = Path(rundir)
 
         filename = rundir/utils.WAVEFORM_MODEL_FILENAME
+
         if filename.exists():
             return hdf5_utils.read_hdf5(filename)
 
         config = utils.load_data_config(rundir)
-        dummy_event_data = cogwheel.data.EventData.gaussian_noise(
+        dummy_data = cogwheel.data.EventData.gaussian_noise(
             **config.EVENT_DATA_KWARGS)
 
-        frequencies = dummy_event_data.frequencies[dummy_event_data.fslice]
-        wht_filter = dummy_event_data.wht_filter[:, dummy_event_data.fslice]
+        frequencies = dummy_data.frequencies[dummy_data.fslice]
+        wht_filter = dummy_data.wht_filter[:, dummy_data.fslice]
 
         waveform_generator \
             = cogwheel.waveform.WaveformGenerator.from_event_data(
-                dummy_event_data, config.APPROXIMANT)
+                dummy_data, config.APPROXIMANT)
 
         simulation_parameters = pd.read_feather(
             rundir/utils.TRAINING_DIR/utils.PARAMETERS_FILENAME
-            )[:n_svd_examples]
+        )[:n_svd_examples]
 
         waveform_model = cls.from_waveforms(
-            frequencies, wht_filter, waveform_generator, simulation_parameters,
-            config.PN_PHASE_TOL)
+            frequencies, wht_filter, waveform_generator,
+            simulation_parameters, config.PN_PHASE_TOL)
 
         waveform_model.to_hdf5(filename)
         return waveform_model
@@ -189,6 +189,8 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
 
     def coef_from_shapecoef(self, shapecoef, det_amp, det_phase):
         """
+        Insert `det_amp` and `det_phase` into `shapecoef`.
+
         Insert overall amplitude at each detector and phase at each
         detector into the array of shape coefficients, to generate a
         complete array of coefficients.
@@ -231,8 +233,7 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
 
     def process_coef(self, coef, i_refdet):
         """
-        Return array with the same information as `coef` but transformed
-        in a way that makes it more suitable for a neural network.
+        Transform `coef` to make it more suitable for a neural network.
 
         Parameters
         ----------
@@ -1016,3 +1017,55 @@ def unique_qr(mat):
     qmat, rmat = np.linalg.qr(mat)
     signs = np.diagflat(np.sign(np.diag(rmat)))
     return qmat @ signs, signs @ rmat
+
+
+def setup_condor_sub(rundir, request_memory='8G', request_disk='1G',
+                     submit=False, **submit_kwargs):
+    """
+    Create a script to run the waveform_model job on HTCondor.
+
+    This will generate the following files:
+        {rundir}/submission_scripts/waveform_model.{sub,sh}
+
+    Parameters
+    ----------
+    rundir : os.PathLike
+        Simulations directory, on which `generate_data` has already
+        been run.
+
+    Returns
+    -------
+    pathlib.Path
+        Path to the HTCondor submit file.
+    """
+    rundir = Path(rundir).resolve()
+    stem = rundir/'submission_scripts'/'waveform_model'
+    module = 'labrador.waveform_model'
+    return condor_utils.setup_condor_sub(stem, module,
+                                         request_memory=request_memory,
+                                         request_disk=request_disk,
+                                         submit=submit,
+                                         arguments=rundir,
+                                         **submit_kwargs)
+
+
+def main(rundir):
+    """
+    Create a file ``{rundir}/waveform_model.h5``.
+
+    Parameters
+    ----------
+    rundir : os.PathLike
+        Run directory, must contain a training a test directories with
+        simulation parameters (after ``generate_parameters.py`` has been
+        run).
+    """
+    PhenomenologicalWaveformGenerator.from_rundir(rundir)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+        description='Create a file `{rundir}/waveform_model.h5`.')
+    parser.add_argument('rundir', help='path to a run directory.')
+
+    main(**vars(parser.parse_args()))

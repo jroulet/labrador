@@ -250,7 +250,7 @@ class Posterior:
 
         Returns
         -------
-        rescaled_parameters : (n_samples, n_rescaled_params) array
+        rescaled_parameters : (n_samples, n_rescaled_params) tensor
             Rescaled-folded parameters.
         """
         # Inverse-transform to coordinates suitable for folding:
@@ -264,7 +264,8 @@ class Posterior:
         )(**samples[transform.sampled_params])
 
         # Rescale:
-        rescaled = self.parameter_rescaler.rescale(compressed_data, folded)
+        with torch.no_grad():
+            rescaled = self.parameter_rescaler.rescale(compressed_data, folded)
         return rescaled
 
 def _unfold(transform, unfolding_probabilities,
@@ -380,7 +381,26 @@ class ImportancePosterior:
 
     def get_weighted_samples_and_lnz(
             self, target_n_eff=1000, max_n_samples=100_000):
-        """Generate SBI samples, compute weights and log evidence."""
+        """
+        Generate SBI samples, compute weights and log evidence.
+
+        Parameters
+        ----------
+        target_n_eff, max_n_samples : int
+            Keep drawing samples until an effective sample size of
+            `target_n_eff` is reached or a total of `max_n_samples` has
+            been drawn.
+
+        Returns
+        -------
+        samples : pandas.DataFrame
+            Weighted samples, where the weight is the ratio of the
+            posterior (computed with cogwheel) to the normalizing-flow
+            probability (computed with labrador).
+
+        lnz : float
+            Log evidence (Bayes factor vs. Gaussian noise).
+        """
         n_chunk = target_n_eff
         n_eff = 0.0
         samples = pd.DataFrame()

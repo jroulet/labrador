@@ -8,7 +8,8 @@ from scipy import interpolate, optimize
 from scipy.stats import qmc
 import numpy as np
 
-import lal
+from cogwheel.utils import import_lal
+lal = import_lal()
 
 
 def get_unwrapped_phase(frequencies, signal, mchirp):
