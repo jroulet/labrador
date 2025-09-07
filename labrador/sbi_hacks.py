@@ -7,7 +7,7 @@ import numpy as np
 from torch import Tensor
 import torch.utils.data
 from sbi.utils.sbiutils import get_simulations_since_round
-from sbi.inference.trainers.npe.npe_base import PosteriorEstimator
+from sbi.inference.trainers.npe.npe_base import PosteriorEstimatorTrainer
 
 from sbi.inference.trainers.npe.npe_base import (
     Adam,
@@ -22,7 +22,7 @@ from sbi.inference.trainers.npe.npe_base import (
 )
 
 
-class NPEFixedBatches(PosteriorEstimator):
+class NPEFixedBatches(PosteriorEstimatorTrainer):
     """
     Like sbi.inference.NPE except the batches are fixed.
 
@@ -34,7 +34,7 @@ class NPEFixedBatches(PosteriorEstimator):
     By making the batches once and for all we speed up iterations over
     the data.
     """
-    @functools.wraps(PosteriorEstimator.__init__)
+    @functools.wraps(PosteriorEstimatorTrainer.__init__)
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._weights_roundwise = []
@@ -100,7 +100,7 @@ class NPEFixedBatches(PosteriorEstimator):
         """
         Append simulations, including weights
 
-        Like sbi.inference.trainers.npe.npe_base.PosteriorEstimator.append_simulations
+        Like sbi.inference.trainers.npe.npe_base.PosteriorEstimatorTrainer.append_simulations
         but it also appends weights.
         """
         if weights is None:
