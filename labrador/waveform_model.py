@@ -285,8 +285,7 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
 
     def get_transform_kwargs(self, coef, i_refdet, f_ref):
         """
-        Return dictionary with kwargs useful to instantiate the
-        coordinate transformation.
+        Return kwargs to instantiate the coordinate transformation.
 
         Namely:
 
@@ -302,8 +301,8 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
         _, times = self.phase_model.get_detector_phases_and_times(phasecoef)
         t0_refdet = times[i_refdet]
 
-        phase_refdet_0 = self.phase_model(
-            np.array([f_ref]), phasecoef)[i_refdet, 0]
+        phase_refdet_0 = self.phase_model(np.array([f_ref]), phasecoef
+                                         )[i_refdet, 0] % (2*np.pi)
 
         return {'coef0pn': coef0pn,
                 'phase_refdet_0': phase_refdet_0,
@@ -925,8 +924,10 @@ class PhaseModel(hdf5_utils.HDF5Mixin):
         frequencies = np.asarray(frequencies)
         cache_key = (frequencies.tobytes(), frequencies.shape,
                      frequencies.dtype, n_det)
-        if (cached_pnphases := cls._cache.get(cache_key, None)) is not None:
-            return cached_pnphases
+        try:
+            return cls._cache[cache_key]
+        except KeyError:
+            pass
 
         n_freq = len(frequencies)
         n_ext = 2 * n_det  # phase at detector, time at detector

@@ -374,12 +374,19 @@ class DataPreprocessor:
         Returns
         -------
         preprocessed_data : dict
-            Contains the following entries
-                * heterodyned_data
-                * heterodyned_signal
-                * fbin
-                * coef
-                * processed_coef
+            Contains the following entries:
+
+            * heterodyned_data
+            * fbin
+            * coef
+            * processed_coef
+            * h0_h0
+
+            Plus, only if `event_data` is an injection:
+
+            * heterodyned_signal
+            * d_h
+            * h_h
 
         transform_kwargs : dict
             Contains event-dependent keyword arguments to the target-
@@ -402,6 +409,14 @@ class DataPreprocessor:
         assert np.array_equal(frequencies,
                               event_data.frequencies[event_data.fslice])
 
+        rb_splines = self.waveform_model.phase_model.rb_splines
+        if not np.array_equal(frequencies, rb_splines.frequencies):
+            print('Changing frequency grid to match that of `event_data`.')
+            self.waveform_model.phase_model.rb_splines \
+                = rb_splines.reinstantiate(frequencies=frequencies,
+                                           pn_phase_tol=None,
+                                           fbin=rb_splines.fbin)
+
         like = semicoherent_likelihood.SemicoherentLikelihood(
             event_data=event_data,
             ref_waveform_phase=ref_waveform_phase,
@@ -420,13 +435,16 @@ class DataPreprocessor:
 
         preprocessed_data = {
             'heterodyned_data': heterodyned_data,
-            'heterodyned_signal': heterodyned_signal,
             'fbin': fbin,
             'coef': coef,
             'processed_coef': processed_coef,
             'h0_h0': h0_h0,
-            'd_h': event_data.injection['d_h'],
-            'h_h': event_data.injection['h_h']}
+        }
+
+        if event_data.injection:
+            preprocessed_data['heterodyned_signal'] = heterodyned_signal
+            preprocessed_data['d_h'] = event_data.injection['d_h']
+            preprocessed_data['h_h'] = event_data.injection['h_h']
 
         return preprocessed_data
 
@@ -461,6 +479,7 @@ def _check_rundir(rundir):
 
 # ----------------------------------------------------------------------
 # Chunking functions
+
 CHUNKS_DIRNAME = 'chunks'
 CHUNKS_FILENAME = 'chunks.csv'
 PROFILE_FILENAME = 'simulation.profile'
@@ -673,6 +692,7 @@ def _load_chunk_from_feather(feather_path: str, i_start: int,
 
 # ----------------------------------------------------------------------
 # HTCondor functions
+
 def setup_condor_sub(rundir, chunk_size,
                      delete_chunks_after_merging=True,
                      **submit_kwargs):
@@ -825,6 +845,7 @@ def _setup_condor_for_merge_chunks(rundir, delete_chunks_after_merging,
 
 # ----------------------------------------------------------------------
 # Functions to simulate data in the local computer
+
 def main(rundir, processes=None):
     """Generate and preprocess training and test data."""
     rundir = Path(rundir)

@@ -376,8 +376,8 @@ class ImportancePosterior:
         self.transform = transform
         self.cogwheel_posterior = cogwheel_posterior
 
-        self._standard_lnposterior = np.vectorize(
-            self.cogwheel_posterior.standard_lnposterior, otypes=[float])
+        self._standard_lnposterior_lnlike_v = np.vectorize(
+            self._standard_lnposterior_lnlike, otypes=[float, float])
 
     def get_weighted_samples_and_lnz(
             self, target_n_eff=1000, max_n_samples=100_000):
@@ -412,8 +412,9 @@ class ImportancePosterior:
                     n_chunk, self.compressed_data, self.transform,
                     verbose=False)
             chunk['standard_lnprob'] = standard_lnprob
-            chunk['standard_lnpost'] = self._standard_lnposterior(
-                **chunk[self.cogwheel_posterior.prior.standard_params])
+            chunk['standard_lnpost'], chunk['lnl'] \
+                = self._standard_lnposterior_lnlike_v(
+                    **chunk[self.cogwheel_posterior.prior.standard_params])
             chunk['ln_weights'] = chunk['standard_lnpost'] - standard_lnprob
 
             samples = pd.concat([samples, chunk], ignore_index=True)
@@ -425,3 +426,9 @@ class ImportancePosterior:
         lnz = logsumexp(samples['ln_weights']) - np.log(len(samples))
         samples['weights'] = np.exp(samples['ln_weights'] - lnz)
         return samples, lnz
+
+    def _standard_lnposterior_lnlike(self, **standard_parameters):
+        lnp = self.cogwheel_posterior.prior.standard_lnprior(
+            **standard_parameters)
+        lnl = self.cogwheel_posterior.likelihood.lnlike(standard_parameters)
+        return lnp + lnl, lnl

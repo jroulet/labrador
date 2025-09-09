@@ -10,7 +10,7 @@ git clone git@github.com:jroulet/labrador.git
 
 ### Create environment:
 ```bash
-conda create -n ENVIRONMENT_NAME pip cogwheel-pe sbi
+conda create -n ENVIRONMENT_NAME pip cogwheel-pe sbi -c conda-forge
 conda activate ENVIRONMENT_NAME
 ```
 (replace `ENVIRONMENT_NAME` by a name of your choice, e.g. `labrador`.)
