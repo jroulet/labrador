@@ -41,7 +41,7 @@ class RelativeBinningSplines(hdf5_utils.HDF5Mixin, utils.JSONMixin):
         if (fbin is None) == (pn_phase_tol is None):
             raise ValueError('Pass exactly one of `fbin` or `pn_phase_tol`.')
 
-        self.frequencies = frequencies
+        self.frequencies = np.asarray(frequencies)
         self._coefficients = None  # Set by ``._set_splines``
         self._basis_splines = None  # Set by ``._set_splines``
 
