@@ -26,6 +26,10 @@ class TransformMixin:
             '`inverse_transform` only.')
 
 
+# ----------------------------------------------------------------------
+# Modular transforms for few parameters at a time
+
+
 class MassesTransform(TransformMixin, Prior):
     """
     Coordinate transformation for the masses, in which the posterior
@@ -313,6 +317,10 @@ class DistanceTransform(TransformMixin, Prior):
                 'amp_ref_det': self.amp_ref_det}
 
 
+# ----------------------------------------------------------------------
+# Combined transforms for the full parameter space
+
+
 class TargetSpaceTransformNoSpins(CombinedPrior):
     """Full coordinate transformation for all waveform parameters."""
     prior_classes = [MassesTransform,
@@ -382,6 +390,19 @@ class TargetSpaceTransformAlignedSpinsPN(CombinedPrior):
 
 class TargetSpaceTransformAlignedSpinsPN2(CombinedPrior):
     prior_classes = [pn_coords.PNCoordinatesPrior2,
+                     gw_prior.IsotropicInclinationPrior,
+                     gw_prior.UniformPolarizationPrior,
+                     gw_prior.IsotropicSkyLocationPrior,
+                     TimeTransform,
+                     PhaseTransform,
+                     DistanceTransform,
+                     ]
+
+
+class BasicAlignedSpinsTransform(CombinedPrior):
+    """Use simply `mchirp`, `lnq` as mass coordinates."""
+    prior_classes = [gw_prior.UniformDetectorFrameMassesPrior,
+                     gw_prior.UniformEffectiveSpinPrior,
                      gw_prior.IsotropicInclinationPrior,
                      gw_prior.UniformPolarizationPrior,
                      gw_prior.IsotropicSkyLocationPrior,
