@@ -135,14 +135,17 @@ class UnfoldingClassifier:
         foldername = utils.TEST_DIR if use_test_data else utils.TRAINING_DIR
         datadir = rundir/foldername
         rescaled_params = np.load(
-            rescalerdir/foldername/utils.RESCALED_PARAMETERS_FILENAME)
+            rescalerdir/foldername/utils.RESCALED_PARAMETERS_FILENAME
+        ).astype(np.float32)
         mask = np.load(datadir/utils.MASK_FILENAME)
-        compressed_data = np.load(datadir/utils.COMPRESSED_DATA_FILENAME)[mask]
+        compressed_data = np.load(datadir/utils.COMPRESSED_DATA_FILENAME
+                                 )[mask].astype(np.float32)
 
         with h5py.File(datadir/utils.UNFOLDING_LABELS_FILENAME) as file:
             unfolding_labels = file['dataset'][:][mask]  # [:] makes it faster
 
-        weights = np.load(priordir/foldername/utils.WEIGHTS_FILENAME)
+        weights = np.load(priordir/foldername/utils.WEIGHTS_FILENAME
+                         ).astype(np.float32)
 
         return compressed_data, rescaled_params, unfolding_labels, weights
 
