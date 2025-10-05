@@ -840,13 +840,17 @@ class ParameterRescaler:
     def _get_folded_range_dic(self):
         """
         Return the range_dic of the transform class, setting the value
-        for ``'lnq'`` from the config.
+        for 'mchirp', 'lnq' from the config.
         """
         # Somewhat fragile, but these methods could be overriden if needed
         folded_range_dic = self.data_config.TRANSFORM_CLASS.range_dic.copy()
         if 'lnq' in folded_range_dic:
             folded_range_dic['lnq'] = (
                 np.log(self.data_config.PRIOR_KWARGS['q_min']), 0.0)
+
+        if 'mchirp' in folded_range_dic:
+            folded_range_dic['mchirp'] \
+                = self.data_config.PRIOR_KWARGS['mchirp_range']
 
         for par in self.data_config.TRANSFORM_CLASS.folded_params:
             # Divide range of folded parameters in two
