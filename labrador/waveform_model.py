@@ -253,7 +253,8 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
             cos(phase_differences)        n_det * (n_det - 1) / 2
             sin(phase_differences)        n_det * (n_det - 1) / 2
             time_differences              n_det * (n_det - 1) / 2
-            intrinsic                     n_shapeampcoef + n_phasecoef
+            amplitude shape parameters    n_shapeampcoef
+            phase shape parameters        n_intphasecoef
             cos(ref_det_phase)            1
             sin(ref_det_phase)            1
             ref_det_time                  1
@@ -391,7 +392,7 @@ class AmplitudeModel(hdf5_utils.HDF5Mixin):
             Amplitude coefficients and cutoff frequency:
 
             * ampcoef[:n_det] : Amplitudes at each detector (physical units).
-            * ampcoef[-1]     : Cutoff frequency in Hz.
+            * ampcoef[n_det:] : shapeampcoef, see AmplitudeTapering.
 
         Returns
         -------
@@ -989,8 +990,7 @@ class PhaseModel(hdf5_utils.HDF5Mixin):
         return pncoef
 
     @staticmethod
-    def _get_umat(weighted_dphase_examples,
-                  n_phasecoef):
+    def _get_umat(weighted_dphase_examples, n_phasecoef):
         """
         Return set of basis functions that describe the contribution to
         the phase from intrinsic-parameters, found from examples by SVD.

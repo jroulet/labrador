@@ -450,7 +450,10 @@ class DataPreprocessor:
 
 
 def _check_rundir(rundir):
-    utils.check_version(rundir)
+    try:
+        utils.check_version(rundir)
+    except FileNotFoundError as err:
+        raise RuntimeError('Run `labrador.generate_parameters` first') from err
 
     datadirs = rundir/utils.TRAINING_DIR, rundir/utils.TEST_DIR
 

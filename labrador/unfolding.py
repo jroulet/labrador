@@ -131,12 +131,8 @@ class UnfoldingClassifier:
         return confusion_matrix
 
     def _load_data(self, unfolderdir, use_test_data: bool):
-        if use_test_data:
-            foldername = utils.TEST_DIR
-        else:
-            foldername = utils.TRAINING_DIR
-
         rescalerdir, priordir, rundir = unfolderdir.resolve().parents[:3]
+        foldername = utils.TEST_DIR if use_test_data else utils.TRAINING_DIR
         datadir = rundir/foldername
         rescaled_params = np.load(
             rescalerdir/foldername/utils.RESCALED_PARAMETERS_FILENAME)

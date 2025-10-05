@@ -15,7 +15,6 @@ from cogwheel.gw_prior.combined import (
     IsotropicInclinationPrior,
     IsotropicSkyLocationPrior,
     UniformTimePrior,
-    UniformPhasePrior,
     UniformPolarizationPrior,
     UniformEffectiveSpinPrior,
     ZeroInplaneSpinsPrior,
@@ -166,8 +165,7 @@ class PhasePrior(UniformPriorMixin, IdentityTransformMixin, Prior):
 # ----------------------------------------------------------------------
 # Combine the modular priors:
 
-class NoSpinTrainingPrior(RegisteredPriorMixin,
-                          CombinedPrior):
+class NoSpinTrainingPrior(RegisteredPriorMixin, CombinedPrior):
     """Intended for generating training parameters."""
     prior_classes = [LogMassPrior,
                      IsotropicInclinationPrior,
@@ -184,22 +182,13 @@ class NoSpinTrainingPrior(RegisteredPriorMixin,
     default_transform_class = transform.TargetSpaceTransformNoSpins
 
 
-class AlignedSpinTrainingPrior(RegisteredPriorMixin,
-                               CombinedPrior):
+class AlignedSpinTrainingPrior(RegisteredPriorMixin, CombinedPrior):
     """Intended for generating training parameters."""
     prior_classes = cogwheel.utils.replace(NoSpinTrainingPrior.prior_classes,
                                            ZeroAlignedSpinsPrior,
                                            UniformEffectiveSpinPrior)
 
     default_transform_class = transform.TargetSpaceTransformAlignedSpins
-
-
-class AlignedSpinSamplingPrior(RegisteredPriorMixin, CombinedPrior):
-    """Intended for sampling, to test the amortized inference."""
-    prior_classes = cogwheel.utils.replace(
-        AlignedSpinTrainingPrior.prior_classes,
-        PhasePrior,
-        UniformPhasePrior)
 
 
 class AlignedSpinUniformDHatTrainingPrior(RegisteredPriorMixin,

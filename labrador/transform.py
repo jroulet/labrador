@@ -32,6 +32,8 @@ class TransformMixin:
 
 class MassesTransform(TransformMixin, Prior):
     """
+    Deprecated in favor of pn_coords.PNCoordinatesPrior2 for low mass.
+
     Coordinate transformation for the masses, in which the posterior
     should be almost independent of the data.
 
@@ -185,10 +187,7 @@ class PhaseTransform(TransformMixin, gw_prior.UniformPhasePrior):
 
     def get_init_dict(self):
         """Keyword arguments to reproduce the class instance."""
-        init_dict = super().get_init_dict()
-        del init_dict['par_dic_0']
-        init_dict['phase_refdet_0'] = self._phase_refdet_0
-        return init_dict
+        return super().get_init_dict(phase_refdet_0=self._phase_refdet_0)
 
 
 class TimeTransform(TransformMixin, UnitJacobianMixin, Prior):
@@ -341,6 +340,7 @@ class TargetSpaceTransformAlignedSpins(CombinedPrior):
 
 
 class _PNCoordinatesPrior(gw_prior.PNCoordinatesPrior):
+    """Deprecated."""
     range_dic = {'mu1': (-np.inf, np.inf),
                  'mu2': (-np.inf, np.inf),
                  'lnq': None,
@@ -378,6 +378,7 @@ class _PNCoordinatesPrior(gw_prior.PNCoordinatesPrior):
 
 
 class TargetSpaceTransformAlignedSpinsPN(CombinedPrior):
+    """Deprecated."""
     prior_classes = [_PNCoordinatesPrior,
                      gw_prior.IsotropicInclinationPrior,
                      gw_prior.UniformPolarizationPrior,
