@@ -417,7 +417,7 @@ class ImportancePosterior:
                     **chunk[self.cogwheel_posterior.prior.standard_params])
             chunk['ln_weights'] = chunk['standard_lnpost'] - standard_lnprob
 
-            samples = pd.concat([samples, chunk], ignore_index=True)
+            samples = pd.concat([samples, chunk.dropna()], ignore_index=True)
 
             n_eff = cogwheel.utils.n_effective(
                 np.exp(samples['ln_weights'] - samples['ln_weights'].max()))
