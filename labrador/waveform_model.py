@@ -41,8 +41,7 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
     easing the task of maximizing it.
     """
     @classmethod
-    def from_rundir(cls, rundir, n_svd_examples=1000,
-                    include_global_phase_and_time=False):
+    def from_rundir(cls, rundir, n_svd_examples=1000):
         """
         Attempt to load instance, else construct and save it.
 
@@ -454,6 +453,7 @@ class AmplitudeModel(hdf5_utils.HDF5Mixin):
 
     @property
     def ampcoef_keys(self):
+        """List of names describing the entries in ``ampcoef``."""
         return [*(f'amp_{i}' for i in range(self.n_det)),
                 *self.amplitude_tapering.shapeampcoef_keys]
 
@@ -596,6 +596,8 @@ class AmplitudeTapering(hdf5_utils.HDF5Mixin):
 
     @property
     def shapeampcoef_keys(self):
+        """List of names describing the entries in ``shapeampcoef``."""
+
         return ['log10fcut',
                 *(f'amp_svd_{i}' for i in range(len(self.vhmat)))]
 
@@ -872,6 +874,7 @@ class PhaseModel(hdf5_utils.HDF5Mixin):
 
     @property
     def phasecoef_keys(self):
+        """List of names describing the entries in ``phasecoef``."""
         n_intphasecoef = self.n_phasecoef - 2*self.n_det
         return [*(f'detphasecoef_{i}' for i in range(self.n_det)),
                 *(f'dettimecoef_{i}' for i in range(self.n_det)),
