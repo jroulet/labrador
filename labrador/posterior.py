@@ -2,13 +2,16 @@
 Generate amortized samples, and reweight using likelihood evaluations.
 """
 from pathlib import Path
+import warnings
 import numpy as np
 import pandas as pd
 import torch
 from scipy.special import logsumexp
 
 import cogwheel.prior
+import cogwheel.skyloc_angles
 import cogwheel.utils
+import lal
 
 from . import rescaling, training, unfolding, utils
 
@@ -57,13 +60,16 @@ class Posterior:
         return cls(parameter_rescaler=parameter_rescaler,
                    sbi_posterior=sbi_posterior,
                    unfolding_classifier=unfolding_classifier,
-                   fixed_par_dic=fixed_par_dic)
+                   fixed_par_dic=fixed_par_dic,
+                   tgps_fiducial=data_config.TGPS,
+                   )
 
     def __init__(self,
                  parameter_rescaler,
                  sbi_posterior,
                  unfolding_classifier,
                  fixed_par_dic=None,
+                 tgps_fiducial=None,
                  ):
         """
         Parameters
@@ -84,6 +90,9 @@ class Posterior:
             Contains parameter values that are fixed in all the samples
             (e.g. reference frequency, tidal deformabilities, ...).
 
+        tgps_fiducial : float
+            GPS time with which the model has been trained.
+
         See Also
         --------
         from_tree : To load these inputs from the directory tree.
@@ -92,9 +101,11 @@ class Posterior:
         self.sbi_posterior = sbi_posterior
         self.unfolding_classifier = unfolding_classifier
         self.fixed_par_dic = fixed_par_dic or {}
+        self.tgps_fiducial = tgps_fiducial
 
     def generate_samples_and_lnprob(self, n_samples, compressed_data,
-                                    transform, dropna=True, verbose=True):
+                                    transform, tgps_actual=None,
+                                    dropna=True, verbose=True):
         """
         Generate samples and their probablilty density in the space of
         standard parameters.
@@ -112,9 +123,18 @@ class Posterior:
             Transforms between standard parameters and coordinates
             suitable for folding.
 
+        tgps_actual : float
+            Actual GPS time of the event, as opposed to the fiducial one
+            with which the model is trained. Only needed if the
+            posterior involves the sky location (right ascension).
+
         dropna : bool
             Discard SBI samples that produce unphysical parameters.
             (This may reduce the number of samples from `n_samples`.)
+
+        verbose : bool
+            Whether to report in case unphysical samples had to be
+            dropped.
 
         Returns
         -------
@@ -137,7 +157,7 @@ class Posterior:
                                               x=compressed_data).numpy()
 
         samples, lnj = self.unrescale_unfold_transform(
-            compressed_data, transform, rescaled_parameters)
+            compressed_data, transform, rescaled_parameters, tgps_actual)
 
         cogwheel.utils.update_dataframe(samples, self.fixed_par_dic)
 
@@ -146,7 +166,7 @@ class Posterior:
 
             if verbose and not all(valid):
                 print('Dropping unphysical samples '
-                      f'({(~valid).mean():.3g} of the total).')
+                      f'({(~valid).mean() * 100:.3g}% of the total).')
 
             samples = samples[valid].reset_index(drop=True)
             lnp_sbi = lnp_sbi[valid]
@@ -157,7 +177,8 @@ class Posterior:
         return samples, lnp_sbi - lnj
 
     def unrescale_unfold_transform(self, compressed_data, transform,
-                                   rescaled_parameters):
+                                   rescaled_parameters,
+                                   tgps_actual=None):
         """
         End to end, from folded-rescaled to standard parameters.
 
@@ -174,6 +195,11 @@ class Posterior:
         rescaled_parameters : (n_samples, n_rescaled_params) array
             Rescaled parameters, i.e. output of the normalizing flow.
             This is the input to the postprocessor.
+
+        tgps_actual : float
+            Actual GPS time of the event, as opposed to the fiducial one
+            with which the model is trained. Only needed if the
+            posterior involves the sky location (right ascension).
 
         Returns
         -------
@@ -224,10 +250,18 @@ class Posterior:
             columns=[f'rescaled_{par}' for par in transform.sampled_params])
         cogwheel.utils.update_dataframe(parameters, rescaled_df)
 
+        # Correct RA
+        if 'ra' in parameters:
+            if tgps_actual is None:
+                raise ValueError('Unknown `tgps_actual`.')
+
+            correct_right_ascension(parameters, tgps_actual,
+                                    self.tgps_fiducial)
+
         return parameters, lnj
 
     def inversetransform_fold_rescale(self, compressed_data, transform,
-                                      samples):
+                                      samples, tgps_actual=None):
         """
         From physical parameters to folded-rescaled parameters.
 
@@ -248,13 +282,30 @@ class Posterior:
         samples : pandas.DataFrame
             Parameters in the physical space.
 
+        tgps_actual : float
+            Actual GPS time of the event, as opposed to the fiducial one
+            with which the model is trained. Only needed if the
+            posterior involves the sky location (right ascension).
+
         Returns
         -------
         rescaled_parameters : (n_samples, n_rescaled_params) tensor
             Rescaled-folded parameters.
         """
-        # Inverse-transform to coordinates suitable for folding:
         samples = samples.copy()  # Leave input untouched
+
+        # Anti-correct RA
+        if 'ra' in samples:
+            if tgps_actual is None:
+                raise ValueError('Unknown `tgps_actual`.')
+            del samples['lon']
+        correct_right_ascension(
+            samples,
+            tgps_actual=self.tgps_fiducial,  # Note opposite order
+            tgps_fiducial=tgps_actual,  # Note opposite order
+        )
+
+        # Inverse-transform to coordinates suitable for folding:
         transform.inverse_transform_samples(samples)
 
         # Fold:
@@ -267,6 +318,42 @@ class Posterior:
         with torch.no_grad():
             rescaled = self.parameter_rescaler.rescale(compressed_data, folded)
         return rescaled
+
+
+def correct_right_ascension(samples, tgps_actual, tgps_fiducial):
+    """
+    Correct RA samples that had been obtained assuming a fiducial tgps.
+
+    This will create a column 'lon' with the longitude, and change the
+    value of 'ra' to be correct. By adding 'lon' we track that this
+    function has been applied. If 'lon' is already present, a warning
+    will be printed and the function will exit without changing
+    anything.
+
+    Parameters
+    ----------
+    samples : pandas.DataFrame
+        Must contain a column 'ra' with the right ascension values to
+        correct.
+
+    tgps_actual : float
+        GPS time at which the event actually happened.
+
+    tgps_fiducial : float
+        GPS time with which labrador was trained (``data_config.TGPS``).
+    """
+    if 'lon' in samples:
+        warnings.warn('Refusing to change `samples["ra"]`, it looks like it '
+                      'has already been corrected!')
+        return
+
+    gmst_actual = lal.GreenwichMeanSiderealTime(tgps_actual)
+    gmst_fiducial = lal.GreenwichMeanSiderealTime(tgps_fiducial)
+    samples['lon'] = cogwheel.skyloc_angles.ra_to_lon(samples['ra'],
+                                                      gmst_fiducial)
+    samples['ra'] = cogwheel.skyloc_angles.lon_to_ra(samples['lon'],
+                                                     gmst_actual)
+
 
 def _unfold(transform, unfolding_probabilities,
             folded_sampled_parameters):

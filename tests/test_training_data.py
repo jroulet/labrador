@@ -156,15 +156,23 @@ class IntegrationTestCase(TestCase):
     def _event_end_to_end(sbidir, unfolderdir):
         post = posterior.Posterior.from_tree(sbidir, unfolderdir)
 
-        _, compressed_data, transform = injections.generate_data_and_transform(
-            rundir=sbidir.parents[2])
+        event_data, compressed_data, transform \
+            = injections.generate_data_and_transform(rundir=sbidir.parents[2])
+        # Pretend event happened at a different tgps
+        event_data.tgps = np.random.uniform(0, 1e9)
 
         samples, lnprob_standard = post.generate_samples_and_lnprob(
-            100, compressed_data, transform)
+            100, compressed_data, transform, event_data.tgps)
 
         assert set(transform.standard_params) <= set(samples)
         assert set(transform.sampled_params) <= set(samples)
         assert len(lnprob_standard) == len(samples)
+
+        rescaled = post.inversetransform_fold_rescale(
+            compressed_data, transform, samples, event_data.tgps)
+        rescaled_params = [f'rescaled_{par}'
+                           for par in transform.sampled_params]
+        np.testing.assert_allclose(samples[rescaled_params], rescaled)
 
     def _assert_same_training_and_testing_files(self, rundir):
         training_files = set(os.listdir(rundir/utils.TRAINING_DIR))
