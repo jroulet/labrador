@@ -2,6 +2,8 @@
 Generate amortized samples, and reweight using likelihood evaluations.
 """
 from pathlib import Path
+import tarfile
+import tempfile
 import warnings
 import numpy as np
 import pandas as pd
@@ -26,43 +28,24 @@ class Posterior:
     """
 
     @classmethod
-    def from_tree(cls, sbidir, unfolderdir):
+    def from_tree(cls, tree):
         """
         Parameters
         ----------
-        sbidir : os.PathLike
-            Path to the SBI directory, lives inside ``rescalerdir``.
-
-        unfolderdir : os.PathLike
-            Path to the unfolder directory, also lives inside
-            ``rescalerdir``.
-
-        Raises
-        ------
-        ValueError
-            If `sbidir` and `unfolderdir` don't have the same parent.
+        tree : utils.Tree
+            Directory structure of the trained model.
         """
-        sbidir = Path(sbidir).resolve()
-        unfolderdir = Path(unfolderdir).resolve()
-        rescalerdir, _, rundir = sbidir.parents[:3]
-
-        if unfolderdir.parent != rescalerdir:
-            raise ValueError(
-                '`sbidir` and `unfolderdir` are not in the same `rescalerdir`')
-
-        sbi_posterior = training.load_posterior(sbidir)
-        unfolding_classifier = unfolding.UnfoldingClassifier(unfolderdir)
-        parameter_rescaler = rescaling.ParameterRescaler(rescalerdir)
-
-        data_config = utils.load_data_config(rundir)
+        sbi_posterior = training.load_posterior(tree.sbidir)
+        unfolding_classifier = unfolding.UnfoldingClassifier(tree.unfolderdir)
+        parameter_rescaler = rescaling.ParameterRescaler(tree.rescalerdir)
+        data_config = utils.load_data_config(tree.rundir)
         simulation_prior = data_config.PRIOR_CLASS(**data_config.PRIOR_KWARGS)
         fixed_par_dic = _get_fixed_par_dic(simulation_prior)
         return cls(parameter_rescaler=parameter_rescaler,
                    sbi_posterior=sbi_posterior,
                    unfolding_classifier=unfolding_classifier,
                    fixed_par_dic=fixed_par_dic,
-                   tgps_fiducial=data_config.TGPS,
-                   )
+                   tgps_fiducial=data_config.TGPS)
 
     def __init__(self,
                  parameter_rescaler,
@@ -127,6 +110,7 @@ class Posterior:
             Actual GPS time of the event, as opposed to the fiducial one
             with which the model is trained. Only needed if the
             posterior involves the sky location (right ascension).
+            Hint: use ``event_data.tgps``.
 
         dropna : bool
             Discard SBI samples that produce unphysical parameters.
@@ -211,6 +195,9 @@ class Posterior:
             folded-rescaled to unfolded standard parameters.
             log |∂{standard} / ∂{folded_rescaled}|
         """
+        if 'ra' in transform.standard_params and tgps_actual is None:
+            raise ValueError('Unknown `tgps_actual`.')
+
         # • Unrescale:
         with torch.no_grad():
             folded_sampled_parameters, lnj_unrescale \
@@ -252,11 +239,9 @@ class Posterior:
 
         # Correct RA
         if 'ra' in parameters:
-            if tgps_actual is None:
-                raise ValueError('Unknown `tgps_actual`.')
-
-            correct_right_ascension(parameters, tgps_actual,
-                                    self.tgps_fiducial)
+            correct_right_ascension(parameters,
+                                    tgps_actual=tgps_actual,
+                                    tgps_fiducial=self.tgps_fiducial)
 
         return parameters, lnj
 
@@ -320,7 +305,7 @@ class Posterior:
         return rescaled
 
 
-def correct_right_ascension(samples, tgps_actual, tgps_fiducial):
+def correct_right_ascension(samples, *, tgps_actual, tgps_fiducial):
     """
     Correct RA samples that had been obtained assuming a fiducial tgps.
 
@@ -497,6 +482,7 @@ class ImportancePosterior:
             chunk, standard_lnprob \
                 = self.labrador_posterior.generate_samples_and_lnprob(
                     n_chunk, self.compressed_data, self.transform,
+                    self.cogwheel_posterior.likelihood.event_data.tgps,
                     verbose=False)
             chunk['standard_lnprob'] = standard_lnprob
             chunk['standard_lnpost'], chunk['lnl'] \
@@ -512,6 +498,9 @@ class ImportancePosterior:
         # Z = ∫ π L = ⟨π L / p⟩_p
         lnz = logsumexp(samples['ln_weights']) - np.log(len(samples))
         samples['weights'] = np.exp(samples['ln_weights'] - lnz)
+
+        print('Importance sampling efficiency: n_eff / N = '
+              f'{n_eff:.1f} / {len(samples)} = {n_eff / len(samples):.3g}')
         return samples, lnz
 
     def _standard_lnposterior_lnlike(self, **standard_parameters):
