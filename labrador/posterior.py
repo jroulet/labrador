@@ -15,7 +15,7 @@ import cogwheel.skyloc_angles
 import cogwheel.utils
 import lal
 
-from . import rescaling, training, unfolding, utils
+from . import defensive_sampling, rescaling, training, unfolding, utils
 
 
 class Posterior:
@@ -25,6 +25,9 @@ class Posterior:
     This class orchestrates the different transformations that need to
     take place to turn the output of the normalizing flow (samples of
     folded rescaled parameters) into usable physical parameters.
+
+    Optionally, different sbi runs can be combined defensively to
+    mitigate worst-case efficiencies (see `.from_sbidirs`).
     """
 
     @classmethod
@@ -46,6 +49,35 @@ class Posterior:
                    unfolding_classifier=unfolding_classifier,
                    fixed_par_dic=fixed_par_dic,
                    tgps_fiducial=data_config.TGPS)
+
+    @classmethod
+    def from_sbidirs(cls, sbidirs, unfolderdir):
+        """
+        Parameters
+        ----------
+        sbidirs : sequence of os.PathLike
+            Contain neural estimators to combine defensively.
+
+        unfolderdir : os.PathLike
+            Contains unfolding classifier.
+
+        Returns
+        -------
+        Posterior : Evenly combines all sbi_posteriors (defensive).
+
+        Raises
+        ------
+        ValueError
+            If sbidirs and unfolderdir do not share the same parent
+            (rescalerdir).
+        """
+        # Scrap sbi_posteriors
+        posteriors = [cls.from_tree(utils.Tree(sbidir, unfolderdir))
+                      for sbidir in sbidirs]
+        defensive_proposal = defensive_sampling.MixtureProposal(
+            [post.sbi_posterior for post in posteriors])
+        kwargs = posteriors[0].__dict__ | {'sbi_posterior': defensive_proposal}
+        return cls(**kwargs)
 
     def __init__(self,
                  parameter_rescaler,

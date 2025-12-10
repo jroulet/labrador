@@ -17,7 +17,7 @@ class MixtureProposal:
 
         self._rng = np.random.default_rng()
 
-    def sample(self, sample_shape, x):
+    def sample(self, sample_shape, x, **kwargs):
         """
         sample_shape : torch.Size
             Desired shape of samples that are drawn from posterior.
@@ -31,7 +31,7 @@ class MixtureProposal:
 
         samples_list = []
         for i, n in enumerate(n_per_proposal):
-            samples_list.append(self.proposals[i].sample([n], x))
+            samples_list.append(self.proposals[i].sample([n], x, **kwargs))
 
         return torch.cat(samples_list)
 
