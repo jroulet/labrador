@@ -154,7 +154,7 @@ class IntegrationTestCase(TestCase):
 
     @staticmethod
     def _event_end_to_end(sbidir, unfolderdir):
-        post = posterior.Posterior.from_tree(sbidir, unfolderdir)
+        post = posterior.Posterior.from_tree(utils.Tree(sbidir, unfolderdir))
 
         event_data, compressed_data, transform \
             = injections.generate_data_and_transform(rundir=sbidir.parents[2])
