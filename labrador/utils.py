@@ -47,6 +47,7 @@ import os
 import pstats
 import shutil
 import subprocess
+import tarfile
 import tempfile
 import warnings
 from pathlib import Path
@@ -76,6 +77,7 @@ UNFOLDING_LABELS_FILENAME = 'unfolding_labels.h5'
 MASK_FILENAME = 'mask.npy'
 COMPRESSED_DATA_FILENAME = 'compressed_data.npy'
 VERSION_FILENAME = 'version.txt'
+PARAMETER_RESCALER_FILENAME = 'parameter_rescaler.pth'
 RESCALED_PARAMETERS_FILENAME = 'rescaled_parameters.npy'
 INFERENCE_FILENAME = 'inference.pickle'
 POSTERIOR_FILENAME = 'posterior.pt'
@@ -262,6 +264,121 @@ def setup_unfolderdir(rescalerdir, prefix='unfolder_'):
     print(f'Created a new unfolder config file at {destination}.',
           'Edit it as needed.')
     return unfolderdir
+
+
+class Tree:
+    """
+    Convenience class that tracks the essential files to run inference.
+
+    Use once the model has been trained.
+    """
+    @classmethod
+    def from_tar(cls, filepath):
+        """
+        Load the object from a tar file.
+
+        Parameters
+        ----------
+        filepath : os.PathLike
+            Path to the `.tar.gz` file to read from.
+
+        See Also
+        --------
+        export_tar : Create a tar file from the directory tree.
+        """
+        tmpdir = tempfile.TemporaryDirectory()
+        rundir = Path(tmpdir.name)
+
+        with tarfile.open(filepath, 'r:gz') as tar:
+            tar.extractall(rundir, filter='data')
+
+        rescalerdir = rundir/'prior'/'rescaler'
+        self = cls(rescalerdir/'sbi', rescalerdir/'unfolder')
+        self._tmpdir = tmpdir
+        return self
+
+    def __init__(self, sbidir, unfolderdir):
+        """
+        Parameters
+        ----------
+        sbidir : os.PathLike
+            Path to the SBI directory, lives inside ``rescalerdir``.
+
+        unfolderdir : os.PathLike
+            Path to the unfolder directory, also lives inside
+            ``rescalerdir``.
+
+        Raises
+        ------
+        ValueError
+            If `sbidir` and `unfolderdir` don't have the same parent.
+        """
+        self.sbidir = Path(sbidir).resolve()
+        self.unfolderdir = Path(unfolderdir).resolve()
+        self.rescalerdir, self.priordir, self.rundir = self.sbidir.parents[:3]
+
+        if self.unfolderdir.parent != self.rescalerdir:
+            raise ValueError(
+                '`sbidir` and `unfolderdir` are not in the same `rescalerdir`')
+
+        self._tmpdir = None
+
+    def to_tar(self, filepath):
+        """
+        Create a compressed archive containing only essential files.
+
+        Parameters
+        ----------
+        filepath : os.PathLike
+            Path to the `.tar.gz` file to write. If it points to a
+            directory, an informatiove name will be generated
+            automatically.
+        """
+        filepath = Path(filepath)
+        if filepath.is_dir():
+            filepath /= '-'.join(
+                path.name for path in [
+                    self.rundir,
+                    self.priordir,
+                    self.rescalerdir,
+                    self.sbidir,
+                    self.unfolderdir
+                ]
+            ) + '.tar.gz'
+
+        essential = [
+            DATA_CONFIG_FILENAME,
+            'JSONStandardScaler.json',
+            'SVDCompressor.npz',
+            VERSION_FILENAME,
+            WAVEFORM_MODEL_FILENAME,
+            '{prior}/ln-prior-ratio_regressor_sigma.ubj',
+            '{prior}/ln-prior-ratio_regressor_mu.ubj',
+            '{prior}/{rescaler}/' + RESCALER_CONFIG_FILENAME,
+            '{prior}/{rescaler}/{unfolder}/' + UNFOLDER_CONFIG_FILENAME,
+            '{prior}/{rescaler}/{unfolder}/' + UNFOLDER_FILENAME,
+            '{prior}/{rescaler}/' + PARAMETER_RESCALER_FILENAME,
+            '{prior}/{rescaler}/{sbi}/' + SBI_CONFIG_FILENAME,
+            '{prior}/{rescaler}/{sbi}/' + POSTERIOR_FILENAME,
+        ]
+
+        with tarfile.open(filepath, "w:gz") as tar:
+            for relpath in essential:
+                path = self.rundir / relpath.format(
+                    prior=self.priordir.name,
+                    rescaler=self.rescalerdir.name,
+                    sbi=self.sbidir.name,
+                    unfolder=self.unfolderdir.name
+                )
+                arcname = relpath.format(prior='prior',
+                                         rescaler='rescaler',
+                                         sbi='sbi',
+                                         unfolder='unfolder')
+                tar.add(path, arcname=arcname)
+
+    def __del__(self):
+        if self._tmpdir:
+            self._tmpdir.cleanup()
 
 
 def get_summary(datadir, apply_mask=True):
