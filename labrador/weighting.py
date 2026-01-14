@@ -1,5 +1,6 @@
 """Compute weights to go from a simulation prior to a physical prior."""
 import argparse
+import json
 import os
 from pathlib import Path
 
@@ -94,66 +95,75 @@ def _train_regressor_and_compute_weights(rundir,
         # Train (or load) regressor
         filename_mu = priordir/'ln-prior-ratio_regressor_mu.ubj'
         filename_sigma = priordir/'ln-prior-ratio_regressor_sigma.ubj'
+        filename_coefs = priordir/'coefficients.json'
         booster_mu = xgboost.XGBRegressor()
         booster_sigma = xgboost.XGBRegressor()
         if (not recompute_existing
                 and filename_mu.exists()
-                and filename_sigma.exists()):
+                and filename_sigma.exists()
+                and filename_coefs.exists()):
             print(f'Loading existing {filename_mu} and {filename_sigma}...')
             booster_mu.load_model(filename_mu)
             booster_sigma.load_model(filename_sigma)
+            with open(filename_coefs, encoding='utf-8') as file_coefs:
+                coefs = json.load(file_coefs)
         else:
             booster_mu.fit(compressed_data_train, ln_prior_ratios_train)
             booster_mu.save_model(filename_mu)
-            mu = booster_mu.predict(compressed_data_train)
+            mu_train = booster_mu.predict(compressed_data_train)
             booster_sigma.fit(
                 compressed_data_train,
-                np.sqrt(np.abs(ln_prior_ratios_train**2 - mu**2)))
+                np.sqrt(np.abs(ln_prior_ratios_train**2 - mu_train**2)))
             booster_sigma.save_model(filename_sigma)
+            sigma_train = booster_sigma.predict(compressed_data_train)
+            coefs = dict(zip(
+                ['coef_mu', 'coef_sigma'],
+                differential_evolution(
+                    lambda x, *args: -_reweighting_efficiency(*x, *args),
+                    bounds=[(0, 2), (0, 4)],
+                    args=(mu_train, sigma_train, ln_prior_ratios_train)
+                ).x,
+                strict=True))
+            with open(filename_coefs, 'w', encoding='utf-8') as file_coefs:
+                json.dump(coefs, file_coefs, indent=2)
 
         # Compute weights
-        _compute_and_save_weights(booster_mu,
-                                  booster_sigma,
-                                  compressed_data_test,
+        _compute_and_save_weights(booster_mu.predict(compressed_data_test),
+                                  booster_sigma.predict(compressed_data_test),
                                   ln_prior_ratios_test,
                                   priordir/utils.TEST_DIR,
-                                  recompute_existing)
+                                  recompute_existing,
+                                  **coefs)
 
-        _compute_and_save_weights(booster_mu,
-                                  booster_sigma,
-                                  compressed_data_train,
+        _compute_and_save_weights(mu_train,
+                                  sigma_train,
                                   ln_prior_ratios_train,
                                   priordir/utils.TRAINING_DIR,
-                                  recompute_existing)
+                                  recompute_existing,
+                                  **coefs)
 
 
-def _compute_and_save_weights(booster_mu, booster_sigma, compressed_data,
-                              ln_prior_ratios, prior_datadir,
-                              recompute_existing):
+def _compute_and_save_weights(mu, sigma, ln_prior_ratios, prior_datadir,
+                              recompute_existing, coef_mu, coef_sigma):
     filename = prior_datadir/utils.WEIGHTS_FILENAME
     if not recompute_existing and filename.exists():
         print(f'Skipping existing {filename}...')
         return
 
-    mu = booster_mu.predict(compressed_data)
-    sigma = booster_sigma.predict(compressed_data)
-
-    result = differential_evolution(
-        lambda x, *args: -_reweighting_efficiency(*x, *args),
-        bounds=[(0, 2), (0, 4)],
-        args=(mu, sigma, ln_prior_ratios))
-    a, b = result.x
-    ln_prior_ratios_pred = a * mu + b * sigma
-    weights = np.exp(ln_prior_ratios - ln_prior_ratios_pred)
-    print(f'Achieved reweighting efficiency of {-result.fun} '
-          f'for {prior_datadir}.')
+    weights = _weights(ln_prior_ratios, mu, sigma, coef_mu, coef_sigma)
+    eff = cogwheel.utils.n_effective(weights) / len(weights)
+    print(f'Achieved reweighting efficiency of {eff} for {prior_datadir}.')
     np.save(filename, weights)
 
 
-def _reweighting_efficiency(a, b, mu, sigma, ln_prior_ratios):
-    ln_prior_ratios_pred = a * mu + b * sigma
-    weights = np.exp(ln_prior_ratios - ln_prior_ratios_pred)
+def _reweighting_efficiency(coef_mu, coef_sigma, mu, sigma, ln_prior_ratios):
+    weights = _weights(ln_prior_ratios, mu, sigma, coef_mu, coef_sigma)
     return cogwheel.utils.n_effective(weights) / len(weights)
+
+
+def _weights(ln_prior_ratios, mu, sigma, coef_mu, coef_sigma):
+    ln_counterweights = coef_mu * mu + coef_sigma * sigma
+    return np.exp(ln_prior_ratios - ln_counterweights)
 
 
 def setup_condor_sub(rundir, request_memory='16G', request_disk='1G',
