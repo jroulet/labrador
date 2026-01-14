@@ -201,8 +201,7 @@ def generate_data_and_transform(rundir, prior_cls=None):
             parameters, preprocessed_data, data_config.MASK_CONDITIONS)
 
     simulated_input['event_data'].injection['par_dic'] = dict(
-        simulated_input['event_data'].injection['par_dic']) # Series -> dict
-
+        simulated_input['event_data'].injection['par_dic'])  # Series -> dict
 
     compressed_data = compression.compress_data(
         rundir,
@@ -242,14 +241,14 @@ def submit_condor(priordir,
     """
     Submit an HTCondor job to generate simulation parameters.
 
-    This will generate the following files ::
+    This will generate the following files::
 
         submission_scripts/inj_{i}/injections.{sub,sh,out,err,log}
 
     Parameters
     ----------
     priordir : os.PathLike
-        Directory inside rundir, corresponding to a physical prior.
+        Directory inside ``rundir``, corresponding to a physical prior.
         See :py:func:`utils.get_priordirs`.
 
     request_cpus, request_memory, request_disk : int or str
@@ -287,7 +286,7 @@ def submit_condor(priordir,
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description='''Create an injection, save it, and launch a ``cogwheel``
+        description='''Create an injection, save it, and launch a `cogwheel`
                        inference.''')
     parser.add_argument('eventdir',
                         help='Event directory, see injections.make_eventdir.')

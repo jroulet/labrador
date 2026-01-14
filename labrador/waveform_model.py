@@ -80,7 +80,8 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
 
         waveform_model = cls.from_waveforms(
             frequencies, wht_filter, waveform_generator,
-            simulation_parameters, config.PN_PHASE_TOL)
+            simulation_parameters, config.PN_PHASE_TOL,
+            config.INCLUDE_GLOBAL_PHASE_AND_TIME)
 
         waveform_model.to_hdf5(filename)
         return waveform_model
@@ -88,7 +89,8 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
     @classmethod
     def from_waveforms(cls, frequencies, fiducial_wht_filter,
                        waveform_generator, simulation_parameters,
-                       pn_phase_tol):
+                       pn_phase_tol, include_global_phase_and_time=False
+                      ):
         """
         Parameters
         ----------
@@ -120,9 +122,10 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
             frequencies=frequencies,
             fiducial_wht_filter=fiducial_wht_filter,
             pn_phase_tol=pn_phase_tol)
-        return cls(amplitude_model, phase_model)
+        return cls(amplitude_model, phase_model, include_global_phase_and_time)
 
-    def __init__(self, amplitude_model, phase_model):
+    def __init__(self, amplitude_model, phase_model,
+                 include_global_phase_and_time=True):
         """
         Parameters
         ----------
@@ -131,10 +134,18 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
 
         phase_model : PhaseModel
             Phenomenological model for the phase of the waveform.
+
+        include_global_phase_and_time : bool
+            Whether to include the global time and phase of arrival in
+            the processed_coef (summary data passed to the network).
+            Excluding them (False) enforces time and phase shifts to be
+            exact equivariances of the model, which may improve
+            performance and reduce overfitting.
         """
         assert phase_model.n_det == amplitude_model.n_det
         self.amplitude_model = amplitude_model
         self.phase_model = phase_model
+        self.include_global_phase_and_time = include_global_phase_and_time
 
     def __call__(self, frequencies, coef, apply_tapering=True):
         """
@@ -253,7 +264,8 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
             cos(phase_differences)        n_det * (n_det - 1) / 2
             sin(phase_differences)        n_det * (n_det - 1) / 2
             time_differences              n_det * (n_det - 1) / 2
-            intrinsic                     n_shapeampcoef + n_phasecoef
+            amplitude shape parameters    n_shapeampcoef
+            phase shape parameters        n_intphasecoef
             cos(ref_det_phase)            1
             sin(ref_det_phase)            1
             ref_det_time                  1
@@ -269,19 +281,43 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
         phase_differences = det_phase[det1] - det_phase[det2]
         time_differences = det_time[det1] - det_time[det2]
 
-        intrinsic = np.concatenate([
+        features = [
+            [amp_rms],
+            amp_ratios,
+            np.cos(phase_differences),
+            np.sin(phase_differences),
+            time_differences,
             ampcoef[self.n_det:],  # Exclude detector amplitude
-            phasecoef[2*self.n_det:]  # Exclude detector phase & time
+            phasecoef[2*self.n_det:],  # Exclude detector phase & time
+        ]
+        if self.include_global_phase_and_time:
+            features.extend([[
+                np.cos(det_phase[i_refdet]),
+                np.sin(det_phase[i_refdet]),
+                det_time[i_refdet],
+            ]])
+
+        return np.concatenate(features)
+
+    @property
+    def processed_coef_keys(self):
+        """Bookkeeping of what the entries in processed_coef mean."""
+        det_pairs = list(zip(*np.triu_indices(self.n_det, 1)))
+        keys = ['amp_rms',
+                *(f'amp_ratio_{i}' for i in range(self.n_det)),
+                *(f'cos_phase_difference_{j}-{i}' for i, j in det_pairs),
+                *(f'sin_phase_difference_{j}-{i}' for i, j in det_pairs),
+                *(f'time_difference_{j}-{i}' for i, j in det_pairs),
+                *self.amplitude_model.ampcoef_keys[self.n_det:],
+                *self.phase_model.phasecoef_keys[2*self.n_det:],
+                ]
+        if self.include_global_phase_and_time:
+            keys.extend([
+                'cos_refdet_phase',
+                'sin_refdet_phase',
+                'refdet_time'
             ])
-        return np.concatenate([[amp_rms],
-                               amp_ratios,
-                               np.cos(phase_differences),
-                               np.sin(phase_differences),
-                               time_differences,
-                               intrinsic,
-                               [np.cos(det_phase[i_refdet]),
-                                np.sin(det_phase[i_refdet]),
-                                det_time[i_refdet]]])
+        return keys
 
     def get_transform_kwargs(self, coef, i_refdet, f_ref):
         """
@@ -391,7 +427,7 @@ class AmplitudeModel(hdf5_utils.HDF5Mixin):
             Amplitude coefficients and cutoff frequency:
 
             * ampcoef[:n_det] : Amplitudes at each detector (physical units).
-            * ampcoef[-1]     : Cutoff frequency in Hz.
+            * ampcoef[n_det:] : shapeampcoef, see AmplitudeTapering.
 
         Returns
         -------
@@ -414,6 +450,12 @@ class AmplitudeModel(hdf5_utils.HDF5Mixin):
     def n_ampcoef(self):
         """Number of amplitude parameters."""
         return self.n_det + self.amplitude_tapering.n_shapeampcoef
+
+    @property
+    def ampcoef_keys(self):
+        """List of names describing the entries in ``ampcoef``."""
+        return [*(f'amp_{i}' for i in range(self.n_det)),
+                *self.amplitude_tapering.shapeampcoef_keys]
 
 
 class AmplitudeTapering(hdf5_utils.HDF5Mixin):
@@ -551,6 +593,13 @@ class AmplitudeTapering(hdf5_utils.HDF5Mixin):
         frequency).
         """
         return len(self.shapeampcoef_bounds)
+
+    @property
+    def shapeampcoef_keys(self):
+        """List of names describing the entries in ``shapeampcoef``."""
+
+        return ['log10fcut',
+                *(f'amp_svd_{i}' for i in range(len(self.vhmat)))]
 
     def guess_shapeampcoef(self, frequencies, wht_filter, amplitude):
         """
@@ -823,6 +872,14 @@ class PhaseModel(hdf5_utils.HDF5Mixin):
         """Number of phase parameters."""
         return self._dphase_to_phasecoef_mat.shape[0]
 
+    @property
+    def phasecoef_keys(self):
+        """List of names describing the entries in ``phasecoef``."""
+        n_intphasecoef = self.n_phasecoef - 2*self.n_det
+        return [*(f'detphasecoef_{i}' for i in range(self.n_det)),
+                *(f'dettimecoef_{i}' for i in range(self.n_det)),
+                *(f'intphasecoef_{i}' for i in range(n_intphasecoef))]
+
     def get_detector_phases_and_times(self, phasecoef):
         """
         Returns
@@ -989,8 +1046,7 @@ class PhaseModel(hdf5_utils.HDF5Mixin):
         return pncoef
 
     @staticmethod
-    def _get_umat(weighted_dphase_examples,
-                  n_phasecoef):
+    def _get_umat(weighted_dphase_examples, n_phasecoef):
         """
         Return set of basis functions that describe the contribution to
         the phase from intrinsic-parameters, found from examples by SVD.

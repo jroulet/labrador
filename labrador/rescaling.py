@@ -34,7 +34,6 @@ from . import pp_plot, sbi_hacks, utils, legacy
 logger = logging.getLogger(__name__)
 
 PARAMETER_RESCALER_TRAINING_FILENAME = 'parameter_rescaler_training.pth'
-PARAMETER_RESCALER_FILENAME = 'parameter_rescaler.pth'
 
 
 def plot_loss(rescalerdir, ax=None):
@@ -150,7 +149,7 @@ class ParameterRescaler:
         self._moments_model = None  # Set by ._{load|fit}_model
         self._training_info = None  # Set by ._{load|fit}_model
 
-        if (self.rescalerdir/PARAMETER_RESCALER_FILENAME).exists():
+        if (self.rescalerdir/utils.PARAMETER_RESCALER_FILENAME).exists():
             self._load_model()
         else:  # Model has not been trained yet
             logger.info('Did not find existing rescaler, will train one...')
@@ -543,8 +542,9 @@ class ParameterRescaler:
         Set attributes ``_coefs``, ``_nonperiodic_residuals_scale`` and
         ``_moments_model`` by loading from disk.
         """
-        model_config = torch.load(self.rescalerdir/PARAMETER_RESCALER_FILENAME,
-                                  weights_only=True, map_location=self.device)
+        model_config = torch.load(
+            self.rescalerdir/utils.PARAMETER_RESCALER_FILENAME,
+            weights_only=True, map_location=self.device)
 
         self._coefs = model_config['coefs']
 
@@ -679,7 +679,7 @@ class ParameterRescaler:
         finally:
             if best_model is not None:
                 torch.save(best_model,
-                           self.rescalerdir/PARAMETER_RESCALER_FILENAME)
+                           self.rescalerdir/utils.PARAMETER_RESCALER_FILENAME)
                 self._save_training_info()
 
         self._load_model()
@@ -840,13 +840,17 @@ class ParameterRescaler:
     def _get_folded_range_dic(self):
         """
         Return the range_dic of the transform class, setting the value
-        for ``'lnq'`` from the config.
+        for 'mchirp', 'lnq' from the config.
         """
         # Somewhat fragile, but these methods could be overriden if needed
         folded_range_dic = self.data_config.TRANSFORM_CLASS.range_dic.copy()
         if 'lnq' in folded_range_dic:
             folded_range_dic['lnq'] = (
                 np.log(self.data_config.PRIOR_KWARGS['q_min']), 0.0)
+
+        if 'mchirp' in folded_range_dic:
+            folded_range_dic['mchirp'] \
+                = self.data_config.PRIOR_KWARGS['mchirp_range']
 
         for par in self.data_config.TRANSFORM_CLASS.folded_params:
             # Divide range of folded parameters in two

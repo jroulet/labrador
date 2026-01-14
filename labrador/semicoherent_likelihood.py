@@ -30,8 +30,7 @@ def _get_differential_evolution_initial_population(bounds, popsize=15):
 class SemicoherentLikelihood:
     """Methods to fit a phenomenological waveform to the data."""
 
-    def __init__(self, event_data, ref_waveform_phase, waveform_model,
-                 n_coherent_segments):
+    def __init__(self, event_data, waveform_model, n_coherent_segments):
         """
         Parameters
         ----------
@@ -52,11 +51,7 @@ class SemicoherentLikelihood:
             to limitations in the phase model.
             ``n_coherent_segments=1`` corresponds to fully coherent.
         """
-        assert (ref_waveform_phase.shape
-                == event_data.strain[:, event_data.fslice].shape)
-
         self.event_data = event_data
-        self.ref_waveform_phase = ref_waveform_phase
         self.waveform_model = waveform_model
 
         self._coherent_segment_inds = None  # Set by n_coherent_segments.setter
@@ -64,7 +59,7 @@ class SemicoherentLikelihood:
 
         self._d_h_weights = None  # Set by `._set_summary()`
         self._h_h_weights = None  # Set by `._set_summary()`
-        self._set_summary()
+
         self._kernels = self._get_kernels()
 
     @property
@@ -97,14 +92,6 @@ class SemicoherentLikelihood:
         """
         return self.event_data.wht_filter[:, self.event_data.fslice]
 
-    def semicoherent_lnlike(self, shapecoef):
-        """
-        Maximize over phase in each coherent segment & detector.
-        Maximize over amplitude at each detector.
-        """
-        _, hh_d, dh_semicoherent_d = self._get_dh_hh(shapecoef)
-        return np.sum(dh_semicoherent_d**2 / hh_d) / 2
-
     def fit_coef(self, frequencies, *, ref_waveform_phase,
                  ref_waveform_amp):
         """
@@ -123,7 +110,8 @@ class SemicoherentLikelihood:
             User-provided reference waveform amplitude.
 
         ref_waveform_phase : float array of shape (n_det, n_freq)
-            User-provided reference waveform unwrapped phase.
+            User-provided reference waveform unwrapped phase. The time
+            convention is relative to ``.event_data.tgps``.
 
         Returns
         -------
@@ -134,6 +122,7 @@ class SemicoherentLikelihood:
             ⟨h|h⟩ of the best fit waveform.
         """
         assert np.array_equal(frequencies, self.frequencies)
+        self._set_summary(ref_waveform_phase)
 
         big_boxsize = 20.0  # Hard bounds for optimization
         small_boxsize = 2.5  # Initial bounds for population
@@ -159,12 +148,20 @@ class SemicoherentLikelihood:
         init_pop = _get_differential_evolution_initial_population(small_bounds)
 
         shapecoef = optimize.differential_evolution(
-            lambda shapecoef: -self.semicoherent_lnlike(shapecoef),
+            lambda shapecoef: -self._semicoherent_lnlike(shapecoef),
             bounds=big_bounds,
             init=init_pop,
         ).x
 
         return self._fit_amp_phase(shapecoef)
+
+    def _semicoherent_lnlike(self, shapecoef):
+        """
+        Maximize over phase in each coherent segment & detector.
+        Maximize over amplitude at each detector.
+        """
+        _, hh_d, dh_semicoherent_d = self._get_dh_hh(shapecoef)
+        return np.sum(dh_semicoherent_d**2 / hh_d) / 2
 
     def _fit_amp_phase(self, shapecoef):
         """
@@ -209,19 +206,28 @@ class SemicoherentLikelihood:
                       axis=1)
         return dh_d, hh_d, dh_semicoherent_d
 
-    def _set_summary(self):
+    def _set_summary(self, ref_waveform_phase):
+        assert (ref_waveform_phase.shape
+                == self.event_data.strain[:, self.event_data.fslice].shape)
+
+        # Use convention that waveform time is relative to event_data.tgps,
+        # i.e., event_data.tcoarse in the strain segment.
+        centered_blued_strain = (
+            self.event_data.blued_strain[:, self.event_data.fslice]
+            * np.exp(2j*np.pi * self.frequencies * self.event_data.tcoarse)
+        )
+
         phase_fbin = interpolate.make_interp_spline(
-            self.event_data.frequencies[self.event_data.fslice],
-            self.ref_waveform_phase, k=1, axis=1
-            )(self.rb_splines.fbin)
+            self.frequencies, ref_waveform_phase, k=1, axis=1
+        )(self.rb_splines.fbin)
 
         # Assume amplitude will be smooth, set to 1 in reference waveform:
-        h0_f = np.exp(1j * self.ref_waveform_phase)
+        h0_f = np.exp(1j * ref_waveform_phase)
         h0_fbin = np.exp(1j * phase_fbin)
 
         self._d_h_weights = self.rb_splines.get_summary_weights(
-            self.event_data.blued_strain[:, self.event_data.fslice]
-            * h0_f.conj()) / h0_fbin.conj()
+            centered_blued_strain * h0_f.conj()
+        ) / h0_fbin.conj()
 
         self._h_h_weights = self.rb_splines.get_summary_weights(
             self.wht_filter**2)
@@ -279,10 +285,13 @@ class SemicoherentLikelihood:
             rb_splines = self.rb_splines.reinstantiate(
                 fbin=None, pn_phase_tol=pn_phase_tol)
 
+        shift = np.exp(2j*np.pi * self.frequencies * self.event_data.tcoarse)
+
         def heterodyne(event_data):
             # Downsample and rescale so amplitude is always similar:
             return rb_splines.get_summary_weights(
-                event_data.blued_strain[:, event_data.fslice] * h_df.conj()
+                shift * event_data.blued_strain[:, event_data.fslice]
+                * h_df.conj()
             ) / amp_d[:, np.newaxis]**2 * 1e-4  # factor made up so ~ O(1)
 
         heterodyned_data = heterodyne(self.event_data)
