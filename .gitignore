@@ -10,6 +10,7 @@ data
 dist/
 build/
 
+*.pdf
 *.pyc
 __pycache__
 .ipynb_checkpoints

@@ -1,9 +1,6 @@
 """
 Generate amortized samples, and reweight using likelihood evaluations.
 """
-from pathlib import Path
-import tarfile
-import tempfile
 import warnings
 import numpy as np
 import pandas as pd
