@@ -63,7 +63,7 @@ def main(eventdir, sampler_cls, run_inference=True):
     eventdir = Path(eventdir).resolve()
     priordir, rundir = eventdir.parents[1 : 3]
 
-    prior = build_cogwheel_prior(priordir)
+    prior = utils.load_prior_config(priordir).PRIOR
 
     event_data, compressed_data, transform = generate_data_and_transform(
         rundir)
@@ -74,30 +74,12 @@ def main(eventdir, sampler_cls, run_inference=True):
 
     prior = _adjust_mchirp_range(prior, event_data.injection['par_dic'])
     posterior = build_cogwheel_posterior(event_data, prior)
-    sampler = _build_sampler(posterior, sampler_cls)
+    sampler = _get_sampler_cls(sampler_cls)(posterior)
 
     if run_inference:
         sampler.run(eventdir)
     else:
         sampler.to_json(eventdir)
-
-
-def build_cogwheel_prior(priordir):
-    """
-    Parameters
-    ----------
-    priordir : os.PathLike
-        Prior directory (lives inside a ``rundir``).
-
-    Returns
-    -------
-    cogwheel.posterior.Prior
-    """
-    priordir = Path(priordir).resolve()
-    data_config = utils.load_data_config(priordir.parent)
-    cls = next(cls for cls in data_config.PHYSICAL_PRIOR_CLASSES
-               if cls.__name__ == priordir.name)
-    return cls(**data_config.PRIOR_KWARGS)
 
 
 def _adjust_mchirp_range(prior, par_dic):
@@ -143,14 +125,13 @@ def build_cogwheel_posterior(event_data, prior):
     return cogwheel.posterior.Posterior(prior, likelihood)
 
 
-def _build_sampler(cogwheel_posterior, sampler_cls):
+def _get_sampler_cls(sampler_cls):
     if isinstance(sampler_cls, str):
         sampler_cls = next(
             cls  for cls in cogwheel.sampling.Sampler.__subclasses__()
             if cls.__name__ == sampler_cls)
 
-    sampler = sampler_cls(cogwheel_posterior)
-    return sampler
+    return sampler_cls
 
 
 def generate_data_and_transform(rundir, prior_cls=None):
@@ -249,7 +230,7 @@ def submit_condor(priordir,
     ----------
     priordir : os.PathLike
         Directory inside ``rundir``, corresponding to a physical prior.
-        See :py:func:`utils.get_priordirs`.
+        See :py:func:`utils.setup_priordir`.
 
     request_cpus, request_memory, request_disk : int or str
         Specifications in the HTCondor submit file.

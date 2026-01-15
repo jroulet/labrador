@@ -25,7 +25,7 @@ from .. import (
 
 def generate_data_cli():
     """
-    Command-line interface for generating a training set.
+    Command-line interface for `generate_data`.
 
     This function is accessible as ``lab-generate-data-htcondor``.
     """
@@ -42,7 +42,7 @@ def generate_data_cli():
                physical prior.
             ''')
     )
-    parser.add_argument('rundir', help='Run directory')
+    parser.add_argument('priordir', help='Prior directory')
     parser.add_argument('--chunk-size', type=int, default=10_000,
                         help='Number of simulations performed by each job.')
     parser.add_argument('--submit', action='store_true',
@@ -63,11 +63,11 @@ def generate_data_cli():
         key, value = pair.split('=', 1)
         submit_kwargs[key] = value
 
-    generate_data(rundir=args.rundir, chunk_size=args.chunk_size,
+    generate_data(priordir=args.priordir, chunk_size=args.chunk_size,
                   submit=args.submit, **submit_kwargs)
 
 
-def generate_data(rundir, *, chunk_size=10_000, submit=False,
+def generate_data(priordir, *, chunk_size=10_000, submit=False,
                   **submit_kwargs):
     """
     Submit jobs to HTCondor for generating a training set.
@@ -80,6 +80,7 @@ def generate_data(rundir, *, chunk_size=10_000, submit=False,
     6. Create weights to convert the simulation prior to the physical
        prior.
     """
+    rundir = Path(priordir).resolve().parent
     # Generate submit files for all tasks
     submit_gen_parameters_path = generate_parameters.setup_condor_sub(
         rundir, **submit_kwargs)
@@ -95,7 +96,7 @@ def generate_data(rundir, *, chunk_size=10_000, submit=False,
         rundir, **submit_kwargs)
 
     submit_weight_path = weighting.setup_condor_sub(
-        rundir, **submit_kwargs)
+        priordir, **submit_kwargs)
 
     # Generate DAGMan file for submitting jobs in the correct order
     dagman_path = _generate_dagman_file(submit_gen_parameters_path,

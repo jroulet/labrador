@@ -58,7 +58,7 @@ import pandas as pd
 import h5py
 
 import cogwheel.utils
-import cogwheel.validation
+from cogwheel.validation import load_config
 
 from . import __version__
 
@@ -67,6 +67,7 @@ EXAMPLE_CONFIGS_DIR = Path(__file__).parent/'example_configs'
 TRAINING_DIR = 'training_data'
 TEST_DIR = 'test_data'
 DATA_CONFIG_FILENAME = 'data_config.py'
+PRIOR_CONFIG_FILENAME = 'prior_config.py'
 RESCALER_CONFIG_FILENAME = 'rescaler_config.py'
 SBI_CONFIG_FILENAME = 'sbi_config.py'
 UNFOLDER_CONFIG_FILENAME = 'unfolder_config.py'
@@ -79,6 +80,7 @@ COMPRESSED_DATA_FILENAME = 'compressed_data.npy'
 VERSION_FILENAME = 'version.txt'
 PARAMETER_RESCALER_FILENAME = 'parameter_rescaler.pth'
 RESCALED_PARAMETERS_FILENAME = 'rescaled_parameters.npy'
+PARAMETER_RESCALER_TRAINING_FILENAME = 'parameter_rescaler_training.pth'
 INFERENCE_FILENAME = 'inference.pickle'
 POSTERIOR_FILENAME = 'posterior.pt'
 UNFOLDER_FILENAME = 'unfolding_classifier.ubj'
@@ -89,27 +91,31 @@ WEIGHTS_FILENAME = 'weights.npy'
 def load_data_config(rundir):
     """Return module `data_config` from a run directory."""
     rundir = Path(rundir)
-    return cogwheel.validation.load_config(rundir/DATA_CONFIG_FILENAME)
+    return load_config(rundir/DATA_CONFIG_FILENAME)
+
+
+def load_prior_config(priordir):
+    """Return module `prior_config` from a prior directory."""
+    priordir = Path(priordir)
+    return load_config(priordir/PRIOR_CONFIG_FILENAME)
 
 
 def load_rescaler_config(rescalerdir):
     """Return module `rescaler_config` from a rescaler directory."""
     rescalerdir = Path(rescalerdir)
-    return cogwheel.validation.load_config(
-        rescalerdir/RESCALER_CONFIG_FILENAME)
+    return load_config(rescalerdir/RESCALER_CONFIG_FILENAME)
 
 
 def load_sbi_config(sbidir):
-    """Return module `sbi_config` from a sbi directory."""
+    """Return module `sbi_config` from an sbi directory."""
     sbidir = Path(sbidir)
-    return cogwheel.validation.load_config(sbidir/SBI_CONFIG_FILENAME)
+    return load_config(sbidir/SBI_CONFIG_FILENAME)
 
 
 def load_unfolder_config(unfolderdir):
     """Return module `unfolder_config` from an unfolder directory."""
     unfolderdir = Path(unfolderdir)
-    return cogwheel.validation.load_config(
-        unfolderdir/UNFOLDER_CONFIG_FILENAME)
+    return load_config(unfolderdir/UNFOLDER_CONFIG_FILENAME)
 
 
 def make_unique_dir(location, prefix):
@@ -157,6 +163,36 @@ def setup_rundir(parentdir, prefix='run_'):
     return rundir
 
 
+def setup_priordir(rundir, prefix='prior_'):
+    """
+    Set up a prior directory with an example prior_config.py file.
+
+    Parameters
+    ----------
+    rundir : os.PathLike
+        Path in which to create the prior directory ``priordir``.
+
+    prefix : str
+        ``priordir`` will be named as the prefix followed by a number,
+        to make it unique.
+
+    Returns
+    -------
+    priordir : os.PathLike
+        Path to the newly created prior directory.
+    """
+    priordir = make_unique_dir(rundir, prefix)
+
+    source = EXAMPLE_CONFIGS_DIR/PRIOR_CONFIG_FILENAME
+    destination = priordir.resolve()/PRIOR_CONFIG_FILENAME
+    shutil.copyfile(source, destination)
+
+    print(f'Created a new prior config file at {destination}.',
+          'Edit it as needed.')
+    return priordir
+
+
+
 def setup_rescalerdir(priordir, prefix='rescaler_'):
     """
     Set up a rescaler directory with an example rescaler_config.py file.
@@ -167,8 +203,8 @@ def setup_rescalerdir(priordir, prefix='rescaler_'):
         Path in which to create the rescaler directory ``rescalerdir``.
 
     prefix : str
-        ``rescaler`` will be named as the prefix followed by a number,
-        to make it unique.
+        ``rescalerdir`` will be named as the prefix followed by a
+        number, to make it unique.
 
     Returns
     -------
@@ -184,28 +220,6 @@ def setup_rescalerdir(priordir, prefix='rescaler_'):
     print(f'Created a new rescaler config file at {destination}.',
           'Edit it as needed.')
     return rescalerdir
-
-
-def get_priordirs(rundir):
-    """
-    Get directories for physical priors inside a `rundir`.
-
-    Does not create the directories or check whether they exist.
-
-    Parameters
-    ----------
-    rundir : os.PathLike
-        Path in which to create the prior directories.
-
-    Returns
-    -------
-    priordirs : list of pathlib.Path
-    """
-    rundir = Path(rundir)
-    data_config = load_data_config(rundir)
-
-    return [rundir/prior_cls.__name__
-            for prior_cls in data_config.PHYSICAL_PRIOR_CLASSES]
 
 
 def setup_sbidir(rescalerdir, prefix='sbi_'):
@@ -331,8 +345,12 @@ class Tree:
         ----------
         filepath : os.PathLike
             Path to the `.tar.gz` file to write. If it points to a
-            directory, an informatiove name will be generated
+            directory, an informative name will be generated
             automatically.
+
+        Return
+        ------
+        os.PathLike : path to the tarfile, useful if it was automatic.
         """
         filepath = Path(filepath)
         if filepath.is_dir():
@@ -354,12 +372,14 @@ class Tree:
             WAVEFORM_MODEL_FILENAME,
             '{prior}/ln-prior-ratio_regressor_sigma.ubj',
             '{prior}/ln-prior-ratio_regressor_mu.ubj',
+            '{prior}/coefficients.json',
             '{prior}/{rescaler}/' + RESCALER_CONFIG_FILENAME,
-            '{prior}/{rescaler}/{unfolder}/' + UNFOLDER_CONFIG_FILENAME,
-            '{prior}/{rescaler}/{unfolder}/' + UNFOLDER_FILENAME,
+            '{prior}/{rescaler}/' + PARAMETER_RESCALER_TRAINING_FILENAME,
             '{prior}/{rescaler}/' + PARAMETER_RESCALER_FILENAME,
             '{prior}/{rescaler}/{sbi}/' + SBI_CONFIG_FILENAME,
             '{prior}/{rescaler}/{sbi}/' + POSTERIOR_FILENAME,
+            '{prior}/{rescaler}/{unfolder}/' + UNFOLDER_CONFIG_FILENAME,
+            '{prior}/{rescaler}/{unfolder}/' + UNFOLDER_FILENAME,
         ]
 
         with tarfile.open(filepath, "w:gz") as tar:
@@ -375,6 +395,8 @@ class Tree:
                                          sbi='sbi',
                                          unfolder='unfolder')
                 tar.add(path, arcname=arcname)
+
+        return filepath
 
     def __del__(self):
         if self._tmpdir:

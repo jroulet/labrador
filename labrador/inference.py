@@ -418,6 +418,7 @@ def run_importance_sampling(tree, eventsdir, eventname):
     with redirect_output(eventdir/'log.txt'):
         post = posterior.Posterior.from_tree(tree)
         data_config = utils.load_data_config(tree.rundir)
+        prior_config = utils.load_prior_config(tree.priordir)
 
         event_data = get_event_data_with_training_detectors(
             data_config, eventname)
@@ -453,7 +454,7 @@ def run_importance_sampling(tree, eventsdir, eventname):
                 event_data,
                 mchirp_guess,
                 data_config.APPROXIMANT,
-                tree.priordir.name,
+                prior_config.PRIOR_CLASS,
                 ref_wf_finder_kwargs={
                     'f_ref': data_config.PRIOR_KWARGS['f_ref']}
             )

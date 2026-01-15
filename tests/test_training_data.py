@@ -28,6 +28,7 @@ from labrador import (
 
 class IntegrationTestCase(TestCase):
     """Class to test simulations and training."""
+
     def test_make_training_data(self, parentdir=None):
         """
         Generate a small amount of training data in a temporary
@@ -48,7 +49,7 @@ class IntegrationTestCase(TestCase):
 
     def integration_test(self, parentdir):
         """
-        Run cogwheel-machine as a pipeline, end-to-end.
+        Run labrador as a pipeline, end-to-end.
 
         This function generates a small amount of training data, trains
         a rescaler for a few epochs, trains a simulation-based
@@ -72,50 +73,52 @@ class IntegrationTestCase(TestCase):
         compression.create_mask(rundir)
         compression.svd_compression(rundir)
 
-        weighting.main(rundir)
+        priordir = utils.setup_priordir(rundir)
+        weighting.main(priordir)
 
-        priordirs = utils.get_priordirs(rundir)
-        for priordir in priordirs:
-            # Train rescaler for a couple epochs
-            # - gaussian
-            extra_lines = textwrap.dedent('''\
-                RESCALER_TRAIN_KWARGS.update(max_num_epochs=2)
-                ''')
-            self._train_rescaler(priordir, extra_lines)
-            # - tanh
-            extra_lines += textwrap.dedent('''\
-                COMPACTIFICATION = 'tanh'
-                ''')
-            rescalerdir = self._train_rescaler(priordir, extra_lines)
+        # Train rescaler for a couple epochs
+        # - gaussian
+        extra_lines = textwrap.dedent('''\
+            RESCALER_TRAIN_KWARGS.update(max_num_epochs=2)
+            ''')
+        self._train_rescaler(priordir, extra_lines)
+        # - tanh
+        extra_lines += textwrap.dedent('''\
+            COMPACTIFICATION = 'tanh'
+            ''')
+        rescalerdir = self._train_rescaler(priordir, extra_lines)
 
-            self._assert_unrescale_undoes_rescale(rescalerdir)
+        self._assert_unrescale_undoes_rescale(rescalerdir)
 
-            self._assert_same_training_and_testing_files(rundir)
-            self._assert_same_training_and_testing_files(priordir)
-            self._assert_same_training_and_testing_files(rescalerdir)
+        self._assert_same_training_and_testing_files(rundir)
+        self._assert_same_training_and_testing_files(priordir)
+        self._assert_same_training_and_testing_files(rescalerdir)
 
-            # Train sbi for a couple epochs
-            # - Default:
-            extra_lines = textwrap.dedent('''\
-                TRAIN_KWARGS.update(max_num_epochs=2,
-                                    training_batch_size=10)
-                ''')
+        # Train sbi for a couple epochs
+        # - Default:
+        extra_lines = textwrap.dedent('''\
+            TRAIN_KWARGS.update(max_num_epochs=2,
+                                training_batch_size=10)
+            ''')
 
-            self._train_sbi(rescalerdir, extra_lines)
+        self._train_sbi(rescalerdir, extra_lines)
 
-            # - Embedding network:
-            extra_lines += textwrap.dedent('''\
-                EMBEDDING_LAYER_SIZES = [16, 8]
-                ''')
-            sbidir = self._train_sbi(rescalerdir, extra_lines)
+        # - Embedding network:
+        extra_lines += textwrap.dedent('''\
+            EMBEDDING_LAYER_SIZES = [16, 8]
+            ''')
+        sbidir = self._train_sbi(rescalerdir, extra_lines)
 
-            unfolderdir = self._train_unfolding_classifier(rescalerdir)
+        unfolderdir = self._train_unfolding_classifier(rescalerdir)
 
-            print('Making pp-plot...')
-            pp_plot.main(sbidir, n_data=10, n_processes=2)
-            print('Done.')
+        print('Making pp-plot...')
+        pp_plot.main(sbidir, n_data=10, n_processes=2)
+        print('Done.')
 
-            self._event_end_to_end(sbidir, unfolderdir)
+        # Save model
+        tree = utils.Tree(sbidir, unfolderdir)
+        tarfile_path = tree.to_tar(parentdir)
+        self._event_end_to_end(tarfile_path)
 
         print('Created these files:')
         os.system(f'tree {parentdir}')
@@ -153,11 +156,12 @@ class IntegrationTestCase(TestCase):
         return unfolderdir
 
     @staticmethod
-    def _event_end_to_end(sbidir, unfolderdir):
-        post = posterior.Posterior.from_tree(utils.Tree(sbidir, unfolderdir))
+    def _event_end_to_end(tarfile_path):
+        tree = utils.Tree.from_tar(tarfile_path)
+        post = posterior.Posterior.from_tree(tree)
 
         event_data, compressed_data, transform \
-            = injections.generate_data_and_transform(rundir=sbidir.parents[2])
+            = injections.generate_data_and_transform(rundir=tree.rundir)
         # Pretend event happened at a different tgps
         event_data.tgps = np.random.uniform(0, 1e9)
 

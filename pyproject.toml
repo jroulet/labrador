@@ -21,7 +21,8 @@ readme = "README.md"
 "Source" = "https://github.com/jroulet/labrador"
 
 [project.scripts]
-lab-setup-rundir = "labrador.cli.utils:setup_rundir_cli"
+lab-setup-rundir-and-priordir = "labrador.cli.utils:setup_rundir_and_priordir_cli"
+lab-setup-priordir = "labrador.cli.utils:setup_priordir_cli"
 lab-setup-rescalerdir = "labrador.cli.utils:setup_rescalerdir_cli"
 lab-setup-sbidir = "labrador.cli.utils:setup_sbidir_cli"
 lab-setup-unfolderdir = "labrador.cli.utils:setup_unfolderdir_cli"

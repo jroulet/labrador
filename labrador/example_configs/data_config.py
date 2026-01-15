@@ -52,7 +52,6 @@ QMC = True
 INCLUDE_GLOBAL_PHASE_AND_TIME = False
 
 PRIOR_CLASS = training_priors.AlignedSpinTrainingPrior
-PHYSICAL_PRIOR_CLASSES = (cogwheel.gw_prior.AlignedSpinIASPrior,)
 
 TRANSFORM_CLASS = PRIOR_CLASS.default_transform_class
 

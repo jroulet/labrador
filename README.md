@@ -31,8 +31,9 @@ See `notebooks/workflow.ipynb` or use the cheatsheet below.
 
 ### 1. Create and populate `RUNDIR` (uses HTCondor)
 ```bash
-lab-setup-rundir PARENTDIR
-lab-generate-data-htcondor RUNDIR --submit-arg accounting_group=ACCOUNTING_GROUP --submit
+lab-setup-rundir-and-priordir PARENTDIR
+# Edit config files...
+lab-generate-data-htcondor PRIORDIR --submit-arg accounting_group=ACCOUNTING_GROUP --submit
 ```
 > Note: this submits a `.dag` file that in turn orchestrates several `.sub` files. If you get a crash due to insufficient resources, you may adjust the requests in the corresponding `.sub`, delete from the `.dag` those jobs that have already succeeded, delete the `.rescue` file, and resubmit the `.dag` with `condor_submit_dag DAGMAN_PATH`.
 

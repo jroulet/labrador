@@ -33,8 +33,6 @@ from . import pp_plot, sbi_hacks, utils, legacy
 
 logger = logging.getLogger(__name__)
 
-PARAMETER_RESCALER_TRAINING_FILENAME = 'parameter_rescaler_training.pth'
-
 
 def plot_loss(rescalerdir, ax=None):
     """
@@ -54,7 +52,8 @@ def plot_loss(rescalerdir, ax=None):
     """
     rescalerdir = Path(rescalerdir)
     training_info = torch.load(
-        rescalerdir/PARAMETER_RESCALER_TRAINING_FILENAME, weights_only=True)
+        rescalerdir/utils.PARAMETER_RESCALER_TRAINING_FILENAME,
+        weights_only=True)
 
     if ax is None:
         _, ax = plt.subplots()
@@ -557,7 +556,7 @@ class ParameterRescaler:
             model_config['_MultiLayerPerceptron']).to(self.device)
 
         self._training_info = torch.load(
-            self.rescalerdir/PARAMETER_RESCALER_TRAINING_FILENAME,
+            self.rescalerdir/utils.PARAMETER_RESCALER_TRAINING_FILENAME,
             weights_only=True, map_location=self.device)
 
     def _setup_model(self):
@@ -703,7 +702,7 @@ class ParameterRescaler:
 
     def _save_training_info(self):
         torch.save(self._training_info,
-                   self.rescalerdir/PARAMETER_RESCALER_TRAINING_FILENAME)
+                   self.rescalerdir/utils.PARAMETER_RESCALER_TRAINING_FILENAME)
         plot_loss(self.rescalerdir)
         plt.savefig(self.rescalerdir/'rescaling_loss.pdf', bbox_inches='tight')
 

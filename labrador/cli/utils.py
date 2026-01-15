@@ -8,8 +8,10 @@ from pathlib import Path
 from .. import utils
 
 
-def setup_rundir_cli():
-    """CLI to :py:func:`~labrador.utils.setup_rundir`."""
+def setup_rundir_and_priordir_cli():
+    """
+    CLI to :py:func:`~labrador.utils.setup_rundir` follwed by
+    :py:func:`~labrador.utils.setup_priordir`."""
     parser = argparse.ArgumentParser(
         description='Create a new run directory under the given parent.')
     parser.add_argument('parentdir', type=Path, help='Parent directory')
@@ -17,8 +19,26 @@ def setup_rundir_cli():
                         help='Prefix for the run directory (default: run_)')
 
     args = parser.parse_args()
+
     rundir = utils.setup_rundir(**vars(args))
+    priordir = utils.setup_priordir(rundir)
+
     print(f'rundir: {rundir}')
+    print(f'priordir: {priordir}')
+
+
+def setup_priordir_cli():
+    """CLI to :py:func:`~labrador.utils.setup_priordir`."""
+    parser = argparse.ArgumentParser(
+        description='Create a new prior directory under the given rundir.')
+    parser.add_argument('rundir', type=Path, help='Run directory')
+    parser.add_argument(
+        '--prefix', type=str, default='prior_',
+        help='Prefix for the prior directory (default: prior_)')
+
+    args = parser.parse_args()
+    priordir = utils.setup_priordir(**vars(args))
+    print(f'priordir: {priordir}')
 
 
 def setup_rescalerdir_cli():
