@@ -561,6 +561,12 @@ def multiprocessing_starmap_profiled(func, iterable, processes=None):
     else:
         processes = min(os.cpu_count(), processes)
 
+    if processes == 1:  # Shortcut multiprocessing
+        with Profile() as profiler:
+            results = [func(*args) for args in iterable]
+        stats = pstats.Stats(profiler)
+        return results, stats
+
     with tempfile.TemporaryDirectory() as profile_dir:
         profiled_func = functools.partial(_aux_profiled_func,
                                           func=func, profile_dir=profile_dir)
@@ -576,18 +582,17 @@ def multiprocessing_starmap_profiled(func, iterable, processes=None):
 
 
 def _worker_initializer():
-    global profiler
-    profiler = Profile()
+    global global_profiler
+    global_profiler = Profile()
 
 
 def _aux_profiled_func(args, func, profile_dir):
     # Defined in top level so that it is pickleable for multiprocessing
-    # global profiler
-    result = profiler.runcall(func, *args)
+    result = global_profiler.runcall(func, *args)
 
     # Dump profile data after each call
     process_id = multiprocessing.current_process().pid
-    profiler.dump_stats(Path(profile_dir)/f'{process_id}.prof')
+    global_profiler.dump_stats(Path(profile_dir)/f'{process_id}.prof')
 
     return result
 
