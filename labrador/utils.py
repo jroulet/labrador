@@ -3,16 +3,17 @@ Utility functions and constants.
 
 File structure:
 The final file structure of a trained model should look as below.
-The user only edits the files `data_config.py`, `rescaler_config.py`,
-`sbi_config.py` and `unfolding_config.py` by hand, all the rest are
-created by the various modules of the code.
+The user only edits the files `data_config.py`, `prior_config.py`,
+`rescaler_config.py`, `sbi_config.py` and `unfolding_config.py` by hand,
+all the rest are created by the various modules of the code.
 
-{parentdir}/                                   # E.g. 'coghweel-machine/data/'
+{parentdir}/                                   # E.g. 'labrador/data/'
 └── {rundir}/                                  # E.g. 'run_0'
     ├── data_config.py
     ├── JSONStandardScaler.json
     ├── SVDCompressor.npz
     ├── version.txt
+    ├── waveform_model.h5
     ├── {datadir}/                             # 'training_data' or 'test_data'
     │   ├── compressed_data.npy
     │   ├── folded_sampled_params.h5
@@ -21,7 +22,11 @@ created by the various modules of the code.
     │   ├── simulation_parameters.feather
     │   ├── simulation_profiling
     │   └── unfolding_labels.h5
-    └── {priordir}/                            # Name of physical-prior class
+    └── {priordir}/                            # E.g. 'prior_0'
+        ├── coefficients.json
+        ├── ln-prior-ratio_regressor_mu.ubj
+        ├── ln-prior-ratio_regressor_sigma.ubj
+        ├── prior_config.py
         ├── {datadir}/                         # 'training_data' or 'test_data'
         │   ├── ln_prior_ratios.npy
         │   └── weights.npy
@@ -30,7 +35,7 @@ created by the various modules of the code.
             ├── parameter_rescaler_training.pth
             ├── rescaler_config.py
             ├── {datadir}/                     # 'training_data' or 'test_data'
-            │   └── rescaled_params.npy
+            │   └── rescaled_parameters.npy
             ├── {sbidir}/                      # E.g. 'sbi_0'
             │   ├── posterior.pt
             │   └── sbi_config.py
@@ -64,28 +69,36 @@ from . import __version__
 
 
 EXAMPLE_CONFIGS_DIR = Path(__file__).parent/'example_configs'
+
 TRAINING_DIR = 'training_data'
 TEST_DIR = 'test_data'
+
 DATA_CONFIG_FILENAME = 'data_config.py'
 PRIOR_CONFIG_FILENAME = 'prior_config.py'
 RESCALER_CONFIG_FILENAME = 'rescaler_config.py'
 SBI_CONFIG_FILENAME = 'sbi_config.py'
 UNFOLDER_CONFIG_FILENAME = 'unfolder_config.py'
+
 PARAMETERS_FILENAME = 'simulation_parameters.feather'
 PREPROCESSED_DATA_FILENAME = 'preprocessed_data.h5'
 FOLDED_SAMPLED_PARAMETERS_FILENAME = 'folded_sampled_parameters.h5'
 UNFOLDING_LABELS_FILENAME = 'unfolding_labels.h5'
 MASK_FILENAME = 'mask.npy'
 COMPRESSED_DATA_FILENAME = 'compressed_data.npy'
+
 VERSION_FILENAME = 'version.txt'
+WAVEFORM_MODEL_FILENAME = 'waveform_model.h5'
+
+WEIGHTS_FILENAME = 'weights.npy'
+
 PARAMETER_RESCALER_FILENAME = 'parameter_rescaler.pth'
 RESCALED_PARAMETERS_FILENAME = 'rescaled_parameters.npy'
 PARAMETER_RESCALER_TRAINING_FILENAME = 'parameter_rescaler_training.pth'
+
 INFERENCE_FILENAME = 'inference.pickle'
 POSTERIOR_FILENAME = 'posterior.pt'
+
 UNFOLDER_FILENAME = 'unfolding_classifier.ubj'
-WAVEFORM_MODEL_FILENAME = 'waveform_model.h5'
-WEIGHTS_FILENAME = 'weights.npy'
 
 
 def load_data_config(rundir):
