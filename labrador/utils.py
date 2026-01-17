@@ -57,7 +57,6 @@ import tempfile
 import warnings
 from pathlib import Path
 from cProfile import Profile
-import torch
 import numpy as np
 import pandas as pd
 import h5py
@@ -626,6 +625,8 @@ def get_best_device(by='utilization'):
     -------
     torch.device
     """
+    import torch  # Expensive import
+
     if not torch.cuda.is_available():
         return torch.device('cpu')
 
