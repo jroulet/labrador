@@ -206,16 +206,17 @@ class AlignedSpinUniformDHatTrainingPrior(RegisteredPriorMixin,
 
 class UniformDHatTrainingPrior(RegisteredPriorMixin, CombinedPrior):
     """Precessing spins."""
-    prior_classes = [LogMassPrior,
-                     UniformEffectiveSpinPrior,
-                     UniformDiskInplaneSpinsIsotropicInclinationPrior,
-                     IsotropicSkyLocationPrior,
-                     UniformTimePrior,
-                     UniformPolarizationPrior,
-                     PhasePrior,
-                     UniformAmplitudePrior,
-                     ZeroTidalDeformabilityPrior,
-                     FixedReferenceFrequencyPrior,
-                    ]
+    prior_classes = [
+        FixedReferenceFrequencyPrior,
+        LogMassPrior,
+        UniformEffectiveSpinPrior,
+        UniformDiskInplaneSpinsIsotropicInclinationPrior,
+        IsotropicSkyLocationPrior,
+        UniformTimePrior,
+        UniformPolarizationPrior,
+        PhasePrior,
+        UniformAmplitudePrior,
+        ZeroTidalDeformabilityPrior,
+    ]
 
     default_transform_class = transform.TargetSpaceTransformPN
