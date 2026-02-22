@@ -208,7 +208,7 @@ class UniformDHatTrainingPrior(RegisteredPriorMixin, CombinedPrior):
     """Precessing spins."""
     prior_classes = [LogMassPrior,
                      UniformEffectiveSpinPrior,
-                     CartesianUniformDiskInplaneSpinsIsotropicInclinationPrior,
+                     UniformDiskInplaneSpinsIsotropicInclinationPrior
                      IsotropicSkyLocationPrior,
                      UniformTimePrior,
                      UniformPolarizationPrior,
