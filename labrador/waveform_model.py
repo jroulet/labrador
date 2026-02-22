@@ -337,8 +337,10 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
         _, times = self.phase_model.get_detector_phases_and_times(phasecoef)
         t0_refdet = times[i_refdet]
 
-        phase_refdet_0 = self.phase_model(np.array([f_ref]), phasecoef
-                                         )[i_refdet, 0] % (2*np.pi)
+        phase_refdet_0 = (
+            self.phase_model(np.array([f_ref]), phasecoef)[i_refdet, 0]
+            + 3/4 * np.pi  # See arxiv.org/pdf/gr-qc/0509116 Eq (3.4)
+        ) % (2*np.pi)
 
         return {'coef0pn': coef0pn,
                 'phase_refdet_0': phase_refdet_0,
