@@ -19,7 +19,9 @@ from cogwheel.gw_prior.combined import (
     UniformEffectiveSpinPrior,
     ZeroInplaneSpinsPrior,
     ZeroTidalDeformabilityPrior,
-    FixedReferenceFrequencyPrior)
+    FixedReferenceFrequencyPrior,
+    CartesianUniformDiskInplaneSpinsIsotropicInclinationPrior,
+)
 
 from . import transform
 
@@ -200,3 +202,20 @@ class AlignedSpinUniformDHatTrainingPrior(RegisteredPriorMixin,
         UniformDHatPrior)
 
     default_transform_class = transform.TargetSpaceTransformAlignedSpins
+
+
+class UniformDHatTrainingPrior(RegisteredPriorMixin, CombinedPrior):
+    """Precessing spins."""
+    prior_classes = [LogMassPrior,
+                     UniformEffectiveSpinPrior,
+                     CartesianUniformDiskInplaneSpinsIsotropicInclinationPrior,
+                     IsotropicSkyLocationPrior,
+                     UniformTimePrior,
+                     UniformPolarizationPrior,
+                     PhasePrior,
+                     UniformAmplitudePrior,
+                     ZeroTidalDeformabilityPrior,
+                     FixedReferenceFrequencyPrior,
+                    ]
+
+    default_transform_class = transform.TargetSpaceTransformPN
