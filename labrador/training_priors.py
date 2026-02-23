@@ -20,7 +20,7 @@ from cogwheel.gw_prior.combined import (
     ZeroInplaneSpinsPrior,
     ZeroTidalDeformabilityPrior,
     FixedReferenceFrequencyPrior,
-    UniformDiskInplaneSpinsIsotropicInclinationPrior,
+    UniformDiskInplaneSpinsIsotropicInclinationSkyLocationPrior,
 )
 
 from . import transform
@@ -210,8 +210,7 @@ class UniformDHatTrainingPrior(RegisteredPriorMixin, CombinedPrior):
         FixedReferenceFrequencyPrior,
         LogMassPrior,
         UniformEffectiveSpinPrior,
-        UniformDiskInplaneSpinsIsotropicInclinationPrior,
-        IsotropicSkyLocationPrior,
+        UniformDiskInplaneSpinsIsotropicInclinationSkyLocationPrior,
         UniformTimePrior,
         UniformPolarizationPrior,
         PhasePrior,

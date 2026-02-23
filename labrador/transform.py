@@ -415,8 +415,11 @@ class BasicAlignedSpinsTransform(CombinedPrior):
 
 
 class TargetSpaceTransformPN(CombinedPrior):
-    prior_classes = cogwheel.utils.replace(
-        TargetSpaceTransformAlignedSpinsPN2.prior_classes,
-        gw_prior.IsotropicInclinationPrior,
-        gw_prior.CartesianUniformDiskInplaneSpinsIsotropicInclinationPrior,
-    )
+    prior_classes = [
+        gw_prior.FixedReferenceFrequencyPrior,
+        *cogwheel.utils.replace(
+            TargetSpaceTransformAlignedSpinsPN2.prior_classes,
+            gw_prior.IsotropicInclinationPrior,
+            gw_prior.CartesianUniformDiskInplaneSpinsIsotropicInclinationPrior,
+        ),
+    ]
