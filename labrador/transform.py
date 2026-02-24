@@ -1,6 +1,6 @@
 """
-Define ``TargetSpaceTransform``, a class that implements a coordinate
-transformation that gives a first approximation to the normalizing flow.
+Define several Transform classes. They implement analytic coordinate
+transformations that try to make the posterior approximately Gaussian.
 """
 import numpy as np
 
@@ -390,7 +390,11 @@ class TargetSpaceTransformAlignedSpinsPN(CombinedPrior):
                      ]
 
 
+# Aligned spins
+# -------------
+
 class TargetSpaceTransformAlignedSpinsPN2(CombinedPrior):
+    """Aligned spins, good for low masses."""
     prior_classes = [pn_coords.PNCoordinatesPrior2,
                      gw_prior.IsotropicInclinationPrior,
                      gw_prior.UniformPolarizationPrior,
@@ -402,7 +406,11 @@ class TargetSpaceTransformAlignedSpinsPN2(CombinedPrior):
 
 
 class BasicAlignedSpinsTransform(CombinedPrior):
-    """Use simply `mchirp`, `lnq` as mass coordinates."""
+    """
+    Aligned spins, good for high masses.
+
+    (Uses simply `mchirp`, `lnq` as mass coordinates.)
+    """
     prior_classes = [gw_prior.UniformDetectorFrameMassesPrior,
                      gw_prior.UniformEffectiveSpinPrior,
                      gw_prior.IsotropicInclinationPrior,
@@ -414,11 +422,27 @@ class BasicAlignedSpinsTransform(CombinedPrior):
                      ]
 
 
+# Generic spins
+# -------------
+
 class TargetSpaceTransformPN(CombinedPrior):
+    """Generic spins, good for low masses."""
     prior_classes = [
         gw_prior.FixedReferenceFrequencyPrior,
         *cogwheel.utils.replace(
             TargetSpaceTransformAlignedSpinsPN2.prior_classes,
+            gw_prior.IsotropicInclinationPrior,
+            gw_prior.CartesianUniformDiskInplaneSpinsIsotropicInclinationPrior,
+        ),
+    ]
+
+
+class BasicTransform(CombinedPrior):
+    """Generic spins, good for high masses."""
+    prior_classes = [
+        gw_prior.FixedReferenceFrequencyPrior,
+        *cogwheel.utils.replace(
+            BasicAlignedSpinsTransform.prior_classes,
             gw_prior.IsotropicInclinationPrior,
             gw_prior.CartesianUniformDiskInplaneSpinsIsotropicInclinationPrior,
         ),
