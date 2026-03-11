@@ -385,6 +385,7 @@ class Tree:
             '{prior}/ln-prior-ratio_regressor_sigma.ubj',
             '{prior}/ln-prior-ratio_regressor_mu.ubj',
             '{prior}/coefficients.json',
+            '{prior}/prior_config.py',
             '{prior}/{rescaler}/' + RESCALER_CONFIG_FILENAME,
             '{prior}/{rescaler}/' + PARAMETER_RESCALER_TRAINING_FILENAME,
             '{prior}/{rescaler}/' + PARAMETER_RESCALER_FILENAME,
