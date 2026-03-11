@@ -396,7 +396,8 @@ def _filter_samples_in_training_range(data_config, samples):
     ]
 
 
-def run_importance_sampling(tree, eventsdir, eventname):
+def run_importance_sampling(tree, eventsdir, eventdata_path,
+                            mchirp_guess=None):
     """
     Run labrador on a real event, including importance sampling.
 
@@ -408,10 +409,11 @@ def run_importance_sampling(tree, eventsdir, eventname):
     eventsdir : os.PathLike
         Output directory, will be created if it does not already exist.
 
-    eventname : str
-        E.g. 'GW150914'. Assumes you have the corresponding file
-        '{eventname}.npz' inside ``cogwheel.data.DATADIR``.
+    eventdata_path : os.PathLike
+        Path to a cogwheel.data.EventData npz file.
     """
+    event_data = cogwheel.data.EventData.from_npz(filename=eventdata_path)
+    eventname = event_data.eventname
     eventdir = Path(eventsdir)/eventname
     eventdir.mkdir(parents=True)
 
@@ -421,15 +423,17 @@ def run_importance_sampling(tree, eventsdir, eventname):
         prior_config = utils.load_prior_config(tree.priordir)
 
         event_data = get_event_data_with_training_detectors(
-            data_config, eventname)
+            data_config, event_data)
 
         event_data_fid_wht_filter = mimic_fiducial_wht_filter(
             data_config, event_data)
 
-        mchirp_guess = cogwheel.data.EVENTS_METADATA.loc[eventname, 'mchirp']
+        if mchirp_guess is None:
+            mchirp_guess = cogwheel.data.EVENTS_METADATA.loc[
+                eventname, 'mchirp']
 
         # Optimize time at each detector
-        m_i = cogwheel.data.EVENTS_METADATA.loc[eventname, 'mchirp'] * 2**.2
+        m_i = mchirp_guess * 2**.2
         kw = {'m1': m_i, 'm2': m_i}  # Basic guess, could make more detailed
 
         frequencies, ref_amp, ref_phase = get_ref_amp_phase(
@@ -443,10 +447,10 @@ def run_importance_sampling(tree, eventsdir, eventname):
         with PdfPages(eventdir/f'{eventname}.pdf') as pdf:
             # Spectrograms of heterodyned data
             ## 1. with the reference waveform we provide
-            event_data.heterodyne(ref_phase).specgram((-.1, .1))
+            event_data.heterodyne(ref_phase).specgram((-.1, .1), nfft=16)
             pdf.savefig(bbox_inches='tight')
             ## 2. with fully-optimized reference phase:
-            event_data.heterodyne(optimized_phase).specgram((-.1, .1))
+            event_data.heterodyne(optimized_phase).specgram((-.1, .1), nfft=16)
             pdf.savefig(bbox_inches='tight')
 
             # Make cogwheel posterior
@@ -529,8 +533,11 @@ if __name__ == '__main__':
     parser.add_argument('sbidir', help='Path to SBI directory')
     parser.add_argument('unfolderdir', help='Path to unfolder directory')
     parser.add_argument('eventsdir', help='Output directory')
-    parser.add_argument('eventname', help='Name of the event')
+    parser.add_argument('eventdata_path', type=Path,
+                        help='Path to a cogwheel.data.EventData npz file.')
+    parser.add_argument('--mchirp-guess', type=float, help='Chirp mass (M⊙)')
 
     args = parser.parse_args()
     dir_tree = utils.Tree(args.sbidir, args.unfolderdir)
-    run_importance_sampling(dir_tree, args.eventsdir, args.eventname)
+    run_importance_sampling(dir_tree, args.eventsdir, args.eventdata_path,
+                            args.mchirp_guess)
