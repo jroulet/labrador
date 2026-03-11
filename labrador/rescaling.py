@@ -32,6 +32,7 @@ from . import pp_plot, sbi_hacks, utils, legacy
 
 
 logger = logging.getLogger(__name__)
+logging.getLogger('matplotlib').setLevel(logging.WARNING)
 
 
 def plot_loss(rescalerdir, ax=None):

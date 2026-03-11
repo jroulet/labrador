@@ -17,6 +17,7 @@ from . import compression, embedding, sbi_hacks, utils
 
 
 logger = logging.getLogger(__name__)
+logging.getLogger('matplotlib').setLevel(logging.WARNING)
 
 
 def load_posterior(sbidir, device='cpu'):
@@ -83,7 +84,12 @@ def _instantiate_inference(sbidir):
     device = config.DEVICE
     if device is None:
         device = utils.get_best_device()
-        logger.info(f'Using {device=}')
+    else:
+        device = torch.device(device)
+
+    logger.info(f'Using {device=}')
+    if device.type == 'cuda':
+        logger.info(torch.cuda.get_device_name(device))
 
     mask = np.load(datadir/utils.MASK_FILENAME)
 
