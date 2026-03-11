@@ -18,9 +18,10 @@ import cogwheel.waveform
 from . import compression, simulation, utils
 
 EVENTS_DIRNAME = 'example_events'
+PHYSICAL_EVENTS_DIRNAME = 'example_events_physical_prior'
 
 
-def make_eventdir(priordir):
+def make_eventdir(priordir, physical_prior):
     """
     Make and return directory of the form priordir/EVENTS_DIRNAME/GW{i}.
 
@@ -28,10 +29,12 @@ def make_eventdir(priordir):
     --------
     main
     """
-    return utils.make_unique_dir(priordir/EVENTS_DIRNAME, 'GW')
+    dirname = PHYSICAL_EVENTS_DIRNAME if physical_prior else EVENTS_DIRNAME
+    return utils.make_unique_dir(priordir/dirname, 'GW')
 
 
-def main(eventdir, sampler_cls, run_inference=True):
+def main(eventdir, sampler_cls, run_inference=True,
+         physical_prior=False):
     """
     Create an injection, save it, and launch a ``cogwheel`` inference.
 
@@ -59,14 +62,25 @@ def main(eventdir, sampler_cls, run_inference=True):
     run_inference : bool
         True (default): save and run the cogwheel sampler.
         False: just save the cogwheel sampler to json.
+
+    physical_prior : bool
+        False simulates from the training prior, True from the inference
+        prior.
     """
     eventdir = Path(eventdir).resolve()
     priordir, rundir = eventdir.parents[1 : 3]
 
     prior = utils.load_prior_config(priordir).PRIOR
 
+    if physical_prior:
+        simulation_prior = prior
+    else:
+        data_config = utils.load_data_config(rundir)
+        simulation_prior = data_config.PRIOR_CLASS(data_config.PRIOR_KWARGS)
+
     event_data, compressed_data, transform = generate_data_and_transform(
-        rundir)
+        rundir, simulation_prior)
+
     event_data.eventname = eventdir.name
 
     transform.to_json(eventdir, basename='Transform.json')
@@ -134,7 +148,7 @@ def _get_sampler_cls(sampler_cls):
     return sampler_cls
 
 
-def generate_data_and_transform(rundir, prior_cls=None):
+def generate_data_and_transform(rundir, prior):
     """
     Return event data, compressed data and transform for a random
     simulated event, ensuring the mask conditions are satisfied.
@@ -144,9 +158,8 @@ def generate_data_and_transform(rundir, prior_cls=None):
     rundir : os.PathLike
         Path to run directory.
 
-    prior_cls : class
-        A subclass of cogwheel.prior.Prior, to draw the parameters from.
-        Defaults to the simulation prior.
+    prior : cogwheel.prior.Prior
+        Proposal to draw the parameters from.
 
     Returns
     -------
@@ -161,10 +174,6 @@ def generate_data_and_transform(rundir, prior_cls=None):
     """
     data_config = utils.load_data_config(rundir)
 
-    if prior_cls is None:
-        prior_cls = data_config.PRIOR_CLASS
-
-    prior = prior_cls(**data_config.PRIOR_KWARGS)
     simulator, data_preprocessor, transform_class \
         = simulation.setup_simulator(rundir)
 
@@ -215,6 +224,7 @@ def _add_snr_to_summary(summary, preprocessed_data):
 
 def submit_condor(priordir,
                   sampler_cls,
+                  physical_prior=False,
                   request_cpus=1,
                   request_memory='1G',
                   request_disk='1G',
@@ -241,7 +251,7 @@ def submit_condor(priordir,
         which will be dealt with automatically.
     """
     priordir = Path(priordir).resolve()
-    eventdir = make_eventdir(priordir)
+    eventdir = make_eventdir(priordir, physical_prior)
 
     if not isinstance(sampler_cls, str):
         sampler_cls = sampler_cls.__name__
@@ -249,13 +259,17 @@ def submit_condor(priordir,
     scripts_dir = eventdir/'submission_scripts'
     os.makedirs(scripts_dir)
 
+    args = f'{eventdir} {sampler_cls}'
+    if physical_prior:
+        args += ' --physical-prior'
+
     submit_kwargs = {
         'submit_path': scripts_dir/'injections.sub',
         'executable': scripts_dir/'injections.sh',
         'output': scripts_dir/'injections.out',
         'error': scripts_dir/'injections.err',
         'log': scripts_dir/'injections.log',
-        'args': f'{eventdir} {sampler_cls}',
+        'args': args,
         'request_cpus': request_cpus,
         'request_memory': request_memory,
         'request_disk': request_disk,
@@ -273,5 +287,9 @@ if __name__ == '__main__':
                         help='Event directory, see injections.make_eventdir.')
     parser.add_argument('sampler_cls',
                         help='cogwheel.sampling.Sampler subclass.')
+    parser.add_argument(
+        '--physical-prior',
+        action='store_true',
+        help='Whether to sample from the physical prior vs simulation prior.')
 
     main(**vars(parser.parse_args()))
