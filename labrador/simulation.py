@@ -56,7 +56,8 @@ def setup_simulator(rundir):
 
 
 def simulate_and_preprocess_sample(simulator, data_preprocessor,
-                                   parameters, transform_class):
+                                   parameters, transform_class,
+                                   seed=None):
     """
     Generate a signal based on parameters, add a noise realization, find
     a reference waveform and preprocess the data by heterodyning.
@@ -79,9 +80,12 @@ def simulate_and_preprocess_sample(simulator, data_preprocessor,
         Index of the region that the parameters belong to before
         applying folding. Takes a value between
         [0, 2**n_folded_parameters).
+
+    seed : int
+        Determines the Gaussian noise realization of the simulated data.
     """
     simulated_input = simulator.generate_data_and_reference_waveform(
-        parameters)
+        parameters, seed)
 
     preprocessed_data, transform_kwargs = data_preprocessor.preprocess_data(
         **simulated_input)
@@ -163,7 +167,8 @@ def simulate_and_preprocess_samples(simulator,
     simulation_parameters : pandas.DataFrame
         Columns represent different parameters, each row is a
         simulation. The columns must contain all
-        ``simulator._waveform_generator.params``.
+        ``simulator._waveform_generator.params``. The index will be used
+        as seed for the Gaussian noise.
 
     processes : int or None
         The number of worker processes to use. If `processes` is
@@ -189,8 +194,8 @@ def simulate_and_preprocess_samples(simulator,
         [0, 2**n_folded_parameters).
     """
     args_generator = (
-        (simulator, data_preprocessor, parameters, transform_class)
-        for _, parameters in simulation_parameters.iterrows()
+        (simulator, data_preprocessor, parameters, transform_class, seed)
+        for seed, parameters in simulation_parameters.iterrows()
     )
 
     results, stats = utils.multiprocessing_starmap_profiled(
@@ -241,7 +246,8 @@ class Simulator:
         self._waveform_generator = waveform.WaveformGenerator.from_event_data(
             dummy_event_data, approximant)
 
-    def generate_data_and_reference_waveform(self, parameters):
+    def generate_data_and_reference_waveform(self, parameters,
+                                             seed=None):
         """
         Generate data similar to what a user would provide.
 
@@ -250,6 +256,10 @@ class Simulator:
         parameters : dict-like
             Physical parameters of the signal to simulate. Must contain
             keys for all ``._waveform_generator.params``.
+
+        seed : int
+            Determines the Gaussian noise realization of the simulated
+            data.
 
         Returns
         -------
@@ -262,7 +272,8 @@ class Simulator:
 
             These can be passed to ``DataPreprocessor.preprocess_data``.
         """
-        event_data = data.EventData.gaussian_noise(**self.event_data_kwargs)
+        event_data = data.EventData.gaussian_noise(
+            **self.event_data_kwargs, seed=seed)
         event_data.inject_signal(parameters, self.approximant)
         frequencies = event_data.frequencies[event_data.fslice]
 
@@ -690,7 +701,7 @@ def _load_chunk_from_feather(feather_path: str, i_start: int,
                              i_end: int) -> pd.DataFrame:
     table = pyarrow.feather.read_table(feather_path, memory_map=True)
     chunk = table.slice(offset=i_start, length=i_end-i_start)
-    return chunk.to_pandas()
+    return chunk.to_pandas().set_index(pd.RangeIndex(i_start, i_end))
 
 
 # ----------------------------------------------------------------------

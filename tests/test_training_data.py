@@ -159,9 +159,11 @@ class IntegrationTestCase(TestCase):
     def _event_end_to_end(tarfile_path):
         tree = utils.Tree.from_tar(tarfile_path)
         post = posterior.Posterior.from_tree(tree)
+        prior = utils.load_prior_config(tree.priordir).PRIOR
 
         event_data, compressed_data, transform \
-            = injections.generate_data_and_transform(rundir=tree.rundir)
+            = injections.generate_data_and_transform(rundir=tree.rundir,
+                                                     prior=prior)
         # Pretend event happened at a different tgps
         event_data.tgps = np.random.uniform(0, 1e9)
 

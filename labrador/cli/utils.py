@@ -11,7 +11,10 @@ from .. import utils
 def setup_rundir_and_priordir_cli():
     """
     CLI to :py:func:`~labrador.utils.setup_rundir` follwed by
-    :py:func:`~labrador.utils.setup_priordir`."""
+    :py:func:`~labrador.utils.setup_priordir`.
+
+    This function is available as ``lab-setup-rundir-and-priordir``.
+    """
     parser = argparse.ArgumentParser(
         description='Create a new run directory under the given parent.')
     parser.add_argument('parentdir', type=Path, help='Parent directory')
@@ -28,7 +31,11 @@ def setup_rundir_and_priordir_cli():
 
 
 def setup_priordir_cli():
-    """CLI to :py:func:`~labrador.utils.setup_priordir`."""
+    """
+    CLI to :py:func:`~labrador.utils.setup_priordir`.
+
+    This function is available as ``lab-setup-priordir``.
+    """
     parser = argparse.ArgumentParser(
         description='Create a new prior directory under the given rundir.')
     parser.add_argument('rundir', type=Path, help='Run directory')
@@ -42,7 +49,11 @@ def setup_priordir_cli():
 
 
 def setup_rescalerdir_cli():
-    """CLI to :py:func:`~labrador.utils.setup_rescalerdir`."""
+    """
+    CLI to :py:func:`~labrador.utils.setup_rescalerdir`.
+
+    This function is available as ``lab-setup-rescalerdir``.
+    """
     parser = argparse.ArgumentParser(
         description='Create a new rescaler directory under a given priordir.')
     parser.add_argument('priordir', type=Path, help='Physical-prior directory')
@@ -56,7 +67,11 @@ def setup_rescalerdir_cli():
 
 
 def setup_sbidir_cli():
-    """CLI to :py:func:`~labrador.utils.setup_sbidir`."""
+    """
+    CLI to :py:func:`~labrador.utils.setup_sbidir`.
+
+    This function is available as ``lab-setup-sbidir``.
+    """
     parser = argparse.ArgumentParser(
         description='Create a new SBI directory under a given rescalerdir.')
     parser.add_argument('rescalerdir', type=Path, help='Rescaler directory')
@@ -70,7 +85,11 @@ def setup_sbidir_cli():
 
 
 def setup_unfolderdir_cli():
-    """CLI to :py:func:`~labrador.utils.setup_unfolderdir`."""
+    """
+    CLI to :py:func:`~labrador.utils.setup_unfolderdir`.
+
+    This function is available as ``lab-setup-unfolderdir``.
+    """
     parser = argparse.ArgumentParser(
         description='Create a new unfolder directory in a given rescalerdir.')
     parser.add_argument('rescalerdir', type=Path, help='Rescaler directory')
@@ -81,3 +100,23 @@ def setup_unfolderdir_cli():
     args = parser.parse_args()
     unfolderdir = utils.setup_unfolderdir(**vars(args))
     print(f'unfolderdir: {unfolderdir}')
+
+
+def save_model():
+    """
+    CLI to :py:func:`~labrador.utils.Tree.to_tar`.
+
+    This function is available as ``lab-save-model``.
+    """
+    parser = argparse.ArgumentParser(
+    description='Export a trained model to tar.gz.')
+    parser.add_argument('sbidir', type=Path, help='SBI directory')
+    parser.add_argument('unfolderdir', type=Path, help='Unfolder directory')
+    parser.add_argument(
+        '--filename', type=Path, default=None,
+        help='Output path. By default it is created alongside `rundir`.')
+
+    args = parser.parse_args()
+
+    tree = utils.Tree(args.sbidir, args.unfolderdir)
+    tree.to_tar(args.filename or tree.rundir.parent)
