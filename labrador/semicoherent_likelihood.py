@@ -151,6 +151,7 @@ class SemicoherentLikelihood:
             lambda shapecoef: -self._semicoherent_lnlike(shapecoef),
             bounds=big_bounds,
             init=init_pop,
+            x0=np.clip(shapecoef_guess, *zip(*big_bounds)),
         ).x
 
         return self._fit_amp_phase(shapecoef)
