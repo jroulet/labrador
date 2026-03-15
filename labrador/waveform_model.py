@@ -226,11 +226,9 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
 
         n_shapeampcoef = self.amplitude_model.n_ampcoef - self.n_det
         shapeampcoef, shapephasecoef = np.split(shapecoef, [n_shapeampcoef])
-        ampcoef = np.concatenate([det_amp, shapeampcoef])
-        phasecoef = np.concatenate([self.phase_model.detphasecoef(det_phase),
-                                    shapephasecoef])
-        coef = np.concatenate([ampcoef, phasecoef])
-        return coef
+        ampcoef = (det_amp, shapeampcoef)
+        phasecoef = (self.phase_model.detphasecoef(det_phase), shapephasecoef)
+        return np.concatenate((*ampcoef, *phasecoef))
 
     @property
     def n_coef(self):

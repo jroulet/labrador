@@ -20,12 +20,12 @@ all the rest are created by the various modules of the code.
     │   ├── mask.npy
     │   ├── preprocessed_data.h5
     │   ├── simulation_parameters.feather
-    │   ├── simulation_profiling
+    │   ├── simulation_time.npy
     │   └── unfolding_labels.h5
     └── {priordir}/                            # E.g. 'prior_0'
-        ├── coefficients.json
-        ├── ln-prior-ratio_regressor_mu.ubj
-        ├── ln-prior-ratio_regressor_sigma.ubj
+        ├── coefficients.json
+        ├── ln-prior-ratio_regressor_mu.ubj
+        ├── ln-prior-ratio_regressor_sigma.ubj
         ├── prior_config.py
         ├── {datadir}/                         # 'training_data' or 'test_data'
         │   ├── ln_prior_ratios.npy
@@ -49,14 +49,13 @@ import functools
 import logging
 import multiprocessing
 import os
-import pstats
 import shutil
 import subprocess
 import tarfile
 import tempfile
+import time
 import warnings
 from pathlib import Path
-from cProfile import Profile
 import numpy as np
 import pandas as pd
 import h5py
@@ -554,18 +553,61 @@ class NpzMixin:
         return Path(directory)/f'{cls.__name__}.npz'
 
 
-def multiprocessing_starmap_profiled(func, iterable, processes=None):
+class Timer:
     """
-    Similar to ``multiprocessing.Pool().starmap`` but it also returns
-    profiling statistics.
+    Context manager measuring CPU time.
+
+    Attributes
+    ----------
+    elapsed : float
+        CPU time in seconds consumed inside the context.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        with Timer() as timer:
+            run_my_func()
+
+        print(timer.elapsed)
+    """
+    def __init__(self):
+        self._start = None
+        self.elapsed = None
+
+    def __enter__(self):
+        self._start = time.process_time()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.elapsed = time.process_time() - self._start
+
+
+
+def multiprocessing_starmap_timed(func, iterable, processes=None):
+    """
+    Similar to ``multiprocessing.Pool().starmap`` but also returns
+    total CPU time spent executing ``func`` across all workers.
+
+    Parameters
+    ----------
+    func : callable
+        Function to evaluate. Each element of ``iterable`` must be a tuple
+        of arguments for ``func``.
+    iterable : iterable
+        Iterable producing argument tuples.
+    processes : int or None, optional
+        Number of worker processes. If ``None`` the number of CPUs is used.
+        Negative values mean ``os.cpu_count() + processes``.
 
     Returns
     -------
     results : list
         ``[func(*args) for args in iterable]``.
 
-    stats : pstats.Stats
-        Profiling statistics.
+    cpu_time : float
+        Total CPU time in seconds spent executing ``func`` across all
+        processes.
     """
     if processes is None:
         processes = os.cpu_count()
@@ -575,39 +617,26 @@ def multiprocessing_starmap_profiled(func, iterable, processes=None):
         processes = min(os.cpu_count(), processes)
 
     if processes == 1:  # Shortcut multiprocessing
-        with Profile() as profiler:
+        with Timer() as timer:
             results = [func(*args) for args in iterable]
-        stats = pstats.Stats(profiler)
-        return results, stats
+        return results, timer.elapsed
 
-    with tempfile.TemporaryDirectory() as profile_dir:
-        profiled_func = functools.partial(_aux_profiled_func,
-                                          func=func, profile_dir=profile_dir)
+    timed_func = functools.partial(_aux_timed_func, func=func)
 
-        with multiprocessing.Pool(processes, _worker_initializer) as pool:
-            results = pool.map(profiled_func, iterable)
+    with multiprocessing.Pool(processes) as pool:
+        outputs = pool.map(timed_func, iterable)
 
-        # Aggregate the stats
-        paths = map(str, Path(profile_dir).glob('*.prof'))
-        stats = pstats.Stats(*paths)
+    results, times = zip(*outputs)
 
-    return results, stats
+    return list(results), sum(times)
 
 
-def _worker_initializer():
-    global global_profiler
-    global_profiler = Profile()
+def _aux_timed_func(args, func):
+    """Worker wrapper that measures CPU time."""
+    with Timer() as timer:
+        result = func(*args)
 
-
-def _aux_profiled_func(args, func, profile_dir):
-    # Defined in top level so that it is pickleable for multiprocessing
-    result = global_profiler.runcall(func, *args)
-
-    # Dump profile data after each call
-    process_id = multiprocessing.current_process().pid
-    global_profiler.dump_stats(Path(profile_dir)/f'{process_id}.prof')
-
-    return result
+    return result, timer.elapsed
 
 
 def get_best_device(by='utilization'):

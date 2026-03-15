@@ -1,5 +1,6 @@
 """Functions for training neural posterior estimators."""
 import argparse
+import datetime
 import logging
 import pickle
 from pathlib import Path
@@ -164,6 +165,7 @@ def main(sbidir):
     else:
         inference = _instantiate_inference(sbidir)
 
+    start = datetime.datetime.now()
     with Profile() as profiler:
         density_estimator = inference.train(
             **config.TRAIN_KWARGS,
@@ -172,6 +174,8 @@ def main(sbidir):
             lr_scheduler_kwargs=config.LR_SCHEDULER_KWARGS)
 
     profiler.dump_stats(sbidir/'training.profile')
+
+    logger.info(f'Training time: {datetime.datetime.now() - start}')
 
     with open(inference_filename, 'wb') as file:
         pickle.dump(inference, file)

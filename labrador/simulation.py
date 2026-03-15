@@ -15,7 +15,6 @@ import csv
 import functools
 import os
 from pathlib import Path
-import pstats
 import sys
 import textwrap
 
@@ -192,13 +191,16 @@ def simulate_and_preprocess_samples(simulator,
         Index of the region that the parameters of each simulation
         belong to before applying folding. Takes values between
         [0, 2**n_folded_parameters).
+
+    cpu_time : float
+        Total CPU time in seconds spent across all processes.
     """
     args_generator = (
         (simulator, data_preprocessor, parameters, transform_class, seed)
         for seed, parameters in simulation_parameters.iterrows()
     )
 
-    results, stats = utils.multiprocessing_starmap_profiled(
+    results, time = utils.multiprocessing_starmap_timed(
         simulate_and_preprocess_sample, args_generator, processes)
 
     preprocessed_rows, folded_sampled_parameters, unfolding_labels = zip(
@@ -220,7 +222,7 @@ def simulate_and_preprocess_samples(simulator,
     return (preprocessed_data,
             np.array(folded_sampled_parameters, np.float32),
             np.array(unfolding_labels),
-            stats)
+            time)
 
 
 class Simulator:
@@ -277,8 +279,8 @@ class Simulator:
         event_data.inject_signal(parameters, self.approximant)
         frequencies = event_data.frequencies[event_data.fslice]
 
-        # Cheating: user "knows" true parameters. TODO improve this?
-        # Although in principle our likelihood maximization erases this...
+        # Cheating: knows true parameters, but likelihood maximization
+        # erases this.
         signal = self._waveform_generator.get_strain_at_detectors(
             frequencies, parameters)
         mchirp = gw_utils.m1m2_to_mchirp(**parameters[['m1', 'm2']])
@@ -496,7 +498,7 @@ def _check_rundir(rundir):
 
 CHUNKS_DIRNAME = 'chunks'
 CHUNKS_FILENAME = 'chunks.csv'
-PROFILE_FILENAME = 'simulation.profile'
+PROFILE_FILENAME = 'simulation_time.npy'
 
 
 def _setup_chunks(rundir, chunk_size):
@@ -581,7 +583,7 @@ def simulate_chunk(datadir, i_start, i_end, processes):
         preprocessed_data,
         folded_sampled_parameters,
         unfolding_labels,
-        chunk_stats,
+        chunk_time,
     ) = simulate_and_preprocess_samples(simulator,
                                         data_preprocessor,
                                         parameters_chunk,
@@ -599,8 +601,8 @@ def simulate_chunk(datadir, i_start, i_end, processes):
             for key, arr in dataset.items():
                 file.create_dataset(key, data=arr)
 
-    chunk_stats.dump_stats(
-        _get_chunkpath(chunksdir, PROFILE_FILENAME, i_start, i_end))
+    np.save(_get_chunkpath(chunksdir, PROFILE_FILENAME, i_start, i_end),
+            chunk_time)
 
 
 def merge_chunks(rundir, delete_chunks_after_merging=True):
@@ -671,7 +673,9 @@ def _merge_chunks_in_datadir(datadir, delete_chunks_after_merging):
     # Profiling statistics:
     pattern = _get_chunkpath('', PROFILE_FILENAME, '*', '*').name
     chunkpaths = list(chunksdir.glob(pattern))
-    pstats.Stats(*map(str, chunkpaths)).dump_stats(datadir/PROFILE_FILENAME)
+
+    # pstats.Stats(*map(str, chunkpaths)).dump_stats(datadir/PROFILE_FILENAME)
+    np.save(datadir/PROFILE_FILENAME, sum(map(np.load, chunkpaths)))
 
     all_chunkpaths.extend(chunkpaths)
 
@@ -876,14 +880,14 @@ def _populate_datadir(datadir, simulator, data_preprocessor,
                       transform_class, processes, chunk_size=10_000):
     simulation_parameters = pd.read_feather(datadir/utils.PARAMETERS_FILENAME)
 
-    stats = pstats.Stats()
+    time = 0.0
 
     for chunk_start in range(0, len(simulation_parameters), chunk_size):
         (
             preprocessed_data,
             folded_sampled_parameters,
             unfolding_labels,
-            chunk_stats
+            chunk_time
         ) = simulate_and_preprocess_samples(
             simulator,
             data_preprocessor,
@@ -899,9 +903,9 @@ def _populate_datadir(datadir, simulator, data_preprocessor,
         _append_to_hdf5(datadir/utils.UNFOLDING_LABELS_FILENAME,
                         dataset=unfolding_labels)
 
-        stats.add(chunk_stats)
+        time += chunk_time
 
-    stats.dump_stats(datadir/'simulation_profiling')
+    np.save(datadir/PROFILE_FILENAME, time)
 
 
 def _append_to_hdf5(filename, **arrays):
