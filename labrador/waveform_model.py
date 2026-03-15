@@ -264,10 +264,12 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
             time_differences              n_det * (n_det - 1) / 2
             amplitude shape parameters    n_shapeampcoef
             phase shape parameters        n_intphasecoef
-            cos(ref_det_phase)            1
-            sin(ref_det_phase)            1
-            ref_det_time                  1
+            cos(ref_det_phase) (*)        1
+            sin(ref_det_phase) (*)        1
+            ref_det_time       (*)        1
             ============================  ============================
+
+            (*) only if `self.include_global_phase_and_time` is True.
         """
         ampcoef, phasecoef = self.split_amp_phase_coef(coef)
         amp_rms, amp_ratios \
