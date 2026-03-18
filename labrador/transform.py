@@ -4,11 +4,12 @@ transformation that gives a first approximation to the normalizing flow.
 """
 import numpy as np
 
-import lal
-
 from cogwheel.prior import Prior, CombinedPrior, UnitJacobianMixin
 from cogwheel import gw_prior
+import cogwheel.utils
 from . import pn_coords
+
+lal = cogwheel.utils.import_lal()
 
 # pylint: disable=arguments-differ
 

@@ -1,11 +1,11 @@
 """Compute weights to go from a simulation prior to a physical prior."""
 import argparse
+import functools
 import json
 import os
 from pathlib import Path
 
 import xgboost
-import functools
 import numpy as np
 import pandas as pd
 import cogwheel.utils

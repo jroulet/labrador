@@ -25,7 +25,7 @@ import pandas as pd
 
 from cogwheel import data, gw_utils, waveform
 
-from . import condor_utils, semicoherent_likelihood, utils
+from . import condor_utils, reference, utils
 from .waveform_model import PhenomenologicalWaveformGenerator
 
 
@@ -269,7 +269,6 @@ class Simulator:
 
             * event_data
             * frequencies
-            * ref_waveform_amp
             * ref_waveform_phase
 
             These can be passed to ``DataPreprocessor.preprocess_data``.
@@ -284,12 +283,10 @@ class Simulator:
         signal = self._waveform_generator.get_strain_at_detectors(
             frequencies, parameters)
         mchirp = gw_utils.m1m2_to_mchirp(**parameters[['m1', 'm2']])
-        ref_waveform_phase = semicoherent_likelihood.get_unwrapped_phase(
+        ref_waveform_phase = reference.get_unwrapped_phase(
             frequencies, signal, mchirp)
-        ref_waveform_amp = np.abs(signal)
         return {'event_data': event_data,
                 'frequencies': frequencies,
-                'ref_waveform_amp': ref_waveform_amp,
                 'ref_waveform_phase': ref_waveform_phase}
 
 
@@ -318,14 +315,12 @@ class DataPreprocessor:
         return cls(waveform_model,
                    i_refdet=_get_i_refdet(config),
                    f_ref=config.PRIOR_KWARGS['f_ref'],
-                   n_coherent_segments=config.N_COHERENT_SEGMENTS,
                    pn_phase_tol_compression=config.PN_PHASE_TOL_COMPRESSION)
 
     def __init__(self,
                  waveform_model,
                  i_refdet,
                  f_ref,
-                 n_coherent_segments=8,
                  pn_phase_tol_compression=None):
         """
         Parameters
@@ -333,13 +328,11 @@ class DataPreprocessor:
         waveform_model : waveform_model.PhenomenologicalWaveformGenerator
             Used to generate the reference waveform.
 
-        n_coherent_segments : int
-            When maximizing the likelihood to find a reference waveform,
-            the frequency range is partitioned into segments and a
-            constant phase is optimized independently in each segment.
-            This is unphysical and intended to make the maximization
-            more robust to limitations in the phase model.
-            ``n_coherent_segments=1`` corresponds to fully coherent.
+        i_refdet : int
+            Index of the reference detector.
+
+        f_ref : float
+            Reference frequency (Hz).
 
         pn_phase_tol_compression : float
             Controls the relative-binning frequency resolution used for
@@ -347,7 +340,6 @@ class DataPreprocessor:
             found. Lower tolerance means higher resolution.
         """
         self.waveform_model = waveform_model
-        self.n_coherent_segments = n_coherent_segments
         self.pn_phase_tol_compression = pn_phase_tol_compression
         self.i_refdet = i_refdet
         self.f_ref = f_ref
@@ -355,7 +347,6 @@ class DataPreprocessor:
     def preprocess_data(self,
                         event_data,
                         frequencies,
-                        ref_waveform_amp,
                         ref_waveform_phase):
         """
         Compress the data by heterodyning it against a phenomenological
@@ -378,9 +369,6 @@ class DataPreprocessor:
             defined. For now, it must match
             ``event_data.frequencies[event_data.fslice]``.
 
-        ref_waveform_amp : float array of shape (n_det, n_freq)
-            User-provided reference waveform amplitude.
-
         ref_waveform_phase : float array of shape (n_det, n_freq)
             User-provided reference waveform unwrapped phase.
 
@@ -394,6 +382,7 @@ class DataPreprocessor:
             * coef
             * processed_coef
             * h0_h0
+            * f_cut
 
             Plus, only if `event_data` is an injection:
 
@@ -406,7 +395,7 @@ class DataPreprocessor:
             space coordinate transform.
         """
         preprocessed_data = self._fit_waveform_and_heterodyne_data(
-            event_data, frequencies, ref_waveform_amp, ref_waveform_phase)
+            event_data, frequencies, ref_waveform_phase)
 
         transform_kwargs = self.waveform_model.get_transform_kwargs(
             preprocessed_data['coef'], self.i_refdet, self.f_ref)
@@ -416,9 +405,7 @@ class DataPreprocessor:
     def _fit_waveform_and_heterodyne_data(self,
                                           event_data,
                                           frequencies,
-                                          ref_waveform_amp,
                                           ref_waveform_phase):
-        # TODO generalize frequencies
         assert np.array_equal(frequencies,
                               event_data.frequencies[event_data.fslice])
 
@@ -431,20 +418,18 @@ class DataPreprocessor:
                                            pn_phase_tol=None,
                                            fbin=rb_splines.fbin)
 
-        like = semicoherent_likelihood.SemicoherentLikelihood(
+        rwf = reference.ReferenceWaveformFinder(
             event_data=event_data,
-            waveform_model=self.waveform_model,
-            n_coherent_segments=self.n_coherent_segments)
+            waveform_model=self.waveform_model)
 
-        coef, h0_h0 = like.fit_coef(frequencies,
-                                    ref_waveform_phase=ref_waveform_phase,
-                                    ref_waveform_amp=ref_waveform_amp)
+        coef, h0_h0, f_cut = rwf.fit_coef(frequencies, ref_waveform_phase)
 
         heterodyned_data, heterodyned_signal, fbin \
-            = like.get_heterodyned_data_and_signal(
+            = rwf.get_heterodyned_data_and_signal(
                 coef, self.pn_phase_tol_compression)
 
-        processed_coef = self.waveform_model.process_coef(coef, self.i_refdet)
+        processed_coef = self.waveform_model.process_coef(
+            coef, self.i_refdet, f_cut)
 
         preprocessed_data = {
             'heterodyned_data': heterodyned_data,

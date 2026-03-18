@@ -8,7 +8,6 @@ from pathlib import Path
 import scipy.interpolate
 from scipy.stats import qmc
 import numpy as np
-import pandas as pd
 
 import lal
 
@@ -41,7 +40,7 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
     easing the task of maximizing it.
     """
     @classmethod
-    def from_rundir(cls, rundir, n_svd_examples=1000):
+    def from_rundir(cls, rundir):
         """
         Attempt to load instance, else construct and save it.
 
@@ -50,11 +49,6 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
         rundir : os.PathLike
             Path to a directory on which ``generate_parameters`` has
             been run.
-
-        n_svd_examples : int
-            How many waveforms to simulate to input in the SVD of
-            amplitude profiles. Ignored if there is already a saved
-            file in `rundir`.
         """
         rundir = Path(rundir)
 
@@ -70,27 +64,19 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
         frequencies = dummy_data.frequencies[dummy_data.fslice]
         wht_filter = dummy_data.wht_filter[:, dummy_data.fslice]
 
-        waveform_generator \
-            = cogwheel.waveform.WaveformGenerator.from_event_data(
-                dummy_data, config.APPROXIMANT)
-
-        simulation_parameters = pd.read_feather(
-            rundir/utils.TRAINING_DIR/utils.PARAMETERS_FILENAME
-        )[:n_svd_examples]
-
         waveform_model = cls.from_waveforms(
-            frequencies, wht_filter, waveform_generator,
-            simulation_parameters, config.PN_PHASE_TOL,
-            config.INCLUDE_GLOBAL_PHASE_AND_TIME)
+            frequencies,
+            wht_filter,
+            config.PN_PHASE_TOL,
+            config.INCLUDE_GLOBAL_PHASE_AND_TIME,
+        )
 
         waveform_model.to_hdf5(filename)
         return waveform_model
 
     @classmethod
     def from_waveforms(cls, frequencies, fiducial_wht_filter,
-                       waveform_generator, simulation_parameters,
-                       pn_phase_tol, include_global_phase_and_time=False
-                      ):
+                       pn_phase_tol, include_global_phase_and_time=False):
         """
         Parameters
         ----------
@@ -98,26 +84,24 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
 
         fiducial_wht_filter : (n_det, n_freq) float array
 
-        waveform_generator : cogwheel.waveform.WaveformGenerator
-
-        simulation_parameters : pandas.DataFrame
-            Contains parameters of waveforms to simulate, to input in
-            the SVD of amplitude profiles.
-
         pn_phase_tol : float
             Determines the internal frequency resolution at which the
             phase model will compute inner products in order to
             orthogonalize the phase bases. Lower tolerance means higher
             resolution.
 
+        include_global_phase_and_time : bool
+            Whether to include the global time and phase of arrival in
+            the processed_coef (summary data passed to the network).
+            Excluding them (False) enforces time and phase shifts to be
+            exact equivariances of the model, which may improve
+            performance and reduce overfitting.
+
         See Also
         --------
         .from_rundir
         """
-        amplitude_tapering = AmplitudeTapering.from_scratch(
-            waveform_generator, simulation_parameters)
-        amplitude_model = AmplitudeModel(len(fiducial_wht_filter),
-                                         amplitude_tapering)
+        amplitude_model = AmplitudeModel(len(fiducial_wht_filter))
         phase_model = PhaseModel.from_scratch(
             frequencies=frequencies,
             fiducial_wht_filter=fiducial_wht_filter,
@@ -147,7 +131,7 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
         self.phase_model = phase_model
         self.include_global_phase_and_time = include_global_phase_and_time
 
-    def __call__(self, frequencies, coef, apply_tapering=True):
+    def __call__(self, frequencies, coef):
         """
         Parameters
         ----------
@@ -164,12 +148,13 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
         """
         assert coef.shape == (self.n_coef,)
         ampcoef, phasecoef = self.split_amp_phase_coef(coef)
-        amplitude = self.amplitude_model(frequencies, ampcoef, apply_tapering)
+        amplitude = self.amplitude_model(frequencies, ampcoef)
         phase = self.phase_model(frequencies, phasecoef)
         return amplitude * np.exp(1j*phase)
 
     def split_amp_phase_coef(self, coef):
         """Return `ampcoef`, `phasecoef` from `coef`."""
+        assert coef.shape == (self.n_coef,)
         return np.split(coef, [self.amplitude_model.n_ampcoef])
 
     def waveform_fiducial_amp_and_phase(self, frequencies, shapecoef):
@@ -240,7 +225,7 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
         """Number of detectors."""
         return self.amplitude_model.n_det
 
-    def process_coef(self, coef, i_refdet):
+    def process_coef(self, coef, i_refdet, f_cut):
         """
         Transform `coef` to make it more suitable for a neural network.
 
@@ -257,13 +242,14 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
             ============================  ============================
             Quantity                      Shape
             ============================  ============================
-            amp_rms                       1
+            amp                       1
             amp_ratios                    n_det
             cos(phase_differences)        n_det * (n_det - 1) / 2
             sin(phase_differences)        n_det * (n_det - 1) / 2
             time_differences              n_det * (n_det - 1) / 2
             amplitude shape parameters    n_shapeampcoef
             phase shape parameters        n_intphasecoef
+            log10f_cut                    1
             cos(ref_det_phase) (*)        1
             sin(ref_det_phase) (*)        1
             ref_det_time       (*)        1
@@ -272,8 +258,8 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
             (*) only if `self.include_global_phase_and_time` is True.
         """
         ampcoef, phasecoef = self.split_amp_phase_coef(coef)
-        amp_rms, amp_ratios \
-            = self.amplitude_model.get_detector_amp_rms_and_ratios(ampcoef)
+        amp, amp_ratios = self.amplitude_model.get_detector_amp_and_ratios(
+            ampcoef)
 
         det_phase, det_time = self.phase_model.get_detector_phases_and_times(
             phasecoef)
@@ -282,13 +268,14 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
         time_differences = det_time[det1] - det_time[det2]
 
         features = [
-            [amp_rms],
+            [amp],
             amp_ratios,
             np.cos(phase_differences),
             np.sin(phase_differences),
             time_differences,
             ampcoef[self.n_det:],  # Exclude detector amplitude
             phasecoef[2*self.n_det:],  # Exclude detector phase & time
+            [np.log10(f_cut)],
         ]
         if self.include_global_phase_and_time:
             features.extend([[
@@ -303,13 +290,14 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
     def processed_coef_keys(self):
         """Bookkeeping of what the entries in processed_coef mean."""
         det_pairs = list(zip(*np.triu_indices(self.n_det, 1)))
-        keys = ['amp_rms',
+        keys = ['amp',
                 *(f'amp_ratio_{i}' for i in range(self.n_det)),
                 *(f'cos_phase_difference_{j}-{i}' for i, j in det_pairs),
                 *(f'sin_phase_difference_{j}-{i}' for i, j in det_pairs),
                 *(f'time_difference_{j}-{i}' for i, j in det_pairs),
                 *self.amplitude_model.ampcoef_keys[self.n_det:],
                 *self.phase_model.phasecoef_keys[2*self.n_det:],
+                'log10_fcut',
                 ]
         if self.include_global_phase_and_time:
             keys.extend([
@@ -347,32 +335,22 @@ class PhenomenologicalWaveformGenerator(hdf5_utils.HDF5Mixin):
                 'amp_ref_det': amp_ref_det,
                 't0_refdet': t0_refdet}
 
-    def guess_shapecoef(self, frequencies, wht_filter,
-                        ref_waveform_phase, ref_waveform_amp):
+    def guess_shapecoef(self, frequencies, waveform_phase):
         """
-        Find amplitude and phase coefficients that best match a given
-        waveform amplitude and phase.
+        Find coefficients that best match a given waveform phase.
 
         Returns
         -------
-        shapecoef : float array
+        float array
         """
-        shapeampcoef_guess \
-            = self.amplitude_model.amplitude_tapering.guess_shapeampcoef(
-                frequencies, wht_filter, ref_waveform_amp)
+        return self.phase_model.guess_phasecoef(frequencies, waveform_phase
+                                               )[self.phase_model.n_det:]
 
-        phasecoef_guess = self.phase_model.guess_phasecoef(
-            frequencies, ref_waveform_phase)
-        shapephasecoef_guess = phasecoef_guess[self.phase_model.n_det:]
-
-        shapecoef_guess = np.concatenate([shapeampcoef_guess,
-                                          shapephasecoef_guess])
-        return shapecoef_guess
 
 
 class AmplitudeModel(hdf5_utils.HDF5Mixin):
     """Simple phenomenological model for the waveform amplitude."""
-    def __init__(self, n_det, amplitude_tapering):
+    def __init__(self, n_det):
         """
         Parameters
         ----------
@@ -383,66 +361,48 @@ class AmplitudeModel(hdf5_utils.HDF5Mixin):
             Models the merger.
         """
         self.n_det = n_det
-        self.amplitude_tapering = amplitude_tapering
 
-    def __call__(self, frequencies, ampcoef, apply_tapering=True):
+    def __call__(self, frequencies, ampcoef):
         """
         Parameters
         ----------
         frequencies : float array of shape (n_frequencies)
             Evaluation frequencies (Hz).
 
-        ampcoef : float array of shape (n_det+1,)
-            Amplitude coefficients and cutoff frequency:
-
-            * ampcoef[:n_det] : Amplitudes at each detector (physical units).
-            * ampcoef[-1]     : Cutoff frequency in Hz.
-
-        apply_tapering : bool
-            Whether to model the merger or let the amplitude profile be
-            ~ f**(-7/6).
+        ampcoef : float array of shape (n_det,)
+            Amplitudes at each detector (physical units).
 
         Returns
         -------
         float array of shape (n_det, n_frequencies)
             Waveform amplitude profiles.
         """
-        amplitudes = ampcoef[:self.n_det]
-        shapeampcoef = ampcoef[self.n_det:]
 
         # 1e-20 is made up so that `amplitudes` ~ O(1)
         profile = 1e-20 * frequencies ** (-7/6)
 
-        if apply_tapering:
-            # tapering -> 1 (f << fcut), -> 0 (f >> fcut)
-            profile *= self.amplitude_tapering(frequencies, shapeampcoef)
+        return np.outer(ampcoef, profile)
 
-        return np.outer(amplitudes, profile)
-
-    def get_detector_amp_rms_and_ratios(self, ampcoef):
+    def get_detector_amp_and_ratios(self, ampcoef):
         """
         Features that encode some extrinsic-parameter information.
 
         Parameters
         ----------
-        ampcoef : float array of shape (n_det+1,)
-            Amplitude coefficients and cutoff frequency:
-
-            * ampcoef[:n_det] : Amplitudes at each detector (physical units).
-            * ampcoef[n_det:] : shapeampcoef, see AmplitudeTapering.
+        ampcoef : float array of shape (n_det,)
+            Amplitudes at each detector (physical units).
 
         Returns
         -------
-        amp_rms : float
-            Root-mean-square amplitude across detectors.
+        amp : float
+            Quadrature-sum amplitude over detectors.
 
         amp_ratios : ndarray of shape (n_det,)
-            Detector amplitudes normalized by amp_rms.
+            Detector amplitudes normalized by amp.
         """
-        det_amp = ampcoef[:self.n_det]
-        amp_rms = np.linalg.norm(det_amp)
-        amp_ratios = det_amp / amp_rms
-        return amp_rms, amp_ratios
+        amp = np.linalg.norm(ampcoef)
+        amp_ratios = ampcoef / amp
+        return amp, amp_ratios
 
     @staticmethod
     def _normalize(arr):
@@ -451,249 +411,12 @@ class AmplitudeModel(hdf5_utils.HDF5Mixin):
     @property
     def n_ampcoef(self):
         """Number of amplitude parameters."""
-        return self.n_det + self.amplitude_tapering.n_shapeampcoef
+        return self.n_det
 
     @property
     def ampcoef_keys(self):
         """List of names describing the entries in ``ampcoef``."""
-        return [*(f'amp_{i}' for i in range(self.n_det)),
-                *self.amplitude_tapering.shapeampcoef_keys]
-
-
-class AmplitudeTapering(hdf5_utils.HDF5Mixin):
-    """
-    Multiplicative correction to A(f) ~ f^{-7/6}.
-
-    Approaches 1 for f << f_merger and 0 for f >> f_merger.
-    It is obtained from examples as the mean tapering (over examples),
-    plus a correction which is a linear combination of basis functions
-    obtained with a singular value decomposition. The tapering is
-    aligned so that it happens at a frequency ``fcut``.
-    The (log10) cutoff frequency and SVD coefficients are free
-    parameters. Their range is computed from the examples and recorded
-    as ``.shapeampcoef_bounds``.
-    """
-
-    @classmethod
-    def from_scratch(cls,
-                     waveform_generator,
-                     simulation_parameters,
-                     frequencies=(1e-2, 1e4, 500),
-                     relative_frequencies=(1e-4, 1e1, 1000),
-                     n_svd=0,
-                     tapering_at_fcut=0.1):
-        """
-        Parameters
-        ----------
-        waveform_generator : cogwheel.waveform.WaveformGenerator
-            Will be used to generate examples to input into a singular
-            value decomposition to construct the model.
-
-        simulation_parameters : pd.DataFrame
-            Each row is an example of a binary merger's parameters, per
-            `waveform_generator._waveform_params`.
-
-        frequencies : float array or 3-tuple
-            Frequency in Hz. If a 3-tuple is passed, it will be unpacked
-            into ``np.geomspace`` to create the array.
-
-        relative_frequencies : float array or 3-tuple
-            Frequency divided by f_cut. If a 3-tuple is passed, it will
-            be unpacked into ``np.geomspace`` to create the array.
-
-        n_svd : int
-            How many SVD components to keep in the model for aligned
-            taperings.
-
-        tapering_at_fcut : float
-            Defines ``fcut`` as the frequency at which the tapering has
-            this value.
-        """
-        if isinstance(frequencies, tuple):
-            frequencies = np.geomspace(*frequencies)
-
-        if isinstance(relative_frequencies, tuple):
-            relative_frequencies = np.geomspace(*relative_frequencies)
-
-        aligned_taperings, log10fcuts = cls._aligned_taperings_and_log10fcuts(
-            waveform_generator, simulation_parameters, frequencies,
-            relative_frequencies, tapering_at_fcut)
-
-        mean_aligned_tapering = np.mean(aligned_taperings, axis=0)
-
-        umat, vals, vhmat = np.linalg.svd(
-            aligned_taperings - mean_aligned_tapering, full_matrices=False)
-
-        # Only keep desired components
-        umat = umat[:, :n_svd]
-        vals = vals[:n_svd]
-        vhmat = vhmat[:n_svd]
-
-        # Pick sign so that the bases are positive (just to help intuition)
-        signs = np.sign(vhmat.sum(axis=1))
-        vhmat *= signs[:, np.newaxis]
-        umat *= signs
-
-        svd_coefs = umat * vals  # (n_examples, n_svd)
-        shapeampcoefs = np.concatenate([log10fcuts[:, np.newaxis], svd_coefs],
-                                       axis=1)
-
-        shapeampcoef_bounds = list(zip(shapeampcoefs.min(axis=0),
-                                       shapeampcoefs.max(axis=0)))
-
-        return cls(relative_frequencies,
-                   mean_aligned_tapering,
-                   vhmat,
-                   shapeampcoef_bounds,
-                   tapering_at_fcut)
-
-    def __init__(self, relative_frequencies, mean_aligned_tapering,
-                 vhmat, shapeampcoef_bounds, tapering_at_fcut):
-        """
-        Generic constructor, normally one would use ``.from_scratch`` or
-        ``.from_npz``.
-
-        Parameters
-        ----------
-        relative_frequencies : (N,) array
-            f / f_cut
-
-        mean_aligned_tapering : (N,) array
-            Mean tapering evaluated on `relative_frequencies`.
-
-        vhmat : (M, N) array
-            SVD basis functions for the departure from the mean
-            tapering, evaluated on `relative_frequencies`.
-
-        shapeampcoef_bounds : (M+1, 2) array-like
-            Bounds on ``log10_fcut`` and the SVD coefficients.
-
-        tapering_at_fcut : float
-            Defines ``fcut`` as the frequency at which the tapering has
-            this value.
-        """
-        self.relative_frequencies = relative_frequencies
-        self.mean_aligned_tapering = mean_aligned_tapering
-        self.vhmat = vhmat
-        self.shapeampcoef_bounds = shapeampcoef_bounds
-        self.tapering_at_fcut = tapering_at_fcut
-
-    def __call__(self, frequencies, shapeampcoef):
-        """Tapering as a function of frequency."""
-        fcut = 10**shapeampcoef[0]
-        svd_coef = shapeampcoef[1:]
-        aligned_tapering = self.mean_aligned_tapering + svd_coef @ self.vhmat
-        tapering = np.interp(frequencies,
-                             self.relative_frequencies * fcut,
-                             aligned_tapering)
-        return tapering
-
-    @property
-    def n_shapeampcoef(self):
-        """
-        Number of shape coefficients, (= n_svd + 1, for the merger
-        frequency).
-        """
-        return len(self.shapeampcoef_bounds)
-
-    @property
-    def shapeampcoef_keys(self):
-        """List of names describing the entries in ``shapeampcoef``."""
-
-        return ['log10fcut',
-                *(f'amp_svd_{i}' for i in range(len(self.vhmat)))]
-
-    def guess_shapeampcoef(self, frequencies, wht_filter, amplitude):
-        """
-        Estimate of the shape coefficients that approximate the provided
-        amplitude profile.
-
-        Parameters
-        ----------
-        frequencies : float array of shape (n_freq,)
-            Frequencies (Hz) at which the amplitude is defined.
-
-        wht_filter : float array of shape(n_det, n_freq)
-            Frequency-domain whitening filter in each detector.
-
-        amplitude : float array of shape(n_det, n_freq)
-            Frequency domain amplitude profile in each detector.
-
-        Returns
-        -------
-        shapeampcoef : float array
-            Contains ``(log10fcut, *svd_coef)``.
-        """
-        assert wht_filter.shape[-1:] == frequencies.shape
-        assert amplitude.shape == wht_filter.shape
-        assert wht_filter.ndim == 2
-
-        _, log10fcut = self._aligned_tapering_and_log10fcut(
-            frequencies, np.linalg.norm(amplitude, axis=0),
-            self.relative_frequencies,
-            self.tapering_at_fcut)
-        if np.isnan(log10fcut):
-            log10fcut = self.shapeampcoef_bounds[0][1]
-
-        fcut = 10 ** log10fcut
-        tapering_funcs = np.array(
-            [np.interp(frequencies, self.relative_frequencies * fcut, arr)
-             for arr in (self.mean_aligned_tapering, *self.vhmat)])
-        mat = (np.linalg.norm(wht_filter, axis=0)
-               * frequencies**(-7/6)
-               * tapering_funcs).T
-        target_wht_amp = np.linalg.norm(amplitude * wht_filter, axis=0)
-        x = np.linalg.lstsq(mat, target_wht_amp, rcond=None)[0]
-        svd_coef = x[1:] / x[0]
-
-        return np.concatenate([[log10fcut], svd_coef])
-
-    @classmethod
-    def _aligned_taperings_and_log10fcuts(
-            cls, waveform_generator, simulation_parameters, frequencies,
-            relative_frequencies, tapering_at_fcut):
-        amplitudes = (
-            np.abs(waveform_generator.get_hplus_hcross(frequencies,
-                                                       par_dic)[0])
-            for _, par_dic in simulation_parameters.iterrows())
-
-        aligned_taperings, log10fcuts = zip(
-            *(cls._aligned_tapering_and_log10fcut(
-                frequencies, amplitude, relative_frequencies,
-                tapering_at_fcut)
-            for amplitude in amplitudes))
-
-        valid = ~np.isnan(log10fcuts)
-        log10fcuts = np.array(log10fcuts)[valid]
-        aligned_taperings = np.array(aligned_taperings)[valid]
-
-        return aligned_taperings, log10fcuts
-
-    @staticmethod
-    def _aligned_tapering_and_log10fcut(
-            frequencies, amplitude, relative_frequencies,
-            tapering_at_fcut):
-        """
-        Tapering as a function of f / fcut, evaluated on
-        ``._relative_frequencies``.
-        """
-        tapering = frequencies**(7/6) * amplitude
-        tapering /= tapering[0]
-
-        ind = np.where(tapering > tapering_at_fcut)[0][-1]
-        if ind == len(frequencies) - 1:  # Merger frequency too high
-            return np.full_like(relative_frequencies, np.nan), np.nan
-
-        inds = [ind + 1, ind]
-        fcut = np.interp(tapering_at_fcut,
-                         tapering[inds],
-                         frequencies[inds])
-
-        aligned_tapering = np.interp(relative_frequencies * fcut,
-                                     frequencies,
-                                     tapering)
-
-        return aligned_tapering, np.log10(fcut)
+        return [f'amp_{i}' for i in range(self.n_det)]
 
 
 class PhaseModel(hdf5_utils.HDF5Mixin):

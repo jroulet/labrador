@@ -16,7 +16,7 @@ import cogwheel.data
 import cogwheel.gw_plotting
 import cogwheel.posterior
 
-from labrador.semicoherent_likelihood import get_unwrapped_phase
+from labrador.reference import get_unwrapped_phase
 from labrador import compression, simulation, utils, posterior, rbsplines
 
 
