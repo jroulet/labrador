@@ -27,6 +27,4 @@ RESCALER_TRAIN_KWARGS = {
      },  # kwargs to torch.optim.lr_scheduler.ReduceLROnPlateau
 }
 
-COMPACTIFICATION = 'gaussian'  # 'gaussian' or 'tanh'
-
 DEVICE = None  # ``None`` will try to use 'cuda' or fall back to 'cpu'.

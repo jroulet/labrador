@@ -28,7 +28,7 @@ import pandas as pd
 
 from cogwheel import gw_plotting
 
-from . import pp_plot, sbi_hacks, utils, legacy
+from . import pp_plot, sbi_hacks, utils
 
 
 logger = logging.getLogger(__name__)
@@ -95,22 +95,10 @@ class ParameterRescaler:
         assert set(self.bounded_params) <= self.folded_range_dic.keys()
         assert set(self.periodic_params) <= self.folded_range_dic.keys()
 
-        compactification = getattr(
-            self.rescaler_config, 'COMPACTIFICATION', 'tanh')
-
-        if compactification == 'tanh':
-            self._compactify = legacy._compactify_tanh
-            self._decompactify = legacy._decompactify_tanh
-            self._compactify_log_jacobian_determinant \
-                = legacy._compactify_log_jacobian_determinant_tanh
-        elif compactification == 'gaussian':
-            self._compactify = _compactify_gaussian
-            self._decompactify = _decompactify_gaussian
-            self._compactify_log_jacobian_determinant \
-                = _compactify_log_jacobian_determinant_gaussian
-        else:
-            raise ValueError(
-                f'Unrecognized {self.rescaler_config.COMPACTIFICATION=}')
+        # Check for deprecated `COMPACTIFICATION`
+        if getattr(self.rescaler_config, 'COMPACTIFICATION', 'gaussian'
+                  ) != 'gaussian':
+            raise ValueError('COMPACTIFICATION no longer supported')
 
         device = self.rescaler_config.DEVICE
         if device is None:
@@ -347,7 +335,7 @@ class ParameterRescaler:
         """
         for i, par in zip(self._bounded_nonperiodic_inds,
                           self.bounded_nonperiodic_params):
-            parameters[..., i] = self._decompactify(
+            parameters[..., i] = _decompactify(
                 parameters[..., i], *self.folded_range_dic[par])
 
     def _compactify_bounded_nonperiodic(self, parameters):
@@ -362,9 +350,9 @@ class ParameterRescaler:
         lnj = 0.0
         for i, par in zip(self._bounded_nonperiodic_inds,
                           self.bounded_nonperiodic_params):
-            lnj += self._compactify_log_jacobian_determinant(
+            lnj += _compactify_log_jacobian_determinant(
                 parameters[..., i].detach(), *self.folded_range_dic[par])
-            parameters[..., i] = self._compactify(parameters[..., i],
+            parameters[..., i] = _compactify(parameters[..., i],
                                                   *self.folded_range_dic[par])
 
         return lnj
@@ -500,8 +488,8 @@ class ParameterRescaler:
         (-pi, pi), and had their circular mean subtracted.
         """
         for i in self._periodic_inds:
-            parameters[..., i] = self._decompactify(parameters[..., i],
-                                                    -np.pi, np.pi)
+            parameters[..., i] = _decompactify(
+                parameters[..., i], -np.pi, np.pi)
 
     def _compactify_periodic(self, parameters):
         """
@@ -517,10 +505,9 @@ class ParameterRescaler:
         """
         lnj = 0.0
         for i in self._periodic_inds:
-            lnj += self._compactify_log_jacobian_determinant(
+            lnj += _compactify_log_jacobian_determinant(
                 parameters[..., i].detach(), -np.pi, np.pi)
-            parameters[..., i] = self._compactify(
-                parameters[..., i], -np.pi, np.pi)
+            parameters[..., i] = _compactify(parameters[..., i], -np.pi, np.pi)
         return lnj
 
     def _remove_scale(self, chol_inv, parameters):
@@ -871,7 +858,7 @@ class ParameterRescaler:
                 if par not in self.periodic_params]
 
 
-def _decompactify_gaussian(compact_value, a, b, eps=1e-7):
+def _decompactify(compact_value, a, b, eps=1e-7):
     """
     Map a uniform variable on [a, b] to a standard Gaussian.
 
@@ -895,7 +882,7 @@ def _decompactify_gaussian(compact_value, a, b, eps=1e-7):
     return torch.distributions.Normal(0.0, 1.0).icdf(u)
 
 
-def _compactify_gaussian(value, a, b):
+def _compactify(value, a, b):
     """
     Map a standard Gaussian variable to a uniform value on [a, b]
     using the CDF of the standard normal distribution.
@@ -916,7 +903,7 @@ def _compactify_gaussian(value, a, b):
     return a + (b - a) * u
 
 
-def _compactify_log_jacobian_determinant_gaussian(value, a, b):
+def _compactify_log_jacobian_determinant(value, a, b):
     """
     Log of the Jacobian determinant for transforming a standard
     Gaussian to a uniform [a, b] via CDF.

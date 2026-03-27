@@ -77,14 +77,8 @@ class IntegrationTestCase(TestCase):
         weighting.main(priordir)
 
         # Train rescaler for a couple epochs
-        # - gaussian
         extra_lines = textwrap.dedent('''\
             RESCALER_TRAIN_KWARGS.update(max_num_epochs=2)
-            ''')
-        self._train_rescaler(priordir, extra_lines)
-        # - tanh
-        extra_lines += textwrap.dedent('''\
-            COMPACTIFICATION = 'tanh'
             ''')
         rescalerdir = self._train_rescaler(priordir, extra_lines)
 
