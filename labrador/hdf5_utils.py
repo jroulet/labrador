@@ -10,7 +10,7 @@ from . import __version__
 
 def read_hdf5(file_path):
     """
-    Read a file saved with ``HDF5Mixin.to_hdf5()``.
+    Read a file saved with :py:meth:`HDF5Mixin.to_hdf5`.
 
     Parameters
     ----------
@@ -47,7 +47,7 @@ class HDF5Mixin(cogwheel.utils.InitDictMixin):
         """
         Save a dictionary to an HDF5 file.
 
-        The file can be loaded with `read_hdf5()`.
+        The file can be loaded with :py:func:`read_hdf5`.
         """
         with h5py.File(file_path, 'w') as hdf5_file:
             _serialize_to_hdf5(hdf5_file, self.to_dict())

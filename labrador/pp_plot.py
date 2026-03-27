@@ -35,7 +35,7 @@ def pp_plot(credible_intervals, ax=None, show_legend=True,
     Parameters
     ----------
     credible_intervals : pandas.DataFrame
-        E.g. the output of ``get_credible_intervals``.
+        E.g. the output of :py:func:`get_credible_intervals`.
         Columns are parameter names, rows are injections. Values are the
         credible interval that our inference assigns to the truth.
         May contain an additional column 'weights' with the ratio of the

@@ -159,13 +159,17 @@ class RelativeBinningSplines(hdf5_utils.HDF5Mixin, utils.JSONMixin):
 
     def get_summary_weights(self, integrand):
         """
-        Return summary data to compute efficiently integrals of the form
-            4 integral g(f) r(f) df,
-        where r(f) is a smooth function.
-        The above integral is approximated by
+        Return summary data to compute integrals of the form::
+
+            4 ∫ g(f) r(f) df,
+
+        where ``r(f)`` is a smooth function.
+        The above integral is approximated by::
+
             summary_weights * r(fbin)
-        which is the exact result of replacing `r(f)` by a spline that
-        interpolates it at `fbin`.
+
+        which is the exact result of replacing ``r(f)`` by a spline that
+        interpolates it at ``fbin``.
 
         Parameters
         ----------

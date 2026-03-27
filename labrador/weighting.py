@@ -1,11 +1,11 @@
 """Compute weights to go from a simulation prior to a physical prior."""
 import argparse
+import functools
 import json
 import os
 from pathlib import Path
 
 import xgboost
-import functools
 import numpy as np
 import pandas as pd
 import cogwheel.utils
@@ -207,7 +207,7 @@ def main(priordir, recompute_existing=False):
     There is a separate directory for the training and test set inside
     priordir with a weights file.
     Each file contains importance sampling weights for each simulation.
-    The weights are defined as
+    The weights are defined as::
 
         ln_weights = ln_prior_ratios - ln_counterweights
         ln_counterweights = coef_mu * mu + coef_sigma * sigma

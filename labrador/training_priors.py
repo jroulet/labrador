@@ -120,7 +120,9 @@ class UniformAmplitudePrior(UniformPriorMixin, Prior):
         """
         Return log of the Jacobian determinant of `.transform`.
 
-        I.e.: log|∂{amp_refdet} / ∂{d_luminosity}|
+        I.e.::
+
+            log|∂{amp_refdet} / ∂{d_luminosity}|
         """
         amp_refdet = self.inverse_transform(
             d_luminosity, ra, dec, psi, iota, m1, m2)['amp_refdet']

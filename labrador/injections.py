@@ -240,7 +240,7 @@ def submit_condor(priordir,
     ----------
     priordir : os.PathLike
         Directory inside ``rundir``, corresponding to a physical prior.
-        See :py:func:`utils.setup_priordir`.
+        See :py:func:`labrador.utils.setup_priordir`.
 
     request_cpus, request_memory, request_disk : int or str
         Specifications in the HTCondor submit file.

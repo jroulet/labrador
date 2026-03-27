@@ -14,14 +14,17 @@ class PNCoordinatesPrior2(Prior):
     & Tagoshi 2203.05216].
 
     These are quite similar except:
+
     1. We normalize the eigenvectors of the Fisher matrix by the square
-      root of their eigenvalue, so the Fisher errorbars in (mu1, mu2)
-      are 1/snr
-    2. Instead of sampling in s2z we use cums2z, the cumulative of the
-      s2z conditional on beta, eta and the fact that |s1z| < 1.
-      cums2z = ∫_a^b U(s2z) d{s2z}
-      a = s2z(beta, eta, s1z=1)
-      b = s2z(beta, eta, s1z=-1).
+       root of their eigenvalue, so the Fisher errorbars in (mu1, mu2)
+       are 1/snr
+    2. Instead of sampling in ``s2z`` we use ``cums2z``, the cumulative
+       of ``s2z`` conditional on ``beta``, ``eta``, and the fact that
+       ``|s1z| < 1``::
+
+        cums2z = ∫_a^b U(s2z) d{s2z}
+        a = s2z(beta, eta, s1z=1)
+        b = s2z(beta, eta, s1z=-1).
     """
     DEFAULT_EIGVECS = np.array([[-1.57616411, -0.04111396],
                                 [-0.54265283,  0.08432735],
@@ -38,7 +41,7 @@ class PNCoordinatesPrior2(Prior):
         ----------
         eigvecs : float array of shape (3, 2)
             Fisher matrix eigenvectors, see
-            ``.eigvecs_from_reference_waveform_finder()``.
+            :py:meth:`eigvecs_from_reference_waveform_finder`.
 
         f_ref : float
             Reference frequency (Hz).

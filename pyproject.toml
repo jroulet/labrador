@@ -17,6 +17,13 @@ maintainers = [
 ]
 readme = "README.md"
 
+[project.optional-dependencies]
+docs = [
+  "sphinx",
+  "numpydoc",
+  "furo",
+]
+
 [project.urls]
 "Source" = "https://github.com/jroulet/labrador"
 

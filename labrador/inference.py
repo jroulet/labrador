@@ -180,7 +180,7 @@ def get_ref_amp_phase(data_config, event_data, m1, m2,
     """
     Return reference amplitude and phase to initialize maximization.
 
-    Only the time coordinate is optimized, within t_range.
+    Only the time coordinate is optimized, within `t_range`.
 
     Returns
     -------
@@ -287,7 +287,7 @@ def get_event_data_with_training_detectors(data_config, event):
     Parameters
     ----------
     data_config : module
-        Output of :py:func:`utils.get_data_config`.
+        Output of :py:func:`labrador.utils.load_data_config`.
 
     event : cogwheel.data.EventData, str
         Event data or event name (the latter assumes the event is in
@@ -345,7 +345,7 @@ def mimic_fiducial_wht_filter(data_config, event_data):
     Parameters
     ----------
     data_config : module
-        Output of utils.load_data_config
+        Output of :py:func:`labrador.utils.load_data_config`
 
     event_data : cogwheel.data.EventData
         Contains a gravitational wave event (and a whitening filter).

@@ -333,8 +333,8 @@ def setup_condor_sub(rundir, request_memory='24G', request_disk='4G',
     Parameters
     ----------
     rundir : os.PathLike
-        Simulations directory, on which `simulation` has already
-        been run.
+        Simulations directory, on which
+        :py:func:`labrador.simulation.main` has already been run.
 
     Returns
     -------

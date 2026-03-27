@@ -9,6 +9,7 @@ data
 *.egg-info/
 dist/
 build/
+generated/
 
 *.pdf
 *.pyc

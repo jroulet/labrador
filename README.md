@@ -1,6 +1,6 @@
-# `labrador`
+![labrador](https://raw.githubusercontent.com/jroulet/labrador/cleanup/docs/source/_static/labrador.jpg)
 
-Combine simulation-based inference with gravitational-wave specific tricks such as relative binning, folding, and coordinate transformations, to get the best of both worlds.
+`labrador` combines simulation-based inference with gravitational-wave specific tricks such as relative binning, folding, and coordinate transformations, to get the best of both worlds.
 
 ## Installation
 ### Clone repository:
@@ -54,3 +54,47 @@ python -m labrador.training SBIDIR
 lab-setup-unfolderdir RESCALERDIR
 python -m labrador.unfolding UNFOLDERDIR
 ```
+
+## Troubleshooting
+
+### If jobs are held
+
+Diagnose with
+
+    condor_q
+
+Find which jobs were held:
+
+    cd {rundir}/submission_scripts
+    grep -R held
+
+This will point to the relevant log files. Example output:
+
+    simulation-7190000_7200000_train.log:012 (527015058.719.000) 2026-03-18 14:57:48 Job was held.
+    simulation-4890000_4900000_train.log:012 (527015058.489.000) 2026-03-18 14:51:48 Job was held.
+    simulation-5080000_5090000_train.log:012 (527015058.508.000) 2026-03-18 14:52:48 Job was held.
+
+Check the logs. Two causes for eviction are
+
+1. Insufficient resources requested (e.g. memory), in that case edit the relevant .sub file and resubmit.
+
+2. Bad nodes.
+In that case the NumShadowStarts variable will be high:
+
+        grep -R NumShadowStarts
+
+    Example output
+
+        simulation-7190000_7200000_train.log:   NumShadowStarts 148 > 100.
+        simulation-4890000_4900000_train.log:   NumShadowStarts 118 > 100.
+        simulation-5080000_5090000_train.log:   NumShadowStarts 127 > 100.
+
+    Reset like so:
+
+        condor_qedit 527015058.719 NumShadowStarts 0
+        condor_qedit 527015058.489 NumShadowStarts 0
+        condor_qedit 527015058.508 NumShadowStarts 0
+
+    (get the correct job numbers for your case from the `grep -R held` output). Then resubmit:
+
+        condor_release albert.einstein

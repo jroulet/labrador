@@ -189,8 +189,9 @@ class Posterior:
 
         lnj : (n_samples,) float array
             Logarithm of the Jacobian of the transformation from
-            folded-rescaled to unfolded standard parameters.
-            log |∂{standard} / ∂{folded_rescaled}|
+            folded-rescaled to unfolded standard parameters::
+
+                log |∂{standard} / ∂{folded_rescaled}|
         """
         if 'ra' in transform.standard_params and tgps_actual is None:
             raise ValueError('Unknown `tgps_actual`.')
@@ -247,8 +248,8 @@ class Posterior:
         """
         From physical parameters to folded-rescaled parameters.
 
-        Inverse of ``.unrescale_unfold_transform()`` (but note that
-        ``.unrescale_unfold_transform()`` is not the inverse of this
+        Inverse of :py:meth:`unrescale_unfold_transform` (but note that
+        :py:meth:`unrescale_unfold_transform` is not the inverse of this
         function because folding is not invertible).
 
         Parameters
@@ -425,7 +426,7 @@ class ImportancePosterior:
             Amortized likelihood-free posterior estimator.
 
         compressed_data : array
-            See :py:func:`compression.compress_data`.
+            See :py:func:`labrador.compression.compress_data`.
 
         transform : transform.TransformMixin
             Maps folded_sampled_parameters to standard_parameters.
