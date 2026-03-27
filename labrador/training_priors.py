@@ -4,8 +4,7 @@ import numpy as np
 from cogwheel.prior import (
     Prior,
     UniformPriorMixin,
-    IdentityTransformMixin,
-    FixedPrior)
+    IdentityTransformMixin)
 
 import cogwheel.utils
 from cogwheel.gw_prior.combined import (
@@ -28,12 +27,6 @@ from . import transform
 # Modular priors:
 
 # pylint: disable=arguments-differ
-
-
-class ZeroAlignedSpinsPrior(FixedPrior):
-    """Set inplane spins to zero."""
-    standard_par_dic = {'s1z': 0.,
-                        's2z': 0.,}
 
 
 class LogMassPrior(UniformPriorMixin, Prior):
@@ -165,7 +158,8 @@ class PhasePrior(UniformPriorMixin, IdentityTransformMixin, Prior):
 # ----------------------------------------------------------------------
 # Combine the modular priors:
 
-class NoSpinTrainingPrior(RegisteredPriorMixin, CombinedPrior):
+
+class AlignedSpinTrainingPrior(RegisteredPriorMixin, CombinedPrior):
     """Intended for generating training parameters."""
     prior_classes = [LogMassPrior,
                      IsotropicInclinationPrior,
@@ -174,21 +168,12 @@ class NoSpinTrainingPrior(RegisteredPriorMixin, CombinedPrior):
                      UniformPolarizationPrior,
                      PhasePrior,
                      UniformAmplitudePrior,
-                     ZeroAlignedSpinsPrior,
+                     UniformEffectiveSpinPrior,
                      ZeroInplaneSpinsPrior,
                      ZeroTidalDeformabilityPrior,
                      FixedReferenceFrequencyPrior]
 
-    default_transform_class = transform.TargetSpaceTransformNoSpins
-
-
-class AlignedSpinTrainingPrior(RegisteredPriorMixin, CombinedPrior):
-    """Intended for generating training parameters."""
-    prior_classes = cogwheel.utils.replace(NoSpinTrainingPrior.prior_classes,
-                                           ZeroAlignedSpinsPrior,
-                                           UniformEffectiveSpinPrior)
-
-    default_transform_class = transform.TargetSpaceTransformAlignedSpins
+    default_transform_class = transform.BasicAlignedSpinsTransform
 
 
 class AlignedSpinUniformDHatTrainingPrior(RegisteredPriorMixin,
@@ -199,4 +184,4 @@ class AlignedSpinUniformDHatTrainingPrior(RegisteredPriorMixin,
         UniformAmplitudePrior,
         UniformDHatPrior)
 
-    default_transform_class = transform.TargetSpaceTransformAlignedSpins
+    default_transform_class = transform.BasicAlignedSpinsTransform
