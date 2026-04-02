@@ -98,3 +98,8 @@ In that case the NumShadowStarts variable will be high:
     (get the correct job numbers for your case from the `grep -R held` output). Then resubmit:
 
         condor_release albert.einstein
+
+
+## Acknowledgements
+
+We are grateful to Eliot Finch for designing the `labrador` logo.
