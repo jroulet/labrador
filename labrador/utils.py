@@ -7,14 +7,14 @@ The user only edits the files `data_config.py`, `prior_config.py`,
 `rescaler_config.py`, `sbi_config.py` and `unfolding_config.py` by hand,
 all the rest are created by the various modules of the code::
 
-    {parentdir}/                                   # E.g. 'labrador/data/'
-    └── {rundir}/                                  # E.g. 'run_0'
+    {parentdir}/                               # E.g. 'labrador/data/'
+    └── {rundir}/                              # E.g. 'run_0'
         ├── data_config.py
         ├── JSONStandardScaler.json
         ├── SVDCompressor.npz
         ├── version.txt
         ├── waveform_model.h5
-        ├── {datadir}/                             # 'training_data' or 'test_data'
+        ├── {datadir}/                         # 'training_data' or 'test_data'
         │   ├── compressed_data.npy
         │   ├── folded_sampled_params.h5
         │   ├── mask.npy
@@ -22,24 +22,24 @@ all the rest are created by the various modules of the code::
         │   ├── simulation_parameters.feather
         │   ├── simulation_time.npy
         │   └── unfolding_labels.h5
-        └── {priordir}/                            # E.g. 'prior_0'
+        └── {priordir}/                        # E.g. 'prior_0'
             ├── coefficients.json
             ├── ln-prior-ratio_regressor_mu.ubj
             ├── ln-prior-ratio_regressor_sigma.ubj
             ├── prior_config.py
-            ├── {datadir}/                         # 'training_data' or 'test_data'
+            ├── {datadir}/                     # 'training_data' or 'test_data'
             │   ├── ln_prior_ratios.npy
             │   └── weights.npy
-            └── {rescalerdir}/                     # E.g. 'rescaler_0'
+            └── {rescalerdir}/                 # E.g. 'rescaler_0'
                 ├── parameter_rescaler.pth
                 ├── parameter_rescaler_training.pth
                 ├── rescaler_config.py
-                ├── {datadir}/                     # 'training_data' or 'test_data'
+                ├── {datadir}/                 # 'training_data' or 'test_data'
                 │   └── rescaled_parameters.npy
-                ├── {sbidir}/                      # E.g. 'sbi_0'
+                ├── {sbidir}/                  # E.g. 'sbi_0'
                 │   ├── posterior.pt
                 │   └── sbi_config.py
-                └── {unfolderdir}/                 # E.g. 'unfolder_0'
+                └── {unfolderdir}/             # E.g. 'unfolder_0'
                     ├── unfolding_classifier.ubj
                     └── unfolding_config.py
 

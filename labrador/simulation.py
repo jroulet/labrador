@@ -773,8 +773,8 @@ def _setup_condor_for_simulate_chunks(rundir,
     Parameters
     ----------
     rundir : os.PathLike
-        Run directory, should contain training and test directories
-        with simulation parameters.
+        Run directory, should contain training and test directories with
+        simulation parameters.
 
     Returns
     -------
@@ -844,8 +844,8 @@ def _setup_condor_for_merge_chunks(rundir, delete_chunks_after_merging,
                                    request_memory='1G',
                                    **submit_kwargs):
     """
-    Set up HTCondor submission script to run `merge_chunks` on
-    chunks of data.
+    Set up HTCondor submission script to run `merge_chunks` on chunks of
+    data.
 
     Parameters
     ----------
