@@ -15,7 +15,6 @@ import csv
 import functools
 import os
 from pathlib import Path
-import pstats
 import sys
 import textwrap
 
@@ -56,7 +55,8 @@ def setup_simulator(rundir):
 
 
 def simulate_and_preprocess_sample(simulator, data_preprocessor,
-                                   parameters, transform_class):
+                                   parameters, transform_class,
+                                   seed=None):
     """
     Generate a signal based on parameters, add a noise realization, find
     a reference waveform and preprocess the data by heterodyning.
@@ -79,9 +79,12 @@ def simulate_and_preprocess_sample(simulator, data_preprocessor,
         Index of the region that the parameters belong to before
         applying folding. Takes a value between
         [0, 2**n_folded_parameters).
+
+    seed : int
+        Determines the Gaussian noise realization of the simulated data.
     """
     simulated_input = simulator.generate_data_and_reference_waveform(
-        parameters)
+        parameters, seed)
 
     preprocessed_data, transform_kwargs = data_preprocessor.preprocess_data(
         **simulated_input)
@@ -138,7 +141,8 @@ def simulate_and_preprocess_samples(simulator,
                                     data_preprocessor,
                                     simulation_parameters,
                                     transform_class,
-                                    processes):
+                                    processes,
+                                    seed_suffix):
     """
     Run :py:func:`simulate_and_preprocess_sample` on a set of simulation
     parameter samples in parallel using ``multiprocessing``.
@@ -163,11 +167,16 @@ def simulate_and_preprocess_samples(simulator,
     simulation_parameters : pandas.DataFrame
         Columns represent different parameters, each row is a
         simulation. The columns must contain all
-        ``simulator._waveform_generator.params``.
+        ``simulator._waveform_generator.params``. The index will be used
+        as seed for the Gaussian noise.
 
     processes : int or None
         The number of worker processes to use. If `processes` is
         `None` then the number returned by `os.cpu_count()` is used.
+
+    seed_suffix : e.g. bool
+        Used to prevent the training and test sets from having the same
+        noise realizations.
 
     Returns
     -------
@@ -187,13 +196,22 @@ def simulate_and_preprocess_samples(simulator,
         Index of the region that the parameters of each simulation
         belong to before applying folding. Takes values between
         [0, 2**n_folded_parameters).
+
+    cpu_time : float
+        Total CPU time in seconds spent across all processes.
     """
     args_generator = (
-        (simulator, data_preprocessor, parameters, transform_class)
-        for _, parameters in simulation_parameters.iterrows()
+        (
+            simulator,
+            data_preprocessor,
+            parameters,
+            transform_class,
+            (seed_prefix, seed_suffix)
+        )
+        for seed_prefix, parameters in simulation_parameters.iterrows()
     )
 
-    results, stats = utils.multiprocessing_starmap_profiled(
+    results, time = utils.multiprocessing_starmap_timed(
         simulate_and_preprocess_sample, args_generator, processes)
 
     preprocessed_rows, folded_sampled_parameters, unfolding_labels = zip(
@@ -215,7 +233,7 @@ def simulate_and_preprocess_samples(simulator,
     return (preprocessed_data,
             np.array(folded_sampled_parameters, np.float32),
             np.array(unfolding_labels),
-            stats)
+            time)
 
 
 class Simulator:
@@ -241,7 +259,8 @@ class Simulator:
         self._waveform_generator = waveform.WaveformGenerator.from_event_data(
             dummy_event_data, approximant)
 
-    def generate_data_and_reference_waveform(self, parameters):
+    def generate_data_and_reference_waveform(self, parameters,
+                                             seed=None):
         """
         Generate data similar to what a user would provide.
 
@@ -250,6 +269,10 @@ class Simulator:
         parameters : dict-like
             Physical parameters of the signal to simulate. Must contain
             keys for all ``._waveform_generator.params``.
+
+        seed : int
+            Determines the Gaussian noise realization of the simulated
+            data.
 
         Returns
         -------
@@ -262,12 +285,13 @@ class Simulator:
 
             These can be passed to ``DataPreprocessor.preprocess_data``.
         """
-        event_data = data.EventData.gaussian_noise(**self.event_data_kwargs)
+        event_data = data.EventData.gaussian_noise(
+            **self.event_data_kwargs, seed=seed)
         event_data.inject_signal(parameters, self.approximant)
         frequencies = event_data.frequencies[event_data.fslice]
 
-        # Cheating: user "knows" true parameters. TODO improve this?
-        # Although in principle our likelihood maximization erases this...
+        # Cheating: knows true parameters, but likelihood maximization
+        # erases this.
         signal = self._waveform_generator.get_strain_at_detectors(
             frequencies, parameters)
         mchirp = gw_utils.m1m2_to_mchirp(**parameters[['m1', 'm2']])
@@ -374,12 +398,19 @@ class DataPreprocessor:
         Returns
         -------
         preprocessed_data : dict
-            Contains the following entries
-                * heterodyned_data
-                * heterodyned_signal
-                * fbin
-                * coef
-                * processed_coef
+            Contains the following entries:
+
+            * heterodyned_data
+            * fbin
+            * coef
+            * processed_coef
+            * h0_h0
+
+            Plus, only if `event_data` is an injection:
+
+            * heterodyned_signal
+            * d_h
+            * h_h
 
         transform_kwargs : dict
             Contains event-dependent keyword arguments to the target-
@@ -402,9 +433,17 @@ class DataPreprocessor:
         assert np.array_equal(frequencies,
                               event_data.frequencies[event_data.fslice])
 
+        rb_splines = self.waveform_model.phase_model.rb_splines
+        if not np.array_equal(frequencies, rb_splines.frequencies):
+            print(f'Changing {self.__class__.__name__} frequency grid '
+                  'to match that of `event_data`.')
+            self.waveform_model.phase_model.rb_splines \
+                = rb_splines.reinstantiate(frequencies=frequencies,
+                                           pn_phase_tol=None,
+                                           fbin=rb_splines.fbin)
+
         like = semicoherent_likelihood.SemicoherentLikelihood(
             event_data=event_data,
-            ref_waveform_phase=ref_waveform_phase,
             waveform_model=self.waveform_model,
             n_coherent_segments=self.n_coherent_segments)
 
@@ -420,19 +459,25 @@ class DataPreprocessor:
 
         preprocessed_data = {
             'heterodyned_data': heterodyned_data,
-            'heterodyned_signal': heterodyned_signal,
             'fbin': fbin,
             'coef': coef,
             'processed_coef': processed_coef,
             'h0_h0': h0_h0,
-            'd_h': event_data.injection['d_h'],
-            'h_h': event_data.injection['h_h']}
+        }
+
+        if event_data.injection:
+            preprocessed_data['heterodyned_signal'] = heterodyned_signal
+            preprocessed_data['d_h'] = event_data.injection['d_h']
+            preprocessed_data['h_h'] = event_data.injection['h_h']
 
         return preprocessed_data
 
 
 def _check_rundir(rundir):
-    utils.check_version(rundir)
+    try:
+        utils.check_version(rundir)
+    except FileNotFoundError as err:
+        raise RuntimeError('Run `labrador.generate_parameters` first') from err
 
     datadirs = rundir/utils.TRAINING_DIR, rundir/utils.TEST_DIR
 
@@ -461,9 +506,10 @@ def _check_rundir(rundir):
 
 # ----------------------------------------------------------------------
 # Chunking functions
+
 CHUNKS_DIRNAME = 'chunks'
 CHUNKS_FILENAME = 'chunks.csv'
-PROFILE_FILENAME = 'simulation.profile'
+PROFILE_FILENAME = 'simulation_time.npy'
 
 
 def _setup_chunks(rundir, chunk_size):
@@ -522,6 +568,7 @@ def simulate_chunk(datadir, i_start, i_end, processes):
         Defines a command-line interface to this function.
     """
     datadir = Path(datadir).resolve()
+    seed_suffix = datadir.name == utils.TRAINING_DIR
     rundir = datadir.parent
     chunksdir = datadir/CHUNKS_DIRNAME
     if not chunksdir.exists():
@@ -548,12 +595,13 @@ def simulate_chunk(datadir, i_start, i_end, processes):
         preprocessed_data,
         folded_sampled_parameters,
         unfolding_labels,
-        chunk_stats,
+        chunk_time,
     ) = simulate_and_preprocess_samples(simulator,
                                         data_preprocessor,
                                         parameters_chunk,
                                         transform_class=transform_class,
-                                        processes=processes)
+                                        processes=processes,
+                                        seed_suffix=seed_suffix)
 
     datasets = (
         preprocessed_data,
@@ -566,8 +614,8 @@ def simulate_chunk(datadir, i_start, i_end, processes):
             for key, arr in dataset.items():
                 file.create_dataset(key, data=arr)
 
-    chunk_stats.dump_stats(
-        _get_chunkpath(chunksdir, PROFILE_FILENAME, i_start, i_end))
+    np.save(_get_chunkpath(chunksdir, PROFILE_FILENAME, i_start, i_end),
+            chunk_time)
 
 
 def merge_chunks(rundir, delete_chunks_after_merging=True):
@@ -638,7 +686,9 @@ def _merge_chunks_in_datadir(datadir, delete_chunks_after_merging):
     # Profiling statistics:
     pattern = _get_chunkpath('', PROFILE_FILENAME, '*', '*').name
     chunkpaths = list(chunksdir.glob(pattern))
-    pstats.Stats(*map(str, chunkpaths)).dump_stats(datadir/PROFILE_FILENAME)
+
+    # pstats.Stats(*map(str, chunkpaths)).dump_stats(datadir/PROFILE_FILENAME)
+    np.save(datadir/PROFILE_FILENAME, sum(map(np.load, chunkpaths)))
 
     all_chunkpaths.extend(chunkpaths)
 
@@ -668,11 +718,12 @@ def _load_chunk_from_feather(feather_path: str, i_start: int,
                              i_end: int) -> pd.DataFrame:
     table = pyarrow.feather.read_table(feather_path, memory_map=True)
     chunk = table.slice(offset=i_start, length=i_end-i_start)
-    return chunk.to_pandas()
+    return chunk.to_pandas().set_index(pd.RangeIndex(i_start, i_end))
 
 
 # ----------------------------------------------------------------------
 # HTCondor functions
+
 def setup_condor_sub(rundir, chunk_size,
                      delete_chunks_after_merging=True,
                      **submit_kwargs):
@@ -722,8 +773,8 @@ def _setup_condor_for_simulate_chunks(rundir,
     Parameters
     ----------
     rundir : os.PathLike
-        Run directory, should contain training and test directories
-        with simulation parameters.
+        Run directory, should contain training and test directories with
+        simulation parameters.
 
     Returns
     -------
@@ -793,8 +844,8 @@ def _setup_condor_for_merge_chunks(rundir, delete_chunks_after_merging,
                                    request_memory='1G',
                                    **submit_kwargs):
     """
-    Set up HTCondor submission script to run `merge_chunks` on
-    chunks of data.
+    Set up HTCondor submission script to run `merge_chunks` on chunks of
+    data.
 
     Parameters
     ----------
@@ -825,6 +876,7 @@ def _setup_condor_for_merge_chunks(rundir, delete_chunks_after_merging,
 
 # ----------------------------------------------------------------------
 # Functions to simulate data in the local computer
+
 def main(rundir, processes=None):
     """Generate and preprocess training and test data."""
     rundir = Path(rundir)
@@ -840,21 +892,23 @@ def main(rundir, processes=None):
 def _populate_datadir(datadir, simulator, data_preprocessor,
                       transform_class, processes, chunk_size=10_000):
     simulation_parameters = pd.read_feather(datadir/utils.PARAMETERS_FILENAME)
+    seed_suffix = datadir.name == utils.TRAINING_DIR
 
-    stats = pstats.Stats()
+    time = 0.0
 
     for chunk_start in range(0, len(simulation_parameters), chunk_size):
         (
             preprocessed_data,
             folded_sampled_parameters,
             unfolding_labels,
-            chunk_stats
+            chunk_time
         ) = simulate_and_preprocess_samples(
             simulator,
             data_preprocessor,
             simulation_parameters[chunk_start : chunk_start + chunk_size],
             transform_class=transform_class,
-            processes=processes
+            processes=processes,
+            seed_suffix=seed_suffix
         )
 
         _append_to_hdf5(datadir/utils.PREPROCESSED_DATA_FILENAME,
@@ -864,9 +918,9 @@ def _populate_datadir(datadir, simulator, data_preprocessor,
         _append_to_hdf5(datadir/utils.UNFOLDING_LABELS_FILENAME,
                         dataset=unfolding_labels)
 
-        stats.add(chunk_stats)
+        time += chunk_time
 
-    stats.dump_stats(datadir/'simulation_profiling')
+    np.save(datadir/PROFILE_FILENAME, time)
 
 
 def _append_to_hdf5(filename, **arrays):

@@ -9,7 +9,9 @@ data
 *.egg-info/
 dist/
 build/
+generated/
 
+*.pdf
 *.pyc
 __pycache__
 .ipynb_checkpoints

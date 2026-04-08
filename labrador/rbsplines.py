@@ -41,7 +41,7 @@ class RelativeBinningSplines(hdf5_utils.HDF5Mixin, utils.JSONMixin):
         if (fbin is None) == (pn_phase_tol is None):
             raise ValueError('Pass exactly one of `fbin` or `pn_phase_tol`.')
 
-        self.frequencies = frequencies
+        self.frequencies = np.asarray(frequencies)
         self._coefficients = None  # Set by ``._set_splines``
         self._basis_splines = None  # Set by ``._set_splines``
 
@@ -159,13 +159,17 @@ class RelativeBinningSplines(hdf5_utils.HDF5Mixin, utils.JSONMixin):
 
     def get_summary_weights(self, integrand):
         """
-        Return summary data to compute efficiently integrals of the form
-            4 integral g(f) r(f) df,
-        where r(f) is a smooth function.
-        The above integral is approximated by
+        Return summary data to compute integrals of the form::
+
+            4 ∫ g(f) r(f) df,
+
+        where ``r(f)`` is a smooth function.
+        The above integral is approximated by::
+
             summary_weights * r(fbin)
-        which is the exact result of replacing `r(f)` by a spline that
-        interpolates it at `fbin`.
+
+        which is the exact result of replacing ``r(f)`` by a spline that
+        interpolates it at ``fbin``.
 
         Parameters
         ----------

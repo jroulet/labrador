@@ -49,12 +49,13 @@ N_TRAINING_SIMULATIONS = 10**2  # Increase for real-life usage!
 N_TEST_SIMULATIONS = 10**2
 QMC = True
 
+INCLUDE_GLOBAL_PHASE_AND_TIME = False
+
 PRIOR_CLASS = training_priors.AlignedSpinTrainingPrior
-PHYSICAL_PRIOR_CLASSES = (cogwheel.gw_prior.AlignedSpinIASPrior,)
 
 TRANSFORM_CLASS = PRIOR_CLASS.default_transform_class
 
-APPROXIMANT = 'IMRPhenomD'
+APPROXIMANT = 'IMRPhenomXAS'
 
 MASK_CONDITIONS = [
     ('snr0', np.greater, SNR_MIN),

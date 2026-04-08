@@ -28,13 +28,11 @@ import pandas as pd
 
 from cogwheel import gw_plotting
 
-from . import pp_plot, sbi_hacks, utils, legacy
+from . import pp_plot, sbi_hacks, utils
 
 
 logger = logging.getLogger(__name__)
-
-PARAMETER_RESCALER_TRAINING_FILENAME = 'parameter_rescaler_training.pth'
-PARAMETER_RESCALER_FILENAME = 'parameter_rescaler.pth'
+logging.getLogger('matplotlib').setLevel(logging.WARNING)
 
 
 def plot_loss(rescalerdir, ax=None):
@@ -55,7 +53,8 @@ def plot_loss(rescalerdir, ax=None):
     """
     rescalerdir = Path(rescalerdir)
     training_info = torch.load(
-        rescalerdir/PARAMETER_RESCALER_TRAINING_FILENAME, weights_only=True)
+        rescalerdir/utils.PARAMETER_RESCALER_TRAINING_FILENAME,
+        weights_only=True)
 
     if ax is None:
         _, ax = plt.subplots()
@@ -96,22 +95,10 @@ class ParameterRescaler:
         assert set(self.bounded_params) <= self.folded_range_dic.keys()
         assert set(self.periodic_params) <= self.folded_range_dic.keys()
 
-        compactification = getattr(
-            self.rescaler_config, 'COMPACTIFICATION', 'tanh')
-
-        if compactification == 'tanh':
-            self._compactify = legacy._compactify_tanh
-            self._decompactify = legacy._decompactify_tanh
-            self._compactify_log_jacobian_determinant \
-                = legacy._compactify_log_jacobian_determinant_tanh
-        elif compactification == 'gaussian':
-            self._compactify = _compactify_gaussian
-            self._decompactify = _decompactify_gaussian
-            self._compactify_log_jacobian_determinant \
-                = _compactify_log_jacobian_determinant_gaussian
-        else:
-            raise ValueError(
-                f'Unrecognized {self.rescaler_config.COMPACTIFICATION=}')
+        # Check for deprecated `COMPACTIFICATION`
+        if getattr(self.rescaler_config, 'COMPACTIFICATION', 'gaussian'
+                  ) != 'gaussian':
+            raise ValueError('COMPACTIFICATION no longer supported')
 
         device = self.rescaler_config.DEVICE
         if device is None:
@@ -150,7 +137,7 @@ class ParameterRescaler:
         self._moments_model = None  # Set by ._{load|fit}_model
         self._training_info = None  # Set by ._{load|fit}_model
 
-        if (self.rescalerdir/PARAMETER_RESCALER_FILENAME).exists():
+        if (self.rescalerdir/utils.PARAMETER_RESCALER_FILENAME).exists():
             self._load_model()
         else:  # Model has not been trained yet
             logger.info('Did not find existing rescaler, will train one...')
@@ -348,7 +335,7 @@ class ParameterRescaler:
         """
         for i, par in zip(self._bounded_nonperiodic_inds,
                           self.bounded_nonperiodic_params):
-            parameters[..., i] = self._decompactify(
+            parameters[..., i] = _decompactify(
                 parameters[..., i], *self.folded_range_dic[par])
 
     def _compactify_bounded_nonperiodic(self, parameters):
@@ -363,9 +350,9 @@ class ParameterRescaler:
         lnj = 0.0
         for i, par in zip(self._bounded_nonperiodic_inds,
                           self.bounded_nonperiodic_params):
-            lnj += self._compactify_log_jacobian_determinant(
+            lnj += _compactify_log_jacobian_determinant(
                 parameters[..., i].detach(), *self.folded_range_dic[par])
-            parameters[..., i] = self._compactify(parameters[..., i],
+            parameters[..., i] = _compactify(parameters[..., i],
                                                   *self.folded_range_dic[par])
 
         return lnj
@@ -501,8 +488,8 @@ class ParameterRescaler:
         (-pi, pi), and had their circular mean subtracted.
         """
         for i in self._periodic_inds:
-            parameters[..., i] = self._decompactify(parameters[..., i],
-                                                    -np.pi, np.pi)
+            parameters[..., i] = _decompactify(
+                parameters[..., i], -np.pi, np.pi)
 
     def _compactify_periodic(self, parameters):
         """
@@ -518,10 +505,9 @@ class ParameterRescaler:
         """
         lnj = 0.0
         for i in self._periodic_inds:
-            lnj += self._compactify_log_jacobian_determinant(
+            lnj += _compactify_log_jacobian_determinant(
                 parameters[..., i].detach(), -np.pi, np.pi)
-            parameters[..., i] = self._compactify(
-                parameters[..., i], -np.pi, np.pi)
+            parameters[..., i] = _compactify(parameters[..., i], -np.pi, np.pi)
         return lnj
 
     def _remove_scale(self, chol_inv, parameters):
@@ -543,8 +529,9 @@ class ParameterRescaler:
         Set attributes ``_coefs``, ``_nonperiodic_residuals_scale`` and
         ``_moments_model`` by loading from disk.
         """
-        model_config = torch.load(self.rescalerdir/PARAMETER_RESCALER_FILENAME,
-                                  weights_only=True, map_location=self.device)
+        model_config = torch.load(
+            self.rescalerdir/utils.PARAMETER_RESCALER_FILENAME,
+            weights_only=True, map_location=self.device)
 
         self._coefs = model_config['coefs']
 
@@ -557,7 +544,7 @@ class ParameterRescaler:
             model_config['_MultiLayerPerceptron']).to(self.device)
 
         self._training_info = torch.load(
-            self.rescalerdir/PARAMETER_RESCALER_TRAINING_FILENAME,
+            self.rescalerdir/utils.PARAMETER_RESCALER_TRAINING_FILENAME,
             weights_only=True, map_location=self.device)
 
     def _setup_model(self):
@@ -679,7 +666,7 @@ class ParameterRescaler:
         finally:
             if best_model is not None:
                 torch.save(best_model,
-                           self.rescalerdir/PARAMETER_RESCALER_FILENAME)
+                           self.rescalerdir/utils.PARAMETER_RESCALER_FILENAME)
                 self._save_training_info()
 
         self._load_model()
@@ -703,7 +690,7 @@ class ParameterRescaler:
 
     def _save_training_info(self):
         torch.save(self._training_info,
-                   self.rescalerdir/PARAMETER_RESCALER_TRAINING_FILENAME)
+                   self.rescalerdir/utils.PARAMETER_RESCALER_TRAINING_FILENAME)
         plot_loss(self.rescalerdir)
         plt.savefig(self.rescalerdir/'rescaling_loss.pdf', bbox_inches='tight')
 
@@ -840,13 +827,17 @@ class ParameterRescaler:
     def _get_folded_range_dic(self):
         """
         Return the range_dic of the transform class, setting the value
-        for ``'lnq'`` from the config.
+        for 'mchirp', 'lnq' from the config.
         """
         # Somewhat fragile, but these methods could be overriden if needed
         folded_range_dic = self.data_config.TRANSFORM_CLASS.range_dic.copy()
         if 'lnq' in folded_range_dic:
             folded_range_dic['lnq'] = (
                 np.log(self.data_config.PRIOR_KWARGS['q_min']), 0.0)
+
+        if 'mchirp' in folded_range_dic:
+            folded_range_dic['mchirp'] \
+                = self.data_config.PRIOR_KWARGS['mchirp_range']
 
         for par in self.data_config.TRANSFORM_CLASS.folded_params:
             # Divide range of folded parameters in two
@@ -867,7 +858,7 @@ class ParameterRescaler:
                 if par not in self.periodic_params]
 
 
-def _decompactify_gaussian(compact_value, a, b, eps=1e-7):
+def _decompactify(compact_value, a, b, eps=1e-7):
     """
     Map a uniform variable on [a, b] to a standard Gaussian.
 
@@ -891,7 +882,7 @@ def _decompactify_gaussian(compact_value, a, b, eps=1e-7):
     return torch.distributions.Normal(0.0, 1.0).icdf(u)
 
 
-def _compactify_gaussian(value, a, b):
+def _compactify(value, a, b):
     """
     Map a standard Gaussian variable to a uniform value on [a, b]
     using the CDF of the standard normal distribution.
@@ -912,7 +903,7 @@ def _compactify_gaussian(value, a, b):
     return a + (b - a) * u
 
 
-def _compactify_log_jacobian_determinant_gaussian(value, a, b):
+def _compactify_log_jacobian_determinant(value, a, b):
     """
     Log of the Jacobian determinant for transforming a standard
     Gaussian to a uniform [a, b] via CDF.

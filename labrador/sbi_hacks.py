@@ -6,9 +6,9 @@ from typing import Any, Callable, Optional, Tuple
 import numpy as np
 from torch import Tensor
 import torch.utils.data
-from sbi.utils.sbiutils import get_simulations_since_round
-from sbi.inference.trainers.npe.npe_base import PosteriorEstimatorTrainer
 
+from sbi.utils.sbiutils import get_simulations_since_round, ImproperEmpirical
+from sbi.inference.trainers.npe.npe_base import PosteriorEstimatorTrainer
 from sbi.inference.trainers.npe.npe_base import (
     Adam,
     ConditionalDensityEstimator,
@@ -109,6 +109,16 @@ class NPEFixedBatches(PosteriorEstimatorTrainer):
 
         super().append_simulations(theta, x, proposal, exclude_invalid_x,
                                    data_device)
+
+        # Patch: an ImproperEmpiricalPrior with more than 2^24
+        # categories crashes when calling `.sample`.
+        max_samples = 2**24
+        if (isinstance(self._prior, ImproperEmpirical)
+                and self._prior.sample_size > max_samples):
+            self._prior = ImproperEmpirical(
+                self._prior._samples[:max_samples].clone(),
+                self._prior._log_weights[:max_samples].clone()
+            )  # Clone to save the memory of the truncated part
 
         return self
 

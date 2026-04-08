@@ -1,5 +1,6 @@
 """Functions for training neural posterior estimators."""
 import argparse
+import datetime
 import logging
 import pickle
 from pathlib import Path
@@ -17,6 +18,7 @@ from . import compression, embedding, sbi_hacks, utils
 
 
 logger = logging.getLogger(__name__)
+logging.getLogger('matplotlib').setLevel(logging.WARNING)
 
 
 def load_posterior(sbidir, device='cpu'):
@@ -83,7 +85,12 @@ def _instantiate_inference(sbidir):
     device = config.DEVICE
     if device is None:
         device = utils.get_best_device()
-        logger.info(f'Using {device=}')
+    else:
+        device = torch.device(device)
+
+    logger.info(f'Using {device=}')
+    if device.type == 'cuda':
+        logger.info(torch.cuda.get_device_name(device))
 
     mask = np.load(datadir/utils.MASK_FILENAME)
 
@@ -158,6 +165,7 @@ def main(sbidir):
     else:
         inference = _instantiate_inference(sbidir)
 
+    start = datetime.datetime.now()
     with Profile() as profiler:
         density_estimator = inference.train(
             **config.TRAIN_KWARGS,
@@ -166,6 +174,8 @@ def main(sbidir):
             lr_scheduler_kwargs=config.LR_SCHEDULER_KWARGS)
 
     profiler.dump_stats(sbidir/'training.profile')
+
+    logger.info(f'Training time: {datetime.datetime.now() - start}')
 
     with open(inference_filename, 'wb') as file:
         pickle.dump(inference, file)

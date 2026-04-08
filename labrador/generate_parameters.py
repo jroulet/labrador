@@ -15,7 +15,7 @@ def _is_uniform_prior(cls):
     """
     Return whether `cls` corresponds to a uniform prior.
 
-    That is: ``True`` if `cls` is a subclass of ``UniformPriorMixin``,
+    That is: ``True`` if `cls` is a subclass of ``UniformPriorMixin`` or
     ``FixedPrior``, or a ``CombinedPrior`` that combines only these;
     ``False`` otherwise.
     """
@@ -122,22 +122,22 @@ def main(rundir):
     rundir = Path(rundir)
     _check_rundir(rundir)
 
-    config = utils.load_data_config(rundir)
+    data_config = utils.load_data_config(rundir)
 
-    prior = config.PRIOR_CLASS(**config.PRIOR_KWARGS)
+    prior = data_config.PRIOR_CLASS(**data_config.PRIOR_KWARGS)
 
     # Test set:
     _write_datadir(prior,
                    rundir/utils.TEST_DIR,
-                   config.N_TEST_SIMULATIONS,
+                   data_config.N_TEST_SIMULATIONS,
                    qmc=False)  # Two different quasirandom sequences can
                                # have weird correlations.
 
     # Training set:
     _write_datadir(prior,
                    rundir/utils.TRAINING_DIR,
-                   config.N_TRAINING_SIMULATIONS,
-                   qmc=config.QMC)
+                   data_config.N_TRAINING_SIMULATIONS,
+                   qmc=data_config.QMC)
 
 
 def _check_rundir(rundir):

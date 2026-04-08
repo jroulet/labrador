@@ -3,40 +3,45 @@ Utility functions and constants.
 
 File structure:
 The final file structure of a trained model should look as below.
-The user only edits the files `data_config.py`, `rescaler_config.py`,
-`sbi_config.py` and `unfolding_config.py` by hand, all the rest are
-created by the various modules of the code.
+The user only edits the files `data_config.py`, `prior_config.py`,
+`rescaler_config.py`, `sbi_config.py` and `unfolding_config.py` by hand,
+all the rest are created by the various modules of the code::
 
-{parentdir}/                                   # E.g. 'coghweel-machine/data/'
-└── {rundir}/                                  # E.g. 'run_0'
-    ├── data_config.py
-    ├── JSONStandardScaler.json
-    ├── SVDCompressor.npz
-    ├── version.txt
-    ├── {datadir}/                             # 'training_data' or 'test_data'
-    │   ├── compressed_data.npy
-    │   ├── folded_sampled_params.h5
-    │   ├── mask.npy
-    │   ├── preprocessed_data.h5
-    │   ├── simulation_parameters.feather
-    │   ├── simulation_profiling
-    │   └── unfolding_labels.h5
-    └── {priordir}/                            # Name of physical-prior class
+    {parentdir}/                               # E.g. 'labrador/data/'
+    └── {rundir}/                              # E.g. 'run_0'
+        ├── data_config.py
+        ├── JSONStandardScaler.json
+        ├── SVDCompressor.npz
+        ├── version.txt
+        ├── waveform_model.h5
         ├── {datadir}/                         # 'training_data' or 'test_data'
-        │   ├── ln_prior_ratios.npy
-        │   └── weights.npy
-        └── {rescalerdir}/                     # E.g. 'rescaler_0'
-            ├── parameter_rescaler.pth
-            ├── parameter_rescaler_training.pth
-            ├── rescaler_config.py
+        │   ├── compressed_data.npy
+        │   ├── folded_sampled_params.h5
+        │   ├── mask.npy
+        │   ├── preprocessed_data.h5
+        │   ├── simulation_parameters.feather
+        │   ├── simulation_time.npy
+        │   └── unfolding_labels.h5
+        └── {priordir}/                        # E.g. 'prior_0'
+            ├── coefficients.json
+            ├── ln-prior-ratio_regressor_mu.ubj
+            ├── ln-prior-ratio_regressor_sigma.ubj
+            ├── prior_config.py
             ├── {datadir}/                     # 'training_data' or 'test_data'
-            │   └── rescaled_params.npy
-            ├── {sbidir}/                      # E.g. 'sbi_0'
-            │   ├── posterior.pt
-            │   └── sbi_config.py
-            └── {unfolderdir}/                 # E.g. 'unfolder_0'
-                ├── unfolding_classifier.ubj
-                └── unfolding_config.py
+            │   ├── ln_prior_ratios.npy
+            │   └── weights.npy
+            └── {rescalerdir}/                 # E.g. 'rescaler_0'
+                ├── parameter_rescaler.pth
+                ├── parameter_rescaler_training.pth
+                ├── rescaler_config.py
+                ├── {datadir}/                 # 'training_data' or 'test_data'
+                │   └── rescaled_parameters.npy
+                ├── {sbidir}/                  # E.g. 'sbi_0'
+                │   ├── posterior.pt
+                │   └── sbi_config.py
+                └── {unfolderdir}/             # E.g. 'unfolder_0'
+                    ├── unfolding_classifier.ubj
+                    └── unfolding_config.py
 
 """
 
@@ -44,70 +49,84 @@ import functools
 import logging
 import multiprocessing
 import os
-import pstats
 import shutil
 import subprocess
+import tarfile
 import tempfile
+import time
 import warnings
 from pathlib import Path
-from cProfile import Profile
-import torch
 import numpy as np
 import pandas as pd
 import h5py
 
 import cogwheel.utils
-import cogwheel.validation
+from cogwheel.validation import load_config
 
 from . import __version__
 
 
 EXAMPLE_CONFIGS_DIR = Path(__file__).parent/'example_configs'
+
 TRAINING_DIR = 'training_data'
 TEST_DIR = 'test_data'
+
 DATA_CONFIG_FILENAME = 'data_config.py'
+PRIOR_CONFIG_FILENAME = 'prior_config.py'
 RESCALER_CONFIG_FILENAME = 'rescaler_config.py'
 SBI_CONFIG_FILENAME = 'sbi_config.py'
 UNFOLDER_CONFIG_FILENAME = 'unfolder_config.py'
+
 PARAMETERS_FILENAME = 'simulation_parameters.feather'
 PREPROCESSED_DATA_FILENAME = 'preprocessed_data.h5'
 FOLDED_SAMPLED_PARAMETERS_FILENAME = 'folded_sampled_parameters.h5'
 UNFOLDING_LABELS_FILENAME = 'unfolding_labels.h5'
 MASK_FILENAME = 'mask.npy'
 COMPRESSED_DATA_FILENAME = 'compressed_data.npy'
+
 VERSION_FILENAME = 'version.txt'
+WAVEFORM_MODEL_FILENAME = 'waveform_model.h5'
+
+WEIGHTS_FILENAME = 'weights.npy'
+
+PARAMETER_RESCALER_FILENAME = 'parameter_rescaler.pth'
 RESCALED_PARAMETERS_FILENAME = 'rescaled_parameters.npy'
+PARAMETER_RESCALER_TRAINING_FILENAME = 'parameter_rescaler_training.pth'
+
 INFERENCE_FILENAME = 'inference.pickle'
 POSTERIOR_FILENAME = 'posterior.pt'
+
 UNFOLDER_FILENAME = 'unfolding_classifier.ubj'
-WAVEFORM_MODEL_FILENAME = 'waveform_model.h5'
-WEIGHTS_FILENAME = 'weights.npy'
 
 
 def load_data_config(rundir):
     """Return module `data_config` from a run directory."""
     rundir = Path(rundir)
-    return cogwheel.validation.load_config(rundir/DATA_CONFIG_FILENAME)
+    return load_config(rundir/DATA_CONFIG_FILENAME)
+
+
+def load_prior_config(priordir):
+    """Return module `prior_config` from a prior directory."""
+    priordir = Path(priordir)
+    return load_config(priordir/PRIOR_CONFIG_FILENAME)
 
 
 def load_rescaler_config(rescalerdir):
     """Return module `rescaler_config` from a rescaler directory."""
     rescalerdir = Path(rescalerdir)
-    return cogwheel.validation.load_config(
-        rescalerdir/RESCALER_CONFIG_FILENAME)
+    return load_config(rescalerdir/RESCALER_CONFIG_FILENAME)
 
 
 def load_sbi_config(sbidir):
-    """Return module `sbi_config` from a sbi directory."""
+    """Return module `sbi_config` from an sbi directory."""
     sbidir = Path(sbidir)
-    return cogwheel.validation.load_config(sbidir/SBI_CONFIG_FILENAME)
+    return load_config(sbidir/SBI_CONFIG_FILENAME)
 
 
 def load_unfolder_config(unfolderdir):
     """Return module `unfolder_config` from an unfolder directory."""
     unfolderdir = Path(unfolderdir)
-    return cogwheel.validation.load_config(
-        unfolderdir/UNFOLDER_CONFIG_FILENAME)
+    return load_config(unfolderdir/UNFOLDER_CONFIG_FILENAME)
 
 
 def make_unique_dir(location, prefix):
@@ -155,6 +174,36 @@ def setup_rundir(parentdir, prefix='run_'):
     return rundir
 
 
+def setup_priordir(rundir, prefix='prior_'):
+    """
+    Set up a prior directory with an example prior_config.py file.
+
+    Parameters
+    ----------
+    rundir : os.PathLike
+        Path in which to create the prior directory ``priordir``.
+
+    prefix : str
+        ``priordir`` will be named as the prefix followed by a number,
+        to make it unique.
+
+    Returns
+    -------
+    priordir : os.PathLike
+        Path to the newly created prior directory.
+    """
+    priordir = make_unique_dir(rundir, prefix)
+
+    source = EXAMPLE_CONFIGS_DIR/PRIOR_CONFIG_FILENAME
+    destination = priordir.resolve()/PRIOR_CONFIG_FILENAME
+    shutil.copyfile(source, destination)
+
+    print(f'Created a new prior config file at {destination}.',
+          'Edit it as needed.')
+    return priordir
+
+
+
 def setup_rescalerdir(priordir, prefix='rescaler_'):
     """
     Set up a rescaler directory with an example rescaler_config.py file.
@@ -165,8 +214,8 @@ def setup_rescalerdir(priordir, prefix='rescaler_'):
         Path in which to create the rescaler directory ``rescalerdir``.
 
     prefix : str
-        ``rescaler`` will be named as the prefix followed by a number,
-        to make it unique.
+        ``rescalerdir`` will be named as the prefix followed by a
+        number, to make it unique.
 
     Returns
     -------
@@ -182,28 +231,6 @@ def setup_rescalerdir(priordir, prefix='rescaler_'):
     print(f'Created a new rescaler config file at {destination}.',
           'Edit it as needed.')
     return rescalerdir
-
-
-def get_priordirs(rundir):
-    """
-    Get directories for physical priors inside a `rundir`.
-
-    Does not create the directories or check whether they exist.
-
-    Parameters
-    ----------
-    rundir : os.PathLike
-        Path in which to create the prior directories.
-
-    Returns
-    -------
-    priordirs : list of pathlib.Path
-    """
-    rundir = Path(rundir)
-    data_config = load_data_config(rundir)
-
-    return [rundir/prior_cls.__name__
-            for prior_cls in data_config.PHYSICAL_PRIOR_CLASSES]
 
 
 def setup_sbidir(rescalerdir, prefix='sbi_'):
@@ -262,6 +289,130 @@ def setup_unfolderdir(rescalerdir, prefix='unfolder_'):
     print(f'Created a new unfolder config file at {destination}.',
           'Edit it as needed.')
     return unfolderdir
+
+
+class Tree:
+    """
+    Convenience class that tracks the essential files to run inference.
+
+    Use once the model has been trained.
+    """
+    @classmethod
+    def from_tar(cls, filepath):
+        """
+        Load the object from a tar file.
+
+        Parameters
+        ----------
+        filepath : os.PathLike
+            Path to the `.tar.gz` file to read from.
+
+        See Also
+        --------
+        export_tar : Create a tar file from the directory tree.
+        """
+        tmpdir = tempfile.TemporaryDirectory()
+        rundir = Path(tmpdir.name)
+
+        with tarfile.open(filepath, 'r:gz') as tar:
+            tar.extractall(rundir, filter='data')
+
+        rescalerdir = rundir/'prior'/'rescaler'
+        self = cls(rescalerdir/'sbi', rescalerdir/'unfolder')
+        self._tmpdir = tmpdir
+        return self
+
+    def __init__(self, sbidir, unfolderdir):
+        """
+        Parameters
+        ----------
+        sbidir : os.PathLike
+            Path to the SBI directory, lives inside ``rescalerdir``.
+
+        unfolderdir : os.PathLike
+            Path to the unfolder directory, also lives inside
+            ``rescalerdir``.
+
+        Raises
+        ------
+        ValueError
+            If `sbidir` and `unfolderdir` don't have the same parent.
+        """
+        self.sbidir = Path(sbidir).resolve()
+        self.unfolderdir = Path(unfolderdir).resolve()
+        self.rescalerdir, self.priordir, self.rundir = self.sbidir.parents[:3]
+
+        if self.unfolderdir.parent != self.rescalerdir:
+            raise ValueError(
+                '`sbidir` and `unfolderdir` are not in the same `rescalerdir`')
+
+        self._tmpdir = None
+
+    def to_tar(self, filepath):
+        """
+        Create a compressed archive containing only essential files.
+
+        Parameters
+        ----------
+        filepath : os.PathLike
+            Path to the `.tar.gz` file to write. If it points to a
+            directory, an informative name will be generated
+            automatically.
+
+        Return
+        ------
+        os.PathLike : path to the tarfile, useful if it was automatic.
+        """
+        filepath = Path(filepath)
+        if filepath.is_dir():
+            filepath /= '-'.join(
+                path.name for path in [
+                    self.rundir,
+                    self.priordir,
+                    self.rescalerdir,
+                    self.sbidir,
+                    self.unfolderdir
+                ]
+            ) + '.tar.gz'
+
+        essential = [
+            DATA_CONFIG_FILENAME,
+            'JSONStandardScaler.json',
+            'SVDCompressor.npz',
+            VERSION_FILENAME,
+            WAVEFORM_MODEL_FILENAME,
+            '{prior}/ln-prior-ratio_regressor_sigma.ubj',
+            '{prior}/ln-prior-ratio_regressor_mu.ubj',
+            '{prior}/coefficients.json',
+            '{prior}/prior_config.py',
+            '{prior}/{rescaler}/' + RESCALER_CONFIG_FILENAME,
+            '{prior}/{rescaler}/' + PARAMETER_RESCALER_TRAINING_FILENAME,
+            '{prior}/{rescaler}/' + PARAMETER_RESCALER_FILENAME,
+            '{prior}/{rescaler}/{sbi}/' + SBI_CONFIG_FILENAME,
+            '{prior}/{rescaler}/{sbi}/' + POSTERIOR_FILENAME,
+            '{prior}/{rescaler}/{unfolder}/' + UNFOLDER_CONFIG_FILENAME,
+            '{prior}/{rescaler}/{unfolder}/' + UNFOLDER_FILENAME,
+        ]
+
+        with tarfile.open(filepath, "w:gz") as tar:
+            for relpath in essential:
+                path = self.rundir / relpath.format(
+                    prior=self.priordir.name,
+                    rescaler=self.rescalerdir.name,
+                    sbi=self.sbidir.name,
+                    unfolder=self.unfolderdir.name
+                )
+                arcname = relpath.format(prior='prior',
+                                         rescaler='rescaler',
+                                         sbi='sbi',
+                                         unfolder='unfolder')
+                tar.add(path, arcname=arcname)
+
+        return filepath
+
+    def __del__(self):
+        if self._tmpdir:
+            self._tmpdir.cleanup()
 
 
 def get_summary(datadir, apply_mask=True):
@@ -366,8 +517,8 @@ def check_version(rundir):
         version = file.read()
 
     if version != __version__:
-        logging.warning(f'{rundir} was populated using a different version of'
-                        f' `labrador`, {version!r}. '
+        logging.warning(f'{rundir.resolve()} was populated using a different '
+                        f'version of `labrador`, {version!r}. '
                         f'The current version is {__version__!r}.')
 
 
@@ -402,18 +553,61 @@ class NpzMixin:
         return Path(directory)/f'{cls.__name__}.npz'
 
 
-def multiprocessing_starmap_profiled(func, iterable, processes=None):
+class Timer:
     """
-    Similar to ``multiprocessing.Pool().starmap`` but it also returns
-    profiling statistics.
+    Context manager measuring CPU time.
+
+    Attributes
+    ----------
+    elapsed : float
+        CPU time in seconds consumed inside the context.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        with Timer() as timer:
+            run_my_func()
+
+        print(timer.elapsed)
+    """
+    def __init__(self):
+        self._start = None
+        self.elapsed = None
+
+    def __enter__(self):
+        self._start = time.process_time()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.elapsed = time.process_time() - self._start
+
+
+
+def multiprocessing_starmap_timed(func, iterable, processes=None):
+    """
+    Similar to ``multiprocessing.Pool().starmap`` but also returns
+    total CPU time spent executing ``func`` across all workers.
+
+    Parameters
+    ----------
+    func : callable
+        Function to evaluate. Each element of ``iterable`` must be a tuple
+        of arguments for ``func``.
+    iterable : iterable
+        Iterable producing argument tuples.
+    processes : int or None, optional
+        Number of worker processes. If ``None`` the number of CPUs is used.
+        Negative values mean ``os.cpu_count() + processes``.
 
     Returns
     -------
     results : list
         ``[func(*args) for args in iterable]``.
 
-    stats : pstats.Stats
-        Profiling statistics.
+    cpu_time : float
+        Total CPU time in seconds spent executing ``func`` across all
+        processes.
     """
     if processes is None:
         processes = os.cpu_count()
@@ -422,35 +616,27 @@ def multiprocessing_starmap_profiled(func, iterable, processes=None):
     else:
         processes = min(os.cpu_count(), processes)
 
-    with tempfile.TemporaryDirectory() as profile_dir:
-        profiled_func = functools.partial(_aux_profiled_func,
-                                          func=func, profile_dir=profile_dir)
+    if processes == 1:  # Shortcut multiprocessing
+        with Timer() as timer:
+            results = [func(*args) for args in iterable]
+        return results, timer.elapsed
 
-        with multiprocessing.Pool(processes, _worker_initializer) as pool:
-            results = pool.map(profiled_func, iterable)
+    timed_func = functools.partial(_aux_timed_func, func=func)
 
-        # Aggregate the stats
-        paths = map(str, Path(profile_dir).glob('*.prof'))
-        stats = pstats.Stats(*paths)
+    with multiprocessing.Pool(processes) as pool:
+        outputs = pool.map(timed_func, iterable)
 
-    return results, stats
+    results, times = zip(*outputs)
 
-
-def _worker_initializer():
-    global profiler
-    profiler = Profile()
+    return list(results), sum(times)
 
 
-def _aux_profiled_func(args, func, profile_dir):
-    # Defined in top level so that it is pickleable for multiprocessing
-    # global profiler
-    result = profiler.runcall(func, *args)
+def _aux_timed_func(args, func):
+    """Worker wrapper that measures CPU time."""
+    with Timer() as timer:
+        result = func(*args)
 
-    # Dump profile data after each call
-    process_id = multiprocessing.current_process().pid
-    profiler.dump_stats(Path(profile_dir)/f'{process_id}.prof')
-
-    return result
+    return result, timer.elapsed
 
 
 def get_best_device(by='utilization'):
@@ -469,6 +655,8 @@ def get_best_device(by='utilization'):
     -------
     torch.device
     """
+    import torch  # Expensive import
+
     if not torch.cuda.is_available():
         return torch.device('cpu')
 
