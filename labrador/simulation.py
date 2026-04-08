@@ -141,7 +141,8 @@ def simulate_and_preprocess_samples(simulator,
                                     data_preprocessor,
                                     simulation_parameters,
                                     transform_class,
-                                    processes):
+                                    processes,
+                                    seed_suffix):
     """
     Run :py:func:`simulate_and_preprocess_sample` on a set of simulation
     parameter samples in parallel using ``multiprocessing``.
@@ -173,6 +174,10 @@ def simulate_and_preprocess_samples(simulator,
         The number of worker processes to use. If `processes` is
         `None` then the number returned by `os.cpu_count()` is used.
 
+    seed_suffix : e.g. bool
+        Used to prevent the training and test sets from having the same
+        noise realizations.
+
     Returns
     -------
     preprocessed_data : dict
@@ -196,8 +201,14 @@ def simulate_and_preprocess_samples(simulator,
         Total CPU time in seconds spent across all processes.
     """
     args_generator = (
-        (simulator, data_preprocessor, parameters, transform_class, seed)
-        for seed, parameters in simulation_parameters.iterrows()
+        (
+            simulator,
+            data_preprocessor,
+            parameters,
+            transform_class,
+            (seed_prefix, seed_suffix)
+        )
+        for seed_prefix, parameters in simulation_parameters.iterrows()
     )
 
     results, time = utils.multiprocessing_starmap_timed(
@@ -557,6 +568,7 @@ def simulate_chunk(datadir, i_start, i_end, processes):
         Defines a command-line interface to this function.
     """
     datadir = Path(datadir).resolve()
+    seed_suffix = datadir.name == utils.TRAINING_DIR
     rundir = datadir.parent
     chunksdir = datadir/CHUNKS_DIRNAME
     if not chunksdir.exists():
@@ -588,7 +600,8 @@ def simulate_chunk(datadir, i_start, i_end, processes):
                                         data_preprocessor,
                                         parameters_chunk,
                                         transform_class=transform_class,
-                                        processes=processes)
+                                        processes=processes,
+                                        seed_suffix=seed_suffix)
 
     datasets = (
         preprocessed_data,
@@ -879,6 +892,7 @@ def main(rundir, processes=None):
 def _populate_datadir(datadir, simulator, data_preprocessor,
                       transform_class, processes, chunk_size=10_000):
     simulation_parameters = pd.read_feather(datadir/utils.PARAMETERS_FILENAME)
+    seed_suffix = datadir.name == utils.TRAINING_DIR
 
     time = 0.0
 
@@ -893,7 +907,8 @@ def _populate_datadir(datadir, simulator, data_preprocessor,
             data_preprocessor,
             simulation_parameters[chunk_start : chunk_start + chunk_size],
             transform_class=transform_class,
-            processes=processes
+            processes=processes,
+            seed_suffix=seed_suffix
         )
 
         _append_to_hdf5(datadir/utils.PREPROCESSED_DATA_FILENAME,
