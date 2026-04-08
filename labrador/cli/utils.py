@@ -119,4 +119,5 @@ def save_model():
     args = parser.parse_args()
 
     tree = utils.Tree(args.sbidir, args.unfolderdir)
-    tree.to_tar(args.filename or tree.rundir.parent)
+    filepath = tree.to_tar(args.filename or tree.rundir.parent)
+    print(f'Saved model to {filepath.resolve()}')
