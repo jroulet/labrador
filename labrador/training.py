@@ -118,11 +118,11 @@ def _instantiate_inference(sbidir):
 
     neural_posterior = posterior_nn(**config.POSTERIOR_NN_KWARGS)
 
-    inference = sbi_hacks.NPEFixedBatches(
+    inference = sbi_hacks.LabradorNPE(
         density_estimator=neural_posterior,
         device=device,
         summary_writer=SummaryWriter(sbidir)
-        ).append_simulations(theta, x, weights=weights)
+    ).append_simulations(theta, x, weights=weights)
 
     return inference
 
