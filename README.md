@@ -1,4 +1,4 @@
-![labrador](https://raw.githubusercontent.com/jroulet/labrador/cleanup/docs/source/_static/labrador.jpg)
+![labrador](https://raw.githubusercontent.com/jroulet/labrador/main/docs/source/_static/labrador.jpg)
 
 `labrador` combines simulation-based inference with gravitational-wave specific tricks such as relative binning, folding, and coordinate transformations, to get the best of both worlds.
 
