@@ -13,6 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tensorboard.backend.event_processing import event_accumulator
 
 from sbi.neural_nets import posterior_nn
+from sbi.utils.tracking import TensorBoardTracker
 
 from . import compression, embedding, sbi_hacks, utils
 
@@ -121,7 +122,7 @@ def _instantiate_inference(sbidir):
     inference = sbi_hacks.LabradorNPE(
         density_estimator=neural_posterior,
         device=device,
-        summary_writer=SummaryWriter(sbidir)
+        tracker=TensorBoardTracker(SummaryWriter(sbidir))
     ).append_simulations(theta, x, weights=weights)
 
     return inference
