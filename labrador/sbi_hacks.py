@@ -1,9 +1,11 @@
 """Modifications to the behavior of ``sbi``."""
 import functools
+import os
 import time
+import warnings
 from dataclasses import dataclass
 
-from typing import Any, Callable, Dict, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Union
 import numpy as np
 
 from torch import Tensor
@@ -11,18 +13,19 @@ import torch.utils.data
 from torch.optim import Adam
 
 from sbi.utils.sbiutils import get_simulations_since_round
+from sbi.utils.torchutils import check_device
+import sbi.inference.trainers.npe.npe_base
+import sbi.inference.trainers.base
 from sbi.inference.trainers.npe.npe_base import (
     ConditionalDensityEstimator,
     StartIndexContext,
     LossArgsNPE,
-    PosteriorEstimatorTrainer,
     LossArgs,
     ones,
 )
 from sbi.inference.posteriors.direct_posterior import DirectPosterior
 import sbi.inference.trainers._contracts
 from sbi.inference.trainers.npe import NPE
-from sbi.inference.trainers.base import NeuralInference
 from sbi.neural_nets.estimators.base import ConditionalEstimatorType
 from sbi.neural_nets.estimators.shape_handling import (
     reshape_to_batch_event,
@@ -128,6 +131,7 @@ class FixedBatchesDataLoader:
 # Implement counterweight method (user must compute the weights)
 
 class NPECounterWeight(NPE):
+    """Allow user to apply weights to the training set."""
     @functools.wraps(NPE.__init__)
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -474,3 +478,155 @@ class LabradorNPE(PosteriorEstimatorTrainerLRSchedulerMixin,
                   NPECounterWeight,
                   ):
     pass
+
+
+# ----------------------------------------------------------------------
+# Overwrite sbi.utils.sbiutils.warn_if_invalid_for_zscoring to use less
+# GPU memory
+# TODO pull request
+
+def _get_quartile_1_3(x, dim):
+    n = x.shape[dim]
+    q1_k = max(1, int(round(0.25 * n)))
+    q3_k = max(1, int(round(0.75 * n)))
+    q1 = torch.kthvalue(x, q1_k, dim=dim).values
+    q3 = torch.kthvalue(x, q3_k, dim=dim).values
+    return q1, q3
+
+
+def warn_if_invalid_for_zscoring(
+    x: Tensor,
+    outlier_iqr_factor: float = 10.0,
+) -> None:
+    """Warn if data has properties that may cause issues during z-scoring.
+
+    This function checks for:
+    1. Constant features (zero standard deviation) which would cause NaN
+    2. Extreme outliers which may cause precision loss during z-scoring
+
+    Extreme outliers are detected using a robust IQR-based method: values more than
+    `outlier_iqr_factor * IQR` away from the quartiles are considered extreme.
+    This is robust because IQR is not affected by the outliers themselves.
+
+    Args:
+        x: Data tensor of shape (num_samples, *features). For >2D tensors, features
+            are flattened for checking.
+        outlier_iqr_factor: Factor for IQR-based outlier detection. Values beyond
+            Q1 - factor*IQR or Q3 + factor*IQR are considered extreme outliers.
+            Default 10.0 (very conservative; standard is 1.5-3.0).
+
+    Example:
+        >>> x_normal = torch.randn(1000, 2)
+        >>> warn_if_invalid_for_zscoring(x_normal)  # No warning
+        >>> x_outlier = torch.randn(1000, 2)
+        >>> x_outlier[0, 0] = 1000.0  # Add extreme outlier
+        >>> warn_if_invalid_for_zscoring(x_outlier)  # Warns about dimension 0
+    """
+    # Flatten to 2D (N, D) for tensors with >2 dimensions (e.g., images)
+    if x.ndim > 2:
+        x = x.flatten(start_dim=1)
+
+    # Handle edge case of single sample
+    if x.shape[0] <= 1:
+        warnings.warn(
+            "Only one data sample provided. Z-scoring requires multiple samples "
+            "to compute meaningful statistics. Consider adding more simulations.",
+            UserWarning,
+            stacklevel=2,
+        )
+        return
+
+    std = x.std(0)
+
+    # Check for constant features (zero std)
+    constant_dims = torch.where(std < 1e-14)[0]
+    if len(constant_dims) > 0:
+        warnings.warn(
+            f"Data has constant values in dimension(s) {constant_dims.tolist()}. "
+            "These dimensions carry no information and will be mapped to zero after "
+            "z-scoring. Consider removing constant features from your data.",
+            UserWarning,
+            stacklevel=2,
+        )
+        return  # Skip outlier check if there are constant features
+
+    # Check for extreme outliers using IQR-based detection (robust to outliers)
+    q1, q3 = _get_quartile_1_3(x, dim=0)
+    iqr = q3 - q1
+
+    # For dimensions with zero IQR (e.g., discrete data), skip outlier check
+    valid_iqr = iqr > 1e-14
+    if not valid_iqr.any():
+        return
+
+    lower_bound = q1 - outlier_iqr_factor * iqr
+    upper_bound = q3 + outlier_iqr_factor * iqr
+
+    # Vectorized outlier detection across all dimensions
+    is_outlier = (x < lower_bound) | (x > upper_bound)  # (N, D)
+    has_outlier_per_dim = is_outlier.any(dim=0)  # (D,)
+    outlier_dims = torch.where(has_outlier_per_dim & valid_iqr)[0].tolist()
+
+    if outlier_dims:
+        warnings.warn(
+            f"Data has extreme outliers in dimension(s) {outlier_dims} "
+            f"(beyond {outlier_iqr_factor}x IQR from quartiles). "
+            "This may cause precision loss during z-scoring, where distinct values "
+            "become indistinguishable. Consider removing outliers from your data "
+            "or setting `z_score_x='none'` (though this may affect training).",
+            UserWarning,
+            stacklevel=2,
+        )
+
+
+# Monkey patch
+sbi.inference.trainers.npe.npe_base.warn_if_invalid_for_zscoring = warn_if_invalid_for_zscoring
+
+
+# ----------------------------------------------------------------------
+# Monkey patch sbi.utils.torchutils.process_device to remember the device id
+# TODO pull request
+
+def process_device(device: Union[str, torch.device]) -> str:
+    """Set and return the default device to cpu or gpu (cuda, mps).
+
+    Args:
+        device: target torch device
+    Returns:
+        device: processed string, e.g., "cuda" is mapped to "cuda:0".
+    """
+
+    if device == "cpu":
+        return "cpu"
+
+    # If user just passes 'gpu', search for CUDA or MPS.
+    if device == "gpu":
+        # check whether either pytorch cuda or mps is available
+        if torch.cuda.is_available():
+            current_gpu_index = torch.cuda.current_device()
+            device = f"cuda:{current_gpu_index}"
+            check_device(device)
+            torch.cuda.set_device(device)
+        elif torch.backends.mps.is_available():
+            device = "mps:0"
+            # MPS support is not implemented for a number of operations.
+            # use CPU as fallback.
+            os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
+            # MPS framework does not support double precision.
+            torch.set_default_dtype(torch.float32)
+            check_device(device)
+        else:
+            raise RuntimeError(
+                "Neither CUDA nor MPS is available. "
+                "Please make sure to install a version of PyTorch that supports "
+                "CUDA or MPS."
+            )
+    # Else, check whether the custom device is valid.
+    else:
+        check_device(device)
+        # if isinstance(device, torch.device):
+        #     device = device.type  # Bug in the original sbi (!)
+
+    return device
+
+sbi.inference.trainers.base.process_device = process_device
