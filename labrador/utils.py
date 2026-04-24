@@ -674,7 +674,7 @@ def get_best_device(by='utilization'):
     if (visible := os.environ.get('CUDA_VISIBLE_DEVICES')) is not None:
         visible_ids = [int(x) for x in visible.split(',')]
     else:
-        visible_ids = list(range(len(memory)))
+        visible_ids = list(range(torch.cuda.device_count()))
 
     def query_gpu(query):
         result = subprocess.check_output(
