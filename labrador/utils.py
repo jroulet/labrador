@@ -671,12 +671,18 @@ def get_best_device(by='utilization'):
             'config or set it in your script before importing torch.'
         )
 
+    if (visible := os.environ.get('CUDA_VISIBLE_DEVICES')) is not None:
+        visible_ids = [int(x) for x in visible.split(',')]
+    else:
+        visible_ids = list(range(len(memory)))
+
     def query_gpu(query):
         result = subprocess.check_output(
             ['nvidia-smi', f'--query-gpu={query}',
              '--format=csv,noheader,nounits'],
             encoding='utf-8')
-        return [int(x) for x in result.strip().split('\n')]
+        values = [int(x) for x in result.strip().split('\n')]
+        return [values[i] for i in visible_ids]
 
     memory = query_gpu('memory.free')
     utilization = query_gpu('utilization.gpu')
