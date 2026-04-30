@@ -2,6 +2,9 @@
 
 `labrador` combines simulation-based inference with gravitational-wave specific tricks such as relative binning, folding, and coordinate transformations, to get the best of both worlds.
 
+## Reference
+[labrador: A domain-optimized machine-learning tool for gravitational wave inference](https://arxiv.org/abs/2604.08897)
+
 ## Installation
 ### Clone repository:
 ```bash
@@ -15,7 +18,7 @@ conda activate ENVIRONMENT_NAME
 ```
 (replace `ENVIRONMENT_NAME` by a name of your choice, e.g. `labrador`.)
 
-> Note: it's better to install those packages with `conda` rather than `pip`, at least in the LDG computers.
+> Note: it's better to install those packages with `conda` rather than `pip`, at least in the LIGO Data Grid computers.
 
 ### Install:
 ```bash
