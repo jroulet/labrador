@@ -301,7 +301,8 @@ class JSONStandardScaler(sklearn.preprocessing.StandardScaler):
         filepath = cls._get_filepath(directory)
 
         with open(filepath, encoding='utf-8') as file:
-            scaler_params = json.load(file)
+            scaler_params = {k: np.array(v)
+                             for k, v in json.load(file).items()}
 
         scaler = cls()
         scaler.__dict__.update(scaler_params)

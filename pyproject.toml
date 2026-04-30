@@ -7,9 +7,9 @@ name = "labrador-gw"
 dynamic = ["version"]
 
 dependencies = [
-  "cogwheel-pe",
+  "cogwheel-pe>=1.6",
   "xgboost",
-  "sbi==0.24",
+  "sbi==0.26",
 ]
 
 maintainers = [

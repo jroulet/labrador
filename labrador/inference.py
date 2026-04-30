@@ -459,8 +459,9 @@ def run_importance_sampling(tree, eventsdir, eventdata_path,
                 mchirp_guess,
                 data_config.APPROXIMANT,
                 prior_config.PRIOR_CLASS,
+                prior_kwargs=prior_config.PRIOR_KWARGS,
                 ref_wf_finder_kwargs={
-                    'f_ref': data_config.PRIOR_KWARGS['f_ref']}
+                    'f_ref': data_config.PRIOR_KWARGS['f_ref']},
             )
 
             # Importance sampling

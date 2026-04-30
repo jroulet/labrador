@@ -147,11 +147,12 @@ class SemicoherentLikelihood:
 
         init_pop = _get_differential_evolution_initial_population(small_bounds)
 
+        xmin, xmax = np.transpose(big_bounds)
         shapecoef = optimize.differential_evolution(
             lambda shapecoef: -self._semicoherent_lnlike(shapecoef),
             bounds=big_bounds,
             init=init_pop,
-            x0=np.clip(shapecoef_guess, *zip(*big_bounds)),
+            x0=np.clip(shapecoef_guess, xmin + 1e-10, xmax - 1e-10),
         ).x
 
         return self._fit_amp_phase(shapecoef)
